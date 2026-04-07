@@ -78,79 +78,17 @@
 
 <div class="container pb-5">
 
-    <div id="homeView" class="view-section active">
+    <div id="initialUserTypeView" class="view-section active">
         <div class="text-center mb-5">
-            <h2 class="fw-bold text-ci-orange">ยินดีต้อนรับสู่ระบบส่งคำขอออนไลน์</h2>
-            <p class="text-ci-bluegrey">เลือกบริการที่คุณต้องการใช้งานจากเมนูด้านล่าง</p>
-        </div>
-
-        <h4 class="mb-3 text-ci-bluegrey"><i class="bi bi-p-circle-fill me-2 text-ci-orange"></i>Parking Services</h4>
-        <div class="row g-4 mb-5">
-            <div class="col-6 col-md-3">
-                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอจอดรถค้างคืน')">
-                    <div class="icon-wrapper grad-orange"><i class="bi bi-moon-stars-fill"></i></div>
-                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอจอดรถค้างคืน</h6></div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอจอดรถรายเดือน')">
-                    <div class="icon-wrapper grad-orange"><i class="bi bi-calendar-check-fill"></i></div>
-                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอจอดรถรายเดือน</h6></div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอใช้ตราประทับ')">
-                    <div class="icon-wrapper grad-orange"><i class="bi bi-postage-fill"></i></div>
-                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอใช้ตราประทับ</h6></div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอแก้ไขทะเบียนรถ')">
-                    <div class="icon-wrapper grad-orange"><i class="bi bi-car-front-fill"></i></div>
-                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอแก้ไขทะเบียนรถ</h6></div>
-                </div>
-            </div>
-        </div>
-
-        <h4 class="mb-3 text-ci-bluegrey"><i class="bi bi-geo-alt-fill me-2 text-ci-yellow"></i>Area Services</h4>
-        <div class="row g-4 mb-5">
-            <div class="col-6 col-md-4">
-                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอใช้พื้นที่ชั่วคราว')">
-                    <div class="icon-wrapper grad-yellow"><i class="bi bi-shop"></i></div>
-                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอใช้พื้นที่ชั่วคราว</h6></div>
-                </div>
-            </div>
-            <div class="col-6 col-md-4">
-                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอเข้าพื้นที่คู่สัญญา')">
-                    <div class="icon-wrapper grad-yellow"><i class="bi bi-file-earmark-person"></i></div>
-                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอเข้าพื้นที่คู่สัญญา</h6></div>
-                </div>
-            </div>
-        </div>
-
-        <h4 class="mb-3 text-ci-bluegrey"><i class="bi bi-exclamation-triangle-fill me-2 text-ci-bluegrey"></i>แจ้งปัญหา</h4>
-        <div class="row g-4">
-            <div class="col-12 col-md-4">
-                <div class="card service-card shadow-sm" onclick="selectForm('แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ')">
-                    <div class="icon-wrapper grad-bluegrey"><i class="bi bi-tools"></i></div>
-                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">แจ้งปัญหาทั่วไป</h6></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="userTypeView" class="view-section">
-        <button class="btn btn-ci-bluegrey mb-4" onclick="switchView('homeView')"><i class="bi bi-arrow-left"></i> กลับหน้าหลัก</button>
-        <div class="text-center mb-5">
-            <h2 class="fw-bold text-ci-orange" id="selectedFormTitle">ชื่อแบบฟอร์ม</h2>
-            <p class="text-ci-bluegrey">กรุณาระบุประเภทผู้ยื่นคำขอเพื่อดำเนินการต่อ</p>
+            <h2 class="fw-bold text-ci-orange">เข้าสู่ระบบคำขอออนไลน์</h2>
+            <p class="text-ci-bluegrey">กรุณาระบุประเภทผู้ยื่นคำขอเพื่อเริ่มต้นใช้งาน</p>
         </div>
 
         <div class="row justify-content-center g-4">
             <div class="col-12 col-md-4">
                 <div class="card service-card shadow-sm" onclick="openLoginModal('staff')">
                     <div class="icon-wrapper grad-orange"><i class="bi bi-person-badge-fill"></i></div>
-                    <div class="card-body text-center"><h5 class="card-title fw-bold m-0">บุคลากรภายใน</h5></div>
+                    <div class="card-body text-center"><h5 class="card-title fw-bold m-0">บุคลากร</h5></div>
                 </div>
             </div>
             <div class="col-12 col-md-4">
@@ -160,7 +98,7 @@
                 </div>
             </div>
             <div class="col-12 col-md-4">
-                <div class="card service-card shadow-sm" onclick="openExternalForm()">
+                <div class="card service-card shadow-sm" onclick="setExternalUser()">
                     <div class="icon-wrapper grad-yellow"><i class="bi bi-people-fill"></i></div>
                     <div class="card-body text-center"><h5 class="card-title fw-bold m-0">บุคคลภายนอก</h5></div>
                 </div>
@@ -168,8 +106,72 @@
         </div>
     </div>
 
+    <div id="homeView" class="view-section">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h3 class="fw-bold text-ci-orange m-0" id="welcomeText">ยินดีต้อนรับ</h3>
+                <p class="text-ci-bluegrey m-0 small">เลือกบริการที่คุณต้องการใช้งานจากเมนูด้านล่าง</p>
+            </div>
+            <button class="btn btn-outline-danger btn-sm fw-bold" onclick="logout()"><i class="bi bi-box-arrow-right me-1"></i> เปลี่ยนผู้ใช้งาน</button>
+        </div>
+
+        <h4 class="mb-3 text-ci-bluegrey section-parking-title"><i class="bi bi-p-circle-fill me-2 text-ci-orange"></i>Parking Services</h4>
+        <div class="row g-4 mb-5">
+            <div class="col-6 col-md-3 menu-item" id="menu-overnight">
+                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอจอดรถค้างคืน')">
+                    <div class="icon-wrapper grad-orange"><i class="bi bi-moon-stars-fill"></i></div>
+                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอจอดรถค้างคืน</h6></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3 menu-item" id="menu-monthly">
+                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอจอดรถรายเดือน')">
+                    <div class="icon-wrapper grad-orange"><i class="bi bi-calendar-check-fill"></i></div>
+                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอจอดรถรายเดือน</h6></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3 menu-item" id="menu-stamp">
+                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอใช้ตราประทับ')">
+                    <div class="icon-wrapper grad-orange"><i class="bi bi-postage-fill"></i></div>
+                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอใช้ตราประทับ</h6></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3 menu-item" id="menu-edit-plate">
+                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์')">
+                    <div class="icon-wrapper grad-orange"><i class="bi bi-car-front-fill"></i></div>
+                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0" style="font-size: 0.9rem;">ขอเพิ่ม/แก้ไข/ยกเลิก<br>ทะเบียนรถยนต์</h6></div>
+                </div>
+            </div>
+        </div>
+
+        <h4 class="mb-3 text-ci-bluegrey section-area-title"><i class="bi bi-geo-alt-fill me-2 text-ci-yellow"></i>Area Services</h4>
+        <div class="row g-4 mb-5">
+            <div class="col-6 col-md-4 menu-item" id="menu-temp-area">
+                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอใช้พื้นที่ชั่วคราว')">
+                    <div class="icon-wrapper grad-yellow"><i class="bi bi-shop"></i></div>
+                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอใช้พื้นที่ชั่วคราว</h6></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-4 menu-item" id="menu-contract-area">
+                <div class="card service-card shadow-sm" onclick="selectForm('แบบฟอร์มขอเข้าพื้นที่คู่สัญญา')">
+                    <div class="icon-wrapper grad-yellow"><i class="bi bi-file-earmark-person"></i></div>
+                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">ขอเข้าพื้นที่คู่สัญญา</h6></div>
+                </div>
+            </div>
+        </div>
+
+        <h4 class="mb-3 text-ci-bluegrey section-issue-title"><i class="bi bi-exclamation-triangle-fill me-2 text-ci-bluegrey"></i>แจ้งปัญหา</h4>
+        <div class="row g-4">
+            <div class="col-12 col-md-4 menu-item" id="menu-issue">
+                <div class="card service-card shadow-sm" onclick="selectForm('แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ')">
+                    <div class="icon-wrapper grad-bluegrey"><i class="bi bi-tools"></i></div>
+                    <div class="card-body text-center"><h6 class="card-title fw-bold m-0">แจ้งปัญหาทั่วไป</h6></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="formContentView" class="view-section">
-        <button class="btn btn-ci-bluegrey mb-3" onclick="switchView('userTypeView')"><i class="bi bi-arrow-left"></i> ย้อนกลับ</button>
+        <button class="btn btn-ci-bluegrey mb-3" onclick="switchView('homeView')"><i class="bi bi-arrow-left"></i> ย้อนกลับ</button>
         
         <div class="card shadow border-0 border-top border-ci-orange border-5">
             <div class="card-header bg-white p-3 border-bottom-0 pt-4">
@@ -179,21 +181,56 @@
                 
                 <h5 class="form-section-title"><i class="bi bi-1-circle-fill me-2"></i>ส่วนที่ 1: รายละเอียดผู้ยื่นคำขอ</h5>
                 <div class="row g-3 mb-4 bg-light p-3 rounded border border-light">
-                    <div class="col-md-4"><label class="form-label text-ci-bluegrey small fw-bold" id="lblReqId">รหัสประจำตัว</label><input type="text" class="form-control fw-bold" id="reqEmpId" readonly></div>
-                    <div class="col-md-4"><label class="form-label text-ci-bluegrey small fw-bold">ชื่อ-สกุล</label><input type="text" class="form-control fw-bold" id="reqName" readonly></div>
-                    <div class="col-md-4" id="divReqPosition"><label class="form-label text-ci-bluegrey small fw-bold">ตำแหน่ง</label><input type="text" class="form-control" id="reqPosition" readonly></div>
-                    <div class="col-md-4" id="divReqStatus" style="display:none;"><label class="form-label text-ci-bluegrey small fw-bold">สถานภาพ</label><input type="text" class="form-control bg-white" id="reqStatus" readonly></div>
-                    <div class="col-md-6" id="divReqFaculty" style="display:none;"><label class="form-label text-ci-bluegrey small fw-bold">คณะ / สังกัด</label><input type="text" class="form-control bg-white" id="reqFaculty" readonly></div>
-                    <div class="col-md-6" id="divReqMajor" style="display:none;"><label class="form-label text-ci-bluegrey small fw-bold">ภาควิชา / สาขาวิชา</label><input type="text" class="form-control bg-white" id="reqMajor" readonly></div>
-                    <div class="col-md-6"><label class="form-label text-ci-bluegrey small fw-bold">อีเมลสถาบัน</label><input type="text" class="form-control" id="reqEmail" readonly></div>
-                    <div class="col-md-6"><label class="form-label text-ci-bluegrey small fw-bold">เบอร์โทรศัพท์ติดต่อ <span class="req-star">*</span></label><input type="text" class="form-control border-ci-bluegrey" id="reqPhone" placeholder="ระบุเบอร์โทรศัพท์มือถือที่ติดต่อได้"></div>
+                    <div class="col-md-4" id="divReqId">
+                        <label class="form-label text-ci-bluegrey small fw-bold" id="lblReqId">รหัสประจำตัว</label>
+                        <input type="text" class="form-control fw-bold" id="reqEmpId" readonly>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label text-ci-bluegrey small fw-bold">ชื่อ-สกุล</label>
+                        <input type="text" class="form-control fw-bold" id="reqName" readonly>
+                    </div>
+
+                    <div class="col-md-4" id="divReqPosition" style="display:none;">
+                        <label class="form-label text-ci-bluegrey small fw-bold">ตำแหน่ง</label>
+                        <input type="text" class="form-control bg-white" id="reqPosition" readonly>
+                    </div>
+                    <div class="col-md-4" id="divReqDeptCode" style="display:none;">
+                        <label class="form-label text-ci-bluegrey small fw-bold">ชื่อหน่วยงาน</label>
+                        <input type="text" class="form-control bg-white" id="reqDeptCode" readonly>
+                    </div>
+                    <div class="col-md-4" id="divReqInternalPhone" style="display:none;">
+                        <label class="form-label text-ci-bluegrey small fw-bold">เบอร์โทรภายใน</label>
+                        <input type="text" class="form-control bg-white" id="reqInternalPhone" readonly>
+                    </div>
+
+                    <div class="col-md-4" id="divReqStatus" style="display:none;">
+                        <label class="form-label text-ci-bluegrey small fw-bold">สถานภาพ</label>
+                        <input type="text" class="form-control bg-white" id="reqStatus" readonly>
+                    </div>
+                    <div class="col-md-4" id="divReqFaculty" style="display:none;">
+                        <label class="form-label text-ci-bluegrey small fw-bold">คณะ / สังกัด</label>
+                        <input type="text" class="form-control bg-white" id="reqFaculty" readonly>
+                    </div>
+                    <div class="col-md-4" id="divReqMajor" style="display:none;">
+                        <label class="form-label text-ci-bluegrey small fw-bold">ภาควิชา / สาขาวิชา</label>
+                        <input type="text" class="form-control bg-white" id="reqMajor" readonly>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label text-ci-bluegrey small fw-bold">อีเมลสถาบัน</label>
+                        <input type="text" class="form-control bg-white" id="reqEmail" readonly>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label text-ci-bluegrey small fw-bold">เบอร์โทรศัพท์ติดต่อ <span class="req-star">*</span></label>
+                        <input type="text" class="form-control border-ci-bluegrey" id="reqPhone" placeholder="ระบุเบอร์มือถือที่ติดต่อได้">
+                    </div>
                 </div>
 
                 <h5 class="form-section-title" id="approverSectionTitle"><i class="bi bi-2-circle-fill me-2"></i>ส่วนที่ 2: ข้อมูลผู้อนุมัติ (ดึงข้อมูลอัตโนมัติ)</h5>
                 <div class="row g-3 mb-4 rounded bg-white border border-light shadow-sm p-3" id="approverSectionContent" style="border-left: 4px solid var(--ci-yellow) !important;">
-                    <div class="col-md-4"><label class="form-label text-ci-bluegrey small fw-bold" id="lblAppId">รหัสผู้อนุมัติ</label><input type="text" class="form-control bg-transparent border-0 fw-bold text-dark" id="appEmpId" readonly></div>
-                    <div class="col-md-4"><label class="form-label text-ci-bluegrey small fw-bold" id="lblAppName">ชื่อผู้อนุมัติ</label><input type="text" class="form-control bg-transparent border-0 fw-bold text-dark" id="appName" readonly></div>
-                    <div class="col-md-4"><label class="form-label text-ci-bluegrey small fw-bold" id="lblAppPos">ตำแหน่ง/สังกัด</label><input type="text" class="form-control bg-transparent border-0 fw-bold text-dark" id="appPosition" readonly></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey small fw-bold" id="lblAppName">ชื่อผู้อนุมัติ</label><input type="text" class="form-control bg-transparent border-0 fw-bold text-dark" id="appName" readonly></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey small fw-bold" id="lblAppPos">ตำแหน่ง/สังกัด</label><input type="text" class="form-control bg-transparent border-0 fw-bold text-dark" id="appPosition" readonly></div>
                     <div class="col-md-12"><p class="text-ci-bluegrey small m-0 mt-2"><i class="bi bi-envelope-check-fill me-1 text-ci-yellow"></i> ระบบจะส่งคำขอนี้ไปยังอีเมล: <span id="appEmail" class="text-dark fw-bold border-bottom border-ci-yellow"></span></p></div>
                 </div>
 
@@ -219,6 +256,25 @@
             <div class="card-body p-4 pt-2">
                 <h5 class="form-section-title"><i class="bi bi-person-lines-fill me-2"></i>ส่วนที่ 1: ข้อมูลผู้ติดต่อ</h5>
                 <div class="row g-3 mb-4 bg-light p-3 rounded border border-light">
+                    <div class="col-md-12 mb-2">
+                        <label class="form-label text-ci-bluegrey fw-bold small">ประเภทผู้ขอ <span class="req-star">*</span></label>
+                        <div class="d-flex flex-wrap gap-4 align-items-center">
+                            <div class="form-check">
+                                <input class="form-check-input border-ci-bluegrey" type="radio" name="extType" id="extType1" value="ผู้ปกครอง" checked>
+                                <label class="form-check-label" for="extType1">ผู้ปกครอง</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input border-ci-bluegrey" type="radio" name="extType" id="extType2" value="คู่สัญญา">
+                                <label class="form-check-label" for="extType2">คู่สัญญา</label>
+                            </div>
+                            <div class="form-check d-flex align-items-center gap-2 m-0">
+                                <input class="form-check-input border-ci-bluegrey" type="radio" name="extType" id="extType3" value="อื่นๆ" onchange="document.getElementById('extTypeOther').focus()">
+                                <label class="form-check-label text-nowrap" for="extType3">อื่น ๆ</label>
+                                <input type="text" class="form-control form-control-sm border-light shadow-sm w-auto" id="extTypeOther" placeholder="โปรดระบุ" onclick="document.getElementById('extType3').checked = true">
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ชื่อ <span class="req-star">*</span></label><input type="text" class="form-control" id="extFname" placeholder="เช่น สมชาย"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">นามสกุล <span class="req-star">*</span></label><input type="text" class="form-control" id="extLname" placeholder="เช่น ใจดี"></div>
                     <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">หน่วยงาน / บริษัท / นิติบุคคล <span class="req-star">*</span></label><input type="text" class="form-control" id="extCompany" placeholder="ระบุชื่อองค์กรของท่าน"></div>
@@ -243,17 +299,17 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-ci-orange text-white" id="loginModalHeader">
-                <h5 class="modal-title fw-bold" id="loginModalTitle"><i class="bi bi-box-arrow-in-right me-2"></i>เข้าสู่ระบบ</h5>
+                <h5 class="modal-title fw-bold" id="loginModalTitle">เข้าสู่ระบบ</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4 text-center">
-                <p class="mb-4 text-ci-bluegrey" id="loginModalDesc">กรุณากรอกรหัสเพื่อดึงข้อมูลของคุณและสายการอนุมัติ</p>
+                <p class="mb-4 text-ci-bluegrey" id="loginModalDesc">กรุณากรอกรหัสประจำตัว</p>
                 <div class="input-group input-group-lg mb-4 shadow-sm">
                     <span class="input-group-text bg-white border-ci-orange text-ci-orange"><i class="bi bi-person-vcard"></i></span>
-                    <input type="text" class="form-control fw-bold border-ci-orange" id="loginEmpId" placeholder="">
+                    <input type="text" class="form-control fw-bold border-ci-orange" id="loginEmpId">
                 </div>
-                <button type="button" class="btn btn-ci-orange w-100 btn-lg fw-bold shadow-sm" id="loginBtn" onclick="processLogin()" disabled>
-                    <span class="spinner-border spinner-border-sm me-2" id="loginSpinner" role="status" aria-hidden="true"></span>
+                <button type="button" class="btn btn-ci-orange w-100 btn-lg fw-bold" id="loginBtn" onclick="processLogin()" disabled>
+                    <span class="spinner-border spinner-border-sm me-2" id="loginSpinner" role="status"></span>
                     <span id="loginBtnText">กำลังโหลดฐานข้อมูล...</span>
                 </button>
             </div>
@@ -269,7 +325,7 @@
             </div>
             <div class="modal-body p-4 text-center pt-0">
                 <h4 class="fw-bold text-ci-orange mb-3"><i class="bi bi-megaphone-fill me-2 text-ci-yellow"></i>แนะนำช่องทางการแจ้งปัญหา</h4>
-                <p class="mb-3 text-dark" style="font-size: 1.1rem;">สำหรับ <strong>บุคลากรภายใน และ นักศึกษา มจธ.</strong> <br>ท่านสามารถแจ้งปัญหาและติดตามสถานะได้ง่ายยิ่งขึ้น ผ่านแอปพลิเคชัน <strong>"Modlink"</strong></p>
+                <p class="mb-3 text-dark" style="font-size: 1.1rem;">สำหรับ <strong>บุคลากร และ นักศึกษา มจธ.</strong> <br>ท่านสามารถแจ้งปัญหาและติดตามสถานะได้ง่ายยิ่งขึ้น ผ่านแอปพลิเคชัน <strong>"Modlink"</strong></p>
                 <div style="margin: 25px 0;">
                     <img src="https://via.placeholder.com/120/FA4616/FFFFFF?text=Modlink" alt="Modlink App Icon" class="img-fluid rounded-4 shadow" style="width: 100px;">
                 </div>
@@ -359,25 +415,24 @@
         document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
         document.getElementById(viewId).classList.add('active');
         window.scrollTo(0, 0);
+        if(viewId === 'homeView') updateMenuVisibility();
     }
 
     function goHome() { 
         currentSelectedForm = "";
-        currentLoginType = "";
-        switchView('homeView'); 
+        currentLoginType ? switchView('homeView') : switchView('initialUserTypeView'); 
     }
 
-    function selectForm(formName) {
-        currentSelectedForm = formName;
-        document.getElementById('selectedFormTitle').innerText = formName;
-        document.getElementById('formHeaderTitle').innerText = formName;
-        
-        if (formName === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') {
-            currentLoginType = 'external';
-            openExternalForm();
-        } else {
-            switchView('userTypeView');
-        }
+    function logout() {
+        currentLoginType = "";
+        globalUserData = null;
+        switchView('initialUserTypeView');
+    }
+
+    function setExternalUser() {
+        currentLoginType = 'external';
+        document.getElementById('welcomeText').innerText = "ยินดีต้อนรับ, บุคคลภายนอก";
+        switchView('homeView');
     }
 
     function openLoginModal(type) {
@@ -390,116 +445,133 @@
         if(type === 'staff') {
             modalHeader.className = "modal-header bg-ci-orange text-white";
             modalTitle.innerHTML = '<i class="bi bi-person-badge-fill me-2"></i>เข้าสู่ระบบ (บุคลากร)';
-            modalDesc.innerText = 'กรุณากรอกรหัสบุคลากรเพื่อดึงข้อมูลของคุณและสายการอนุมัติ';
-            document.getElementById('lblReqId').innerText = "รหัสบุคลากร";
+            modalDesc.innerText = 'กรุณากรอกรหัสประจำตัวเพื่อดึงข้อมูลของคุณและสายการอนุมัติ';
+            document.getElementById('lblReqId').innerText = "รหัสประจำตัว";
             inputField.value = "2550190"; 
         } else if(type === 'student') {
             modalHeader.className = "modal-header bg-ci-bluegrey text-white";
             modalTitle.innerHTML = '<i class="bi bi-mortarboard-fill me-2"></i>เข้าสู่ระบบ (นักศึกษา)';
-            modalDesc.innerText = 'กรุณากรอกรหัสนักศึกษาเพื่อดึงข้อมูลของคุณและสายการอนุมัติ';
+            modalDesc.innerText = 'กรุณากรอกรหัสนักศึกษาเพื่อดึงข้อมูลของคุณ';
             document.getElementById('lblReqId').innerText = "รหัสนักศึกษา";
             inputField.value = "68070501034"; 
         }
         loginModalInstance.show();
     }
 
-    function openExternalForm() {
-        document.getElementById('externalFormHeaderTitle').innerText = currentSelectedForm + " (บุคคลภายนอก)";
-        renderDynamicForm(currentSelectedForm, 'dynamicExternalFormSection');
-        switchView('externalFormView');
-        if(currentSelectedForm === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') { setTimeout(initContractDropdowns, 100); }
-    }
-
     function processLogin() {
         const inputId = document.getElementById('loginEmpId').value.trim();
         if(!inputId) { alert("กรุณากรอกรหัสเพื่อเข้าสู่ระบบ"); return; }
 
-        let userData = null;
-        let applicantName = "", reqEmail = "";
-        let appEmpId = "", appName = "", appEmail = "", appPosition = "";
-
-        const divPosition = document.getElementById('divReqPosition');
-        const divStatus = document.getElementById('divReqStatus');
-        const divFaculty = document.getElementById('divReqFaculty');
-        const divMajor = document.getElementById('divReqMajor');
-        const approverSectionTitle = document.getElementById('approverSectionTitle');
-        const approverSectionContent = document.getElementById('approverSectionContent');
-        const dynamicSectionTitle = document.getElementById('dynamicSectionTitle');
-        const lblAppId = document.getElementById('lblAppId');
-
         if (currentLoginType === 'staff') {
-            userData = staffDatabase.find(row => row[0].trim() === inputId);
-            if(!userData) { alert("❌ ไม่พบข้อมูลบุคลากรนี้ในระบบ"); return; }
-            
-            divPosition.style.display = 'block'; divStatus.style.display = 'none'; divFaculty.style.display = 'none'; divMajor.style.display = 'none';
-            lblAppId.innerText = "รหัสผู้มีอำนาจอนุมัติ";
-            applicantName = `${userData[2] || ''}${userData[3] || ''} ${userData[4] || ''}`.trim();
-            document.getElementById('reqPosition').value = userData[5] || '-';
-            reqEmail = userData[6] || '-';
-            appEmpId = userData[7];
-            appName = `${userData[8] || ''}${userData[9] || ''} ${userData[10] || ''}`.trim();
-            appEmail = userData[11];
-            appPosition = userData[12];
-            
+            globalUserData = staffDatabase.find(row => row[0].trim() === inputId);
+            if(!globalUserData) { alert("❌ ไม่พบข้อมูลบุคลากรนี้ในระบบ"); return; }
+            let name = `${globalUserData[2] || ''}${globalUserData[3] || ''} ${globalUserData[4] || ''}`.trim();
+            document.getElementById('welcomeText').innerText = `ยินดีต้อนรับ, ${name}`;
         } else if (currentLoginType === 'student') {
-            userData = studentDatabase.find(row => row[0].trim() === inputId);
-            if(!userData) { alert("❌ ไม่พบข้อมูลนักศึกษานี้ในระบบ"); return; }
-            
-            divPosition.style.display = 'none'; divStatus.style.display = 'block'; divFaculty.style.display = 'block'; divMajor.style.display = 'block';
-            lblAppId.innerText = "รหัสผู้อนุมัติ (นักศึกษา)";
-            let title = (userData[2] === "หญิง") ? "นางสาว" : (userData[2] === "ชาย" ? "นาย" : "");
-            applicantName = `${title}${userData[3] || ''} ${userData[4] || ''}`.trim();
-            document.getElementById('reqFaculty').value = userData[5] || '-';
-            document.getElementById('reqMajor').value = userData[6] || '-';
-            reqEmail = userData[7] || '-';
-            document.getElementById('reqStatus').value = userData[8] || '-';
-            appEmpId = userData[9];
-            appName = `${userData[10] || ''}${userData[11] || ''} ${userData[12] || ''}`.trim();
-            appEmail = userData[13];
-            appPosition = userData[14];
+            globalUserData = studentDatabase.find(row => row[0].trim() === inputId);
+            if(!globalUserData) { alert("❌ ไม่พบข้อมูลนักศึกษานี้ในระบบ"); return; }
+            let title = (globalUserData[2] === "หญิง") ? "นางสาว" : (globalUserData[2] === "ชาย" ? "นาย" : "");
+            let name = `${title}${globalUserData[3] || ''} ${globalUserData[4] || ''}`.trim();
+            document.getElementById('welcomeText').innerText = `ยินดีต้อนรับ, ${name}`;
         }
 
         loginModalInstance.hide();
-        document.getElementById('reqEmpId').value = userData[0];
-        document.getElementById('reqName').value = applicantName;
-        document.getElementById('reqEmail').value = reqEmail;
-        
-        let isErrorApprover = !appEmpId || appEmpId.includes("หาหน่วยงานไม่เจอ") || appEmpId.includes("ไม่พบข้อมูล");
-        if (isErrorApprover) {
-            document.getElementById('appEmpId').value = '-';
-            document.getElementById('appName').value = 'ไม่มีข้อมูลผู้อนุมัติในสายงาน (ติดต่อส่วนกลาง)';
-            document.getElementById('appPosition').value = '-';
-            document.getElementById('appEmail').innerText = '-';
-        } else {
-            document.getElementById('appEmpId').value = appEmpId;
-            document.getElementById('appName').value = appName;
-            document.getElementById('appPosition').value = appPosition || '-';
-            document.getElementById('appEmail').innerText = appEmail || '-';
-        }
-
-        if (currentSelectedForm === 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ') {
-            approverSectionTitle.style.display = 'none';
-            approverSectionContent.style.display = 'none';
-            dynamicSectionTitle.innerHTML = '<i class="bi bi-2-circle-fill me-2"></i>ส่วนที่ 2: รายละเอียดการแจ้งปัญหา';
-        } else {
-            approverSectionTitle.style.display = 'block';
-            approverSectionContent.style.display = 'flex';
-            approverSectionTitle.innerHTML = currentLoginType === 'staff' ? '<i class="bi bi-2-circle-fill me-2"></i>ส่วนที่ 2: ข้อมูลผู้มีอำนาจอนุมัติ (สายงานบุคลากร)' : '<i class="bi bi-2-circle-fill me-2"></i>ส่วนที่ 2: ข้อมูลผู้อนุมัติ (ส่วนงานวิชาการ/อาจารย์/คณบดี)';
-            dynamicSectionTitle.innerHTML = '<i class="bi bi-3-circle-fill me-2"></i>ส่วนที่ 3: รายละเอียดคำขอ';
-        }
-
-        renderDynamicForm(currentSelectedForm, 'dynamicFormSection');
-        switchView('formContentView');
-
-        if (currentSelectedForm === 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ' && currentLoginType === 'student') {
-            setTimeout(() => { modlinkModalInstance.show(); }, 500); 
-        }
-        if(currentSelectedForm === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') { setTimeout(initContractDropdowns, 100); }
+        switchView('homeView');
     }
 
-    // =========================================================
-    // ฟังก์ชันสร้างแบบฟอร์ม (Section 3) แบบ Dynamic พร้อมคืนค่ากล่องเงื่อนไข + ID สำหรับ Summary
-    // =========================================================
+    function updateMenuVisibility() {
+        const allItems = document.querySelectorAll('.menu-item');
+        allItems.forEach(item => item.style.display = 'block');
+
+        if (currentLoginType === 'student' || currentLoginType === 'staff') {
+            document.getElementById('menu-contract-area').style.display = 'none';
+        } else if (currentLoginType === 'external') {
+            document.getElementById('menu-contract-area').style.display = 'none';
+            document.getElementById('menu-monthly').style.display = 'none';
+            document.getElementById('menu-edit-plate').style.display = 'none';
+        }
+    }
+
+    function selectForm(formName) {
+        currentSelectedForm = formName;
+        
+        if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์' && currentLoginType === 'staff') {
+            window.open('https://app.ibgm.cloud/', '_blank');
+            return; 
+        }
+        
+        if (formName === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') {
+            document.getElementById('externalFormHeaderTitle').innerText = formName + " (บุคคลภายนอก)";
+            renderDynamicForm(formName, 'dynamicExternalFormSection');
+            switchView('externalFormView');
+            setTimeout(initContractDropdowns, 100);
+            return;
+        }
+
+        if (currentLoginType === 'external') {
+            document.getElementById('externalFormHeaderTitle').innerText = formName + " (บุคคลภายนอก)";
+            renderDynamicForm(formName, 'dynamicExternalFormSection');
+            switchView('externalFormView');
+        } else {
+            document.getElementById('formHeaderTitle').innerText = formName;
+            fillInternalData(formName);
+            renderDynamicForm(formName, 'dynamicFormSection');
+            switchView('formContentView');
+
+            if (formName === 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ' && currentLoginType === 'student') {
+                setTimeout(() => { modlinkModalInstance.show(); }, 500); 
+            }
+        }
+    }
+
+    function fillInternalData(formName) {
+        if(!globalUserData) return;
+        const d = globalUserData;
+        const isStaff = currentLoginType === 'staff';
+
+        document.getElementById('divReqId').style.display = isStaff ? 'none' : 'block';
+        document.getElementById('divReqPosition').style.display = isStaff ? 'block' : 'none';
+        document.getElementById('divReqDeptCode').style.display = isStaff ? 'block' : 'none';
+        document.getElementById('divReqInternalPhone').style.display = isStaff ? 'block' : 'none';
+        document.getElementById('divReqStatus').style.display = isStaff ? 'none' : 'block';
+        document.getElementById('divReqFaculty').style.display = isStaff ? 'none' : 'block';
+        document.getElementById('divReqMajor').style.display = isStaff ? 'none' : 'block';
+
+        document.getElementById('reqEmpId').value = d[0];
+        document.getElementById('reqEmail').value = isStaff ? d[6] : d[7];
+
+        if (isStaff) {
+            document.getElementById('reqName').value = `${d[2] || ''}${d[3] || ''} ${d[4] || ''}`.trim();
+            document.getElementById('reqPosition').value = d[5] || '-';
+            document.getElementById('reqDeptCode').value = d[8] || '-'; 
+            document.getElementById('reqInternalPhone').value = d[7] || '-'; 
+            setApprover(d[9], `${d[10] || ''}${d[11] || ''} ${d[12] || ''}`.trim(), d[14], d[13]);
+        } else {
+            let title = (d[2] === "หญิง") ? "นางสาว" : (d[2] === "ชาย" ? "นาย" : "");
+            document.getElementById('reqName').value = `${title}${d[3] || ''} ${d[4] || ''}`.trim();
+            document.getElementById('reqStatus').value = d[8] || '-';
+            document.getElementById('reqFaculty').value = d[5] || '-';
+            document.getElementById('reqMajor').value = d[6] || '-';
+        }
+
+        const hideApprover = (formName === 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ') || (!isStaff);
+        document.getElementById('approverSectionTitle').style.display = hideApprover ? 'none' : 'block';
+        document.getElementById('approverSectionContent').style.display = hideApprover ? 'none' : 'flex';
+        
+        if(!hideApprover) {
+            document.getElementById('approverSectionTitle').innerHTML = '<i class="bi bi-2-circle-fill me-2"></i>ส่วนที่ 2: ข้อมูลผู้มีอำนาจอนุมัติ (สายงานบุคลากร)';
+        }
+        document.getElementById('dynamicSectionTitle').innerHTML = hideApprover ? '<i class="bi bi-2-circle-fill me-2"></i>ส่วนที่ 2: รายละเอียดคำขอ' : '<i class="bi bi-3-circle-fill me-2"></i>ส่วนที่ 3: รายละเอียดคำขอ';
+    }
+
+    function setApprover(id, name, pos, email) {
+        const isErr = !id || id.includes("หาหน่วยงานไม่เจอ") || id.includes("ไม่พบข้อมูล");
+        document.getElementById('appName').value = isErr ? 'ไม่มีข้อมูลผู้อนุมัติในสายงาน (ติดต่อส่วนกลาง)' : name;
+        document.getElementById('appPosition').value = isErr ? '-' : pos;
+        document.getElementById('appEmail').innerText = isErr ? '-' : email;
+        document.getElementById('appEmail').className = isErr ? "text-danger fw-bold border-bottom border-danger" : "text-dark fw-bold border-bottom border-ci-yellow";
+    }
+
     function renderDynamicForm(formName, targetContainerId) {
         const container = document.getElementById(targetContainerId);
         container.innerHTML = ""; 
@@ -507,13 +579,50 @@
 
         switch (formName) {
             case 'แบบฟอร์มขอจอดรถรายเดือน':
+                let monthlyForOtherHTML = "";
+                if (currentLoginType === 'staff') {
+                    monthlyForOtherHTML = `
+                        <div class="col-md-12 mb-2">
+                            <label class="form-label text-ci-bluegrey fw-bold small">ผู้ใช้บริการจริง <span class="req-star">*</span></label>
+                            <div class="d-flex flex-wrap gap-4 align-items-center">
+                                <div class="form-check">
+                                    <input class="form-check-input border-ci-bluegrey" type="radio" name="monthlyForWho" id="monthlyForMe" value="ตนเอง" checked onchange="toggleMonthlyForOther()">
+                                    <label class="form-check-label" for="monthlyForMe">ขอให้ตนเอง</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input border-ci-bluegrey" type="radio" name="monthlyForWho" id="monthlyForOther" value="ผู้อื่น" onchange="toggleMonthlyForOther()">
+                                    <label class="form-check-label" for="monthlyForOther">ขอให้ผู้อื่น</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-12" id="divMonthlyOtherDetails" style="display:none;">
+                            <div class="p-3 bg-light rounded border border-light shadow-sm mb-3" style="border-left: 4px solid var(--ci-orange) !important;">
+                                <label class="form-label fw-bold text-ci-orange small mb-3">ระบุข้อมูลผู้ใช้บริการจริง</label>
+                                <div class="row g-3">
+                                    <div class="col-md-12">
+                                        <label class="form-label text-ci-bluegrey fw-bold small">ชื่อ-สกุล <span class="req-star">*</span></label>
+                                        <input type="text" class="form-control" id="monthlyOtherName" placeholder="ระบุชื่อ-สกุล ผู้ใช้บริการจริง">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label text-ci-bluegrey fw-bold small">เบอร์โทรศัพท์ <span class="req-star">*</span></label>
+                                        <input type="tel" class="form-control" id="monthlyOtherPhone" placeholder="08X-XXX-XXXX">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label text-ci-bluegrey fw-bold small">อีเมล <span class="req-star">*</span></label>
+                                        <input type="email" class="form-control" id="monthlyOtherEmail" placeholder="example@domain.com">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 formHTML = `
                     <div class="row g-3 text-start">
-                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ข้อมูลรถ <span class="req-star">*</span></label><input type="text" class="form-control" placeholder="ระบุเลขทะเบียนรถยนต์" id="in_monthly_plate"></div>
+                        ${monthlyForOtherHTML}
+                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ข้อมูลรถ <span class="req-star">*</span></label><input type="text" class="form-control" placeholder="เช่น 1กข2345 (ไม่ต้องเว้นวรรค และไม่ต้องระบุจังหวัด)" id="in_monthly_plate"></div>
                         <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control" id="parkingStartDate" onchange="calculateEndDate()"></div>
                         <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด (คำนวณอัตโนมัติ 1 เดือน)</label><input type="text" class="form-control bg-light text-dark fw-bold" id="parkingEndDate" readonly placeholder="DD/MM/YYYY"></div>
-                        <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">แนบสำเนาสัญญาจ้าง <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png" id="in_monthly_file1"></div>
-                        <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">แนบสลิป QR code (จอดรถรายเดือน) <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".jpg, .png" id="in_monthly_file2"></div>
                         
                         <div class="col-12 mt-4">
                             <div class="alert small mb-2 border-0 rounded bg-light" style="border-left: 4px solid var(--ci-yellow) !important;">
@@ -537,7 +646,7 @@
             case 'แบบฟอร์มขอจอดรถค้างคืน':
                 formHTML = `
                     <div class="row g-3 text-start">
-                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ข้อมูลรถ <span class="req-star">*</span></label><input type="text" class="form-control" id="in_overnight_plate" placeholder="ระบุเลขทะเบียนรถยนต์"></div>
+                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ข้อมูลรถ <span class="req-star">*</span></label><input type="text" class="form-control" id="in_overnight_plate" placeholder="เช่น 1กข2345 (ไม่ต้องเว้นวรรค และไม่ต้องระบุจังหวัด)"></div>
                         <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control" id="overnightStartDate" onchange="calculateDuration('overnightStartDate', 'overnightEndDate', 'overnightTotalDays', 'nights')"></div>
                         <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด <span class="req-star">*</span></label><input type="date" class="form-control" id="overnightEndDate" onchange="calculateDuration('overnightStartDate', 'overnightEndDate', 'overnightTotalDays', 'nights')"></div>
                         <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">จำนวนคืน</label><div class="input-group"><input type="text" class="form-control bg-light text-dark fw-bold text-center" id="overnightTotalDays" readonly value="0"><span class="input-group-text bg-white border-light text-ci-bluegrey">คืน</span></div></div>
@@ -566,12 +675,11 @@
             case 'แบบฟอร์มขอใช้ตราประทับ':
                 formHTML = `
                     <div class="row g-3 text-start">
-                        <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ข้อมูลรถ <span class="req-star">*</span></label><input type="text" class="form-control" id="in_stamp_plate" placeholder="ระบุเลขทะเบียนรถยนต์"></div>
-                        <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ประเภทผู้ใช้ตราประทับ <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="in_stamp_type"><option value="" selected disabled>-- กรุณาระบุประเภท --</option><option value="วิทยากร">วิทยากร</option><option value="ผู้เข้าอบรม">ผู้เข้าอบรม</option><option value="โครงการ/สัมมนา">โครงการ/สัมมนา</option><option value="อื่นๆ">อื่นๆ</option></select></div>
+                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ประเภทผู้ใช้ตราประทับ <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="in_stamp_type" onchange="toggleStampOther(this)"><option value="" selected disabled>-- กรุณาระบุประเภท --</option><option value="วิทยากร">วิทยากร</option><option value="ผู้เข้าร่วมอบรม/ผู้เข้าร่วมกิจกรรม/ผู้เข้าร่วมงาน">ผู้เข้าร่วมอบรม/ผู้เข้าร่วมกิจกรรม/ผู้เข้าร่วมงาน</option><option value="โครงการ/อบรม/สัมมนา">โครงการ/อบรม/สัมมนา</option><option value="อื่นๆ">อื่น ๆ</option></select><input type="text" id="in_stamp_other" class="form-control mt-2 border-light shadow-sm" style="display:none;" placeholder="โปรดระบุประเภทผู้ใช้ตราประทับ"></div>
                         <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control" id="stampStartDate" onchange="calculateDuration('stampStartDate', 'stampEndDate', 'stampTotalDays', 'days')"></div>
                         <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด <span class="req-star">*</span></label><input type="date" class="form-control" id="stampEndDate" onchange="calculateDuration('stampStartDate', 'stampEndDate', 'stampTotalDays', 'days')"></div>
                         <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">จำนวนวัน</label><div class="input-group"><input type="text" class="form-control bg-light text-dark fw-bold text-center" id="stampTotalDays" readonly value="0"><span class="input-group-text bg-white border-light text-ci-bluegrey">วัน</span></div></div>
-                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">แนบรายละเอียดโครงการ/อบรม/สัมมนา <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
+                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">แนบรายละเอียดเอกสาร <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
                         
                         <div class="col-12 mt-4">
                             <div class="alert small mb-2 border-0 rounded bg-light" style="border-left: 4px solid var(--ci-yellow) !important;">
@@ -592,15 +700,15 @@
                     </div>`;
                 break;
 
-            case 'แบบฟอร์มขอแก้ไขทะเบียนรถ':
+            case 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์':
                 formHTML = `
                     <div class="row g-3 text-start">
                         <div class="col-12">
-                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-white text-ci-bluegrey border-light fw-bold" style="width: 75px;">คันที่ 1</span><input type="text" class="form-control fw-bold text-ci-orange border-light" value="1กข 1234 กรุงเทพมหานคร" id="plate1"><button class="btn btn-outline-danger border-light" type="button" onclick="clearPlate('plate1')"><i class="bi bi-trash-fill"></i></button></div>
-                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-white text-ci-bluegrey border-light fw-bold" style="width: 75px;">คันที่ 2</span><input type="text" class="form-control fw-bold text-ci-orange border-light" value="2ขค 5678 ชลบุรี" id="plate2"><button class="btn btn-outline-danger border-light" type="button" onclick="clearPlate('plate2')"><i class="bi bi-trash-fill"></i></button></div>
-                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-light text-muted border-light" style="width: 75px;">คันที่ 3</span><input type="text" class="form-control border-light" id="plate3" placeholder="ระบุทะเบียนรถยนต์ (เพิ่มคันใหม่)"></div>
-                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-light text-muted border-light" style="width: 75px;">คันที่ 4</span><input type="text" class="form-control border-light" id="plate4" placeholder="ระบุทะเบียนรถยนต์ (ว่าง)"></div>
-                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-light text-muted border-light" style="width: 75px;">คันที่ 5</span><input type="text" class="form-control border-light" id="plate5" placeholder="ระบุทะเบียนรถยนต์ (ว่าง)"></div>
+                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-white text-ci-bluegrey border-light fw-bold" style="width: 75px;">คันที่ 1</span><input type="text" class="form-control fw-bold text-ci-orange border-light" value="1กข1234" id="plate1" placeholder="เช่น 1กข2345 (ไม่ต้องเว้นวรรค)"><button class="btn btn-outline-danger border-light" type="button" onclick="clearPlate('plate1')"><i class="bi bi-trash-fill"></i></button></div>
+                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-white text-ci-bluegrey border-light fw-bold" style="width: 75px;">คันที่ 2</span><input type="text" class="form-control fw-bold text-ci-orange border-light" value="2ขค5678" id="plate2" placeholder="เช่น 1กข2345 (ไม่ต้องเว้นวรรค)"><button class="btn btn-outline-danger border-light" type="button" onclick="clearPlate('plate2')"><i class="bi bi-trash-fill"></i></button></div>
+                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-light text-muted border-light" style="width: 75px;">คันที่ 3</span><input type="text" class="form-control border-light" id="plate3" placeholder="เช่น 1กข2345 (เพิ่มคันใหม่)"><button class="btn btn-outline-danger border-light" type="button" onclick="clearPlate('plate3')"><i class="bi bi-trash-fill"></i></button></div>
+                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-light text-muted border-light" style="width: 75px;">คันที่ 4</span><input type="text" class="form-control border-light" id="plate4" placeholder="เช่น 1กข2345 (ว่าง)"><button class="btn btn-outline-danger border-light" type="button" onclick="clearPlate('plate4')"><i class="bi bi-trash-fill"></i></button></div>
+                            <div class="input-group mb-2 shadow-sm"><span class="input-group-text bg-light text-muted border-light" style="width: 75px;">คันที่ 5</span><input type="text" class="form-control border-light" id="plate5" placeholder="เช่น 1กข2345 (ว่าง)"><button class="btn btn-outline-danger border-light" type="button" onclick="clearPlate('plate5')"><i class="bi bi-trash-fill"></i></button></div>
                         </div>
                         
                         <div class="col-12 mt-4">
@@ -623,22 +731,17 @@
                 formHTML = `
                     <div class="row g-3 text-start">
                         <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ชื่อกิจกรรม <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="in_area_event"></div>
+                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ทะเบียนรถยนต์ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="text" class="form-control border-light shadow-sm" id="in_area_plate" placeholder="เช่น 1กข2345 (ไม่ต้องเว้นวรรค)"></div>
                         <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="areaStartDate"></div>
                         <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="areaEndDate"></div>
                         <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">วัตถุประสงค์ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj1" value="ประชาสัมพันธ์"><label class="form-check-label" for="obj1">ประชาสัมพันธ์</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj2" value="แจกผลิตภัณฑ์"><label class="form-check-label" for="obj2">แจกผลิตภัณฑ์</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj3" value="อื่นๆ" onchange="toggleOtherInput('obj3', 'objOtherText')"><label class="form-check-label text-nowrap" for="obj3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="objOtherText" placeholder="โปรดระบุ" disabled></div></div>
                         <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">สถานที่ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc1" value="อาคารจอดรถ 1 (S2)"><label class="form-check-label" for="loc1">อาคารจอดรถ 1 (S2)</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc2" value="โรงอาหาร (S14)"><label class="form-check-label" for="loc2">โรงอาหาร (S14)</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc3" value="อื่นๆ" onchange="toggleOtherInput('loc3', 'locOtherText')"><label class="form-check-label text-nowrap" for="loc3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="locOtherText" placeholder="โปรดระบุสถานที่" disabled></div></div>
+                        
+                        <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">แนบรายละเอียดกิจกรรม <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
+                        <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">แนบไฟล์เพิ่มเติม <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
+                        <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">ข้อความเสนอพิจารณา</label><textarea class="form-control border-light shadow-sm" rows="3" placeholder="ระบุรายละเอียดเพิ่มเติม..."></textarea></div>
                         <div class="col-12 mt-4">
-                            <div class="alert small mb-2 border-0 rounded bg-light" style="border-left: 4px solid var(--ci-yellow) !important;">
-                                <strong class="text-ci-orange"><i class="bi bi-info-circle-fill me-1 text-ci-yellow"></i> เงื่อนไข การขอเข้าพื้นที่:</strong><br>
-                                <p class="mb-1 mt-1 text-dark">กรุณาศึกษาและปฏิบัติตามกฎระเบียบของมหาวิทยาลัยอย่างเคร่งครัด</p>
-                                <a href="https://bpuu.kmutt.ac.th/wp-content/uploads/2020/02/%E0%B8%9B%E0%B8%A3%E0%B8%B0%E0%B8%81%E0%B8%B2%E0%B8%A8-%E0%B9%80%E0%B8%A3%E0%B8%B7%E0%B9%88%E0%B8%AD%E0%B8%87%E0%B8%A3%E0%B8%B0%E0%B9%80%E0%B8%9A%E0%B8%B5%E0%B8%A2%E0%B8%9A%E0%B8%81%E0%B8%B2%E0%B8%A3%E0%B9%83%E0%B8%8A%E0%B9%89%E0%B8%AA%E0%B8%96%E0%B8%B2%E0%B8%99%E0%B8%97%E0%B8%B5%E0%B9%88.pdf" target="_blank" class="fw-bold text-decoration-none text-ci-bluegrey">
-                                    <i class="bi bi-file-earmark-pdf-fill text-ci-orange"></i> คลิกเพื่ออ่านประกาศฯ เรื่องอัตราค่าบำรุงการใช้สถานที่ พ.ศ. 2549
-                                </a>
-                            </div>
-                        </div>
-
-                        <div class="col-12 mt-4">
-                            <div class="form-check mt-3">
+                            <div class="form-check">
                                 <input class="form-check-input border-ci-bluegrey" type="checkbox" id="consentCheck">
                                 <label class="form-check-label fw-bold text-dark" for="consentCheck">รับทราบและตกลงให้ความยินยอม (Consent)</label>
                             </div>
@@ -649,7 +752,7 @@
             case 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา':
                 formHTML = `
                     <div class="row g-3 text-start">
-                        <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ทะเบียนรถยนต์ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="text" class="form-control border-light shadow-sm" id="in_contract_plate"></div>
+                        <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ทะเบียนรถยนต์ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="text" class="form-control border-light shadow-sm" id="in_contract_plate" placeholder="เช่น 1กข2345"></div>
                         <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เข้าพื้นที่ <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="in_contract_date"></div>
                         <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">ตั้งแต่เวลา <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="in_contract_time_start"></div>
                         <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">ถึงเวลา <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="in_contract_time_end"></div>
@@ -658,6 +761,25 @@
                         <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">2. ประเภทธุรกิจ <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="contractBusinessType" onchange="onBusinessTypeChange()" disabled><option value="" selected disabled>-- เลือกประเภทธุรกิจ --</option></select></div>
                         <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">3. พื้นที่การศึกษา <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="contractCampus" onchange="onCampusChange()" disabled><option value="" selected disabled>-- เลือกพื้นที่การศึกษา --</option></select></div>
                         <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">4. อาคาร <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="contractBuilding" disabled><option value="" selected disabled>-- เลือกอาคาร --</option></select></div>
+
+                        <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">ข้อความเสนอพิจารณา</label><textarea class="form-control border-light shadow-sm" rows="3" placeholder="ระบุรายละเอียด หรือเหตุผลการเข้าพื้นที่..."></textarea></div>
+                        
+                        <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">เอกสารแนบ <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
+                        <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">แนบไฟล์แจ้งปัญหาการใช้บริการ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
+                        <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">แนบไฟล์อื่นๆ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
+
+                        <div class="col-12 mt-4">
+                            <div class="alert small mb-2 border-0 rounded bg-light" style="border-left: 4px solid var(--ci-yellow) !important;">
+                                <strong class="text-ci-orange"><i class="bi bi-info-circle-fill me-1 text-ci-yellow"></i> เงื่อนไข การขอเข้าพื้นที่:</strong><br>
+                                <p class="mb-1 mt-1 text-dark">กรุณาศึกษาและปฏิบัติตามกฎระเบียบของมหาวิทยาลัยอย่างเคร่งครัด</p>
+                                <a href="https://bpuu.kmutt.ac.th/wp-content/uploads/2020/02/%E0%B8%9B%E0%B8%A3%E0%B8%B0%E0%B8%81%E0%B8%B2%E0%B8%A8-%E0%B9%80%E0%B8%A3%E0%B8%B7%E0%B9%88%E0%B8%AD%E0%B8%87%E0%B8%A3%E0%B8%B0%E0%B9%80%E0%B8%9A%E0%B8%B5%E0%B8%A2%E0%B8%9A%E0%B8%81%E0%B8%B2%E0%B8%A3%E0%B9%83%E0%B8%8A%E0%B9%89%E0%B8%AA%E0%B8%96%E0%B8%B2%E0%B8%99%E0%B8%97%E0%B8%B5%E0%B9%88.pdf" target="_blank" class="fw-bold text-decoration-none text-ci-bluegrey">
+                                    <i class="bi bi-file-earmark-pdf-fill text-ci-orange"></i> คลิกเพื่ออ่านประกาศฯ เรื่องอัตราค่าบำรุงการใช้สถานที่ พ.ศ. 2549
+                                </a>
+                            </div>
+                            <div class="form-check mt-3">
+                                <input class="form-check-input border-ci-bluegrey" type="checkbox" id="consentCheck">
+                                <label class="form-check-label fw-bold text-dark" for="consentCheck">รับทราบและตกลงให้ความยินยอม (Consent)</label>
+                            </div>
                         </div>
                     </div>`;
                 break;
@@ -665,8 +787,9 @@
             case 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ':
                 formHTML = `
                     <div class="row g-3 text-start">
-                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">เลือกกลุ่มของปัญหาที่แจ้ง <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="issueCategory"><option value="" selected disabled>-- กรุณาเลือกสถานที่/กลุ่มปัญหา --</option><option value="ตลาดนัด">ตลาดนัด</option><option value="โรงอาหาร">โรงอาหาร</option><option value="อาคารจอดรถ">อาคารจอดรถ</option></select></div>
+                        <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">เลือกกลุ่มของปัญหาที่แจ้ง <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="issueCategory"><option value="" selected disabled>-- กรุณาเลือกสถานที่/กลุ่มปัญหา --</option><option value="ตลาดนัด">ตลาดนัด</option><option value="โรงอาหาร">โรงอาหาร</option><option value="อาคารจอดรถ">อาคารจอดรถ</option><option value="อื่นๆ">อื่นๆ</option></select></div>
                         <div class="col-md-12 mt-3"><label class="form-label text-ci-bluegrey fw-bold small">รายละเอียดปัญหาที่พบ <span class="req-star">*</span></label><textarea class="form-control border-light shadow-sm" id="issueDetail" rows="4"></textarea></div>
+                        <div class="col-md-12 mt-3"><label class="form-label text-ci-bluegrey fw-bold small">แนบรูปภาพ หรือ เอกสารเพิ่มเติม <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="file" class="form-control border-light shadow-sm" accept="image/*,.pdf,.mp4"></div>
                         <input type="hidden" id="consentCheck" value="checked"> 
                     </div>`;
                 break;
@@ -674,11 +797,9 @@
         container.innerHTML = formHTML;
     }
 
-
     // =========================================================
     // Flow การ Submit ข้อมูล (Preview & Confirm)
     // =========================================================
-
     function showSummaryModal() {
         const consent = document.getElementById('consentCheck');
         if (consent && consent.type === 'checkbox' && !consent.checked) {
@@ -693,31 +814,48 @@
             }
         };
 
-        // ข้อมูลผู้ติดต่อ
         html += `<h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-2">ข้อมูลผู้ติดต่อ</h6>`;
-        if (currentLoginType === 'staff' || currentLoginType === 'student') {
-            addRow('ประเภท', currentLoginType === 'staff' ? 'บุคลากรภายใน' : 'นักศึกษา');
+        if (currentLoginType === 'staff') {
+            addRow('ประเภท', 'บุคลากร');
+            addRow('ชื่อ-สกุล', document.getElementById('reqName').value);
+            addRow('ตำแหน่ง', document.getElementById('reqPosition').value);
+            addRow('ชื่อหน่วยงาน', document.getElementById('reqDeptCode').value);
+            addRow('เบอร์โทรภายใน', document.getElementById('reqInternalPhone').value);
+            addRow('อีเมล', document.getElementById('reqEmail').value);
+            addRow('เบอร์โทรมือถือ', document.getElementById('reqPhone').value || '-');
+        } else if (currentLoginType === 'student') {
+            addRow('ประเภท', 'นักศึกษา');
             addRow('รหัสประจำตัว', document.getElementById('reqEmpId').value);
             addRow('ชื่อ-สกุล', document.getElementById('reqName').value);
-            if(currentLoginType === 'staff') addRow('ตำแหน่ง', document.getElementById('reqPosition').value);
-            if(currentLoginType === 'student') {
-                addRow('สถานภาพ', document.getElementById('reqStatus').value);
-                addRow('คณะ/สังกัด', document.getElementById('reqFaculty').value);
-            }
+            addRow('สถานภาพ', document.getElementById('reqStatus').value);
+            addRow('คณะ/สังกัด', document.getElementById('reqFaculty').value);
             addRow('อีเมล', document.getElementById('reqEmail').value);
             addRow('เบอร์โทร', document.getElementById('reqPhone').value || '-');
         } else {
-            addRow('ประเภท', 'บุคคลภายนอก (คู่สัญญา)');
+            let extType = "";
+            if(document.getElementById('extType1')?.checked) extType = "ผู้ปกครอง";
+            if(document.getElementById('extType2')?.checked) extType = "คู่สัญญา";
+            if(document.getElementById('extType3')?.checked) extType = document.getElementById('extTypeOther').value || "อื่นๆ";
+            
+            addRow('ประเภทผู้ขอ', extType);
             addRow('ชื่อ-สกุล', document.getElementById('extFname').value + ' ' + document.getElementById('extLname').value);
             addRow('หน่วยงาน/บริษัท', document.getElementById('extCompany').value);
             addRow('เบอร์โทร', document.getElementById('extPhone').value);
             addRow('อีเมล', document.getElementById('extEmail').value);
         }
 
-        // ข้อมูลฟอร์มหลัก (Section 3)
         html += `</ul><h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-3">รายละเอียดคำขอ</h6><ul class="list-group list-group-flush small">`;
         
         if (currentSelectedForm === 'แบบฟอร์มขอจอดรถรายเดือน') {
+            if (currentLoginType === 'staff') {
+                const isOther = document.getElementById('monthlyForOther')?.checked;
+                addRow('ผู้ใช้บริการจริง', isOther ? 'ขอให้ผู้อื่น' : 'ตนเอง');
+                if (isOther) {
+                    addRow('ชื่อ-สกุล (ผู้ใช้จริง)', document.getElementById('monthlyOtherName')?.value);
+                    addRow('เบอร์โทร (ผู้ใช้จริง)', document.getElementById('monthlyOtherPhone')?.value);
+                    addRow('อีเมล (ผู้ใช้จริง)', document.getElementById('monthlyOtherEmail')?.value);
+                }
+            }
             addRow('ทะเบียนรถ', document.getElementById('in_monthly_plate')?.value);
             addRow('วันที่เริ่มต้น', document.getElementById('parkingStartDate')?.value);
             addRow('วันที่สิ้นสุด', document.getElementById('parkingEndDate')?.value);
@@ -731,18 +869,20 @@
             addRow('เหตุผล', sel ? sel.options[sel.selectedIndex]?.text : "");
         }
         else if (currentSelectedForm === 'แบบฟอร์มขอใช้ตราประทับ') {
-            addRow('ทะเบียนรถ', document.getElementById('in_stamp_plate')?.value);
             let sel = document.getElementById('in_stamp_type');
-            addRow('ประเภทผู้ใช้ตราประทับ', sel ? sel.options[sel.selectedIndex]?.text : "");
+            let stampType = sel ? sel.options[sel.selectedIndex]?.text : "";
+            if(stampType === "อื่น ๆ" || stampType === "อื่นๆ") stampType = document.getElementById('in_stamp_other')?.value || "อื่นๆ";
+            addRow('ประเภทผู้ใช้ตราประทับ', stampType);
             addRow('วันที่เริ่มต้น', document.getElementById('stampStartDate')?.value);
             addRow('วันที่สิ้นสุด', document.getElementById('stampEndDate')?.value);
             addRow('จำนวนวัน', document.getElementById('stampTotalDays')?.value);
         }
-        else if (currentSelectedForm === 'แบบฟอร์มขอแก้ไขทะเบียนรถ') {
+        else if (currentSelectedForm === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์') {
             for(let i=1; i<=5; i++) { addRow(`ทะเบียนคันที่ ${i}`, document.getElementById(`plate${i}`)?.value); }
         }
         else if (currentSelectedForm === 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว') {
             addRow('ชื่อกิจกรรม', document.getElementById('in_area_event')?.value);
+            addRow('ทะเบียนรถ', document.getElementById('in_area_plate')?.value);
             addRow('วันที่เริ่มต้น', document.getElementById('areaStartDate')?.value);
             addRow('วันที่สิ้นสุด', document.getElementById('areaEndDate')?.value);
             let objs = []; if(document.getElementById('obj1')?.checked) objs.push('ประชาสัมพันธ์'); if(document.getElementById('obj2')?.checked) objs.push('แจกผลิตภัณฑ์'); if(document.getElementById('obj3')?.checked) objs.push(document.getElementById('objOtherText')?.value || 'อื่นๆ');
@@ -766,11 +906,10 @@
 
         html += `</ul>`;
 
-        // ข้อมูลผู้อนุมัติ
-        if (currentSelectedForm !== 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ' && currentLoginType !== 'external') {
+        // โชว์ผู้อนุมัติเฉพาะถ้าไม่ใช่ฟอร์มแจ้งปัญหา และเฉพาะบุคลากร (Staff) เท่านั้น
+        if (currentSelectedForm !== 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ' && currentLoginType === 'staff') {
             html += `<h6 class="fw-bold text-ci-bluegrey border-bottom border-light pb-2 mt-3">ผู้มีอำนาจอนุมัติ</h6><ul class="list-group list-group-flush small">`;
             addRow('ชื่อผู้อนุมัติ', document.getElementById('appName').value);
-            addRow('อีเมล', document.getElementById('appEmail').innerText);
             html += `</ul>`;
         }
 
@@ -783,7 +922,7 @@
         successModalInstance.show();
         setTimeout(() => {
             successModalInstance.hide();
-            goHome();
+            goHome(); 
         }, 2000);
     }
 
@@ -884,6 +1023,17 @@
         else { detailDiv.style.display = 'none'; }
     };
 
+    window.toggleStampOther = function(sel) {
+        const otherInput = document.getElementById('in_stamp_other');
+        if(sel.value === 'อื่นๆ') {
+            otherInput.style.display = 'block';
+            otherInput.focus();
+        } else {
+            otherInput.style.display = 'none';
+            otherInput.value = '';
+        }
+    };
+
     window.clearPlate = function(inputId) {
         document.getElementById(inputId).value = "";
         document.getElementById(inputId).focus();
@@ -898,6 +1048,14 @@
         } else {
             input.disabled = true;
             input.value = "";
+        }
+    };
+
+    window.toggleMonthlyForOther = function() {
+        const isOther = document.getElementById('monthlyForOther')?.checked;
+        const divDetails = document.getElementById('divMonthlyOtherDetails');
+        if (divDetails) {
+            divDetails.style.display = isOther ? 'block' : 'none';
         }
     };
 
