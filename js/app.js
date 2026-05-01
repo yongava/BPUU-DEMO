@@ -1,7 +1,8 @@
 const STAFF_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRzYO0Kyv2yxDlo40zJ06bkb3Vh70X_HZj5gowDC_wHjCF2LxoaCu4CFLkBzd6j2Q4Do_3-ntiipx3-/pub?gid=955988221&single=true&output=csv";
 const STUDENT_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRzYO0Kyv2yxDlo40zJ06bkb3Vh70X_HZj5gowDC_wHjCF2LxoaCu4CFLkBzd6j2Q4Do_3-ntiipx3-/pub?gid=32041089&single=true&output=csv";
 const CONTRACT_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRzYO0Kyv2yxDlo40zJ06bkb3Vh70X_HZj5gowDC_wHjCF2LxoaCu4CFLkBzd6j2Q4Do_3-ntiipx3-/pub?gid=1831450496&single=true&output=csv";
-const JOTFORM_FORM_URL = "https://form.jotform.com/261200763585052";
+const JOTFORM_FORM_ID = "261200763585052";
+const JOTFORM_SUBMIT_URL = `https://submit.jotform.com/submit/${JOTFORM_FORM_ID}`;
 
 let currentSelectedForm = "";
 let loginModalInstance = null;
@@ -747,9 +748,12 @@ function formatPhoneForJotform(value) {
     return value || '';
 }
 
-function appendJotformParam(params, key, value) {
-    const normalized = (value || '').trim();
-    if (normalized) params.set(key, normalized);
+function appendHiddenField(form, name, value) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value || '';
+    form.appendChild(input);
 }
 
 function getRequesterDataForJotform() {
@@ -797,37 +801,109 @@ function getRequesterDataForJotform() {
     };
 }
 
-function buildJotformPrefillUrl() {
+function buildJotformSubmissionFields() {
     const requester = getRequesterDataForJotform();
     const approverEmail = getTextValue('appEmail');
     const summaryText = getTextValue('summaryContent');
-    const params = new URLSearchParams();
+    return {
+        q15_input15: currentSelectedForm,
+        q16_input16: JOTFORM_USER_TYPE_VALUES[currentLoginType] || '',
+        q17_input17: getExternalTypeForJotform(),
+        q18_input18: requester.requesterId,
+        q19_input19: requester.requesterName,
+        q20_input20: requester.email,
+        'q21_input21[full]': formatPhoneForJotform(requester.phone),
+        q22_input22: requester.department,
+        q23_input23: requester.position,
+        q24_input24: requester.internalPhone,
+        q25_input25: requester.studentStatus,
+        q26_input26: requester.faculty,
+        q27_input27: requester.major,
+        q28_input28: getInputValue('appName'),
+        q29_input29: getInputValue('appPosition'),
+        q30_input30: approverEmail.includes('@') ? approverEmail : '',
+        q31_input31: 'ใช่',
+        q32_summary: summaryText
+    };
+}
 
-    appendJotformParam(params, 'q15_input15', currentSelectedForm);
-    appendJotformParam(params, 'q16_input16', JOTFORM_USER_TYPE_VALUES[currentLoginType]);
-    appendJotformParam(params, 'q17_input17', getExternalTypeForJotform());
-    appendJotformParam(params, 'q18_input18', requester.requesterId);
-    appendJotformParam(params, 'q19_input19', requester.requesterName);
-    appendJotformParam(params, 'q20_input20', requester.email);
-    appendJotformParam(params, 'q21_input21[full]', formatPhoneForJotform(requester.phone));
-    appendJotformParam(params, 'q22_input22', requester.department);
-    appendJotformParam(params, 'q23_input23', requester.position);
-    appendJotformParam(params, 'q24_input24', requester.internalPhone);
-    appendJotformParam(params, 'q25_input25', requester.studentStatus);
-    appendJotformParam(params, 'q26_input26', requester.faculty);
-    appendJotformParam(params, 'q27_input27', requester.major);
-    appendJotformParam(params, 'q28_input28', getInputValue('appName'));
-    appendJotformParam(params, 'q29_input29', getInputValue('appPosition'));
-    appendJotformParam(params, 'q30_input30', approverEmail.includes('@') ? approverEmail : '');
-    appendJotformParam(params, 'q31_input31', 'ใช่');
-    appendJotformParam(params, 'q32_summary', summaryText);
+function appendSelectedFiles(form) {
+    const fileInputs = [...document.querySelectorAll('.view-section.active input[type="file"]')]
+        .filter(input => input.files && input.files.length > 0);
 
-    return `${JOTFORM_FORM_URL}?${params.toString()}`;
+    fileInputs.forEach(sourceInput => {
+        try {
+            const fileInput = document.createElement('input');
+            const files = new DataTransfer();
+            fileInput.type = 'file';
+            fileInput.name = 'q33_input33[]';
+            fileInput.multiple = true;
+            [...sourceInput.files].forEach(file => files.items.add(file));
+            fileInput.files = files.files;
+            fileInput.style.display = 'none';
+            form.appendChild(fileInput);
+        } catch (error) {
+            sourceInput.name = 'q33_input33[]';
+            sourceInput.style.display = 'none';
+            form.appendChild(sourceInput);
+        }
+    });
+}
+
+function showSubmitSuccess() {
+    successModalInstance.show();
+    setTimeout(() => {
+        successModalInstance.hide();
+        goHome();
+    }, 2000);
+}
+
+function submitToJotform() {
+    document.getElementById('jotformSubmitFrame')?.remove();
+    document.getElementById('jotformDirectSubmitForm')?.remove();
+
+    const iframe = document.createElement('iframe');
+    iframe.name = 'jotformSubmitFrame';
+    iframe.id = 'jotformSubmitFrame';
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+
+    const form = document.createElement('form');
+    form.id = 'jotformDirectSubmitForm';
+    form.action = JOTFORM_SUBMIT_URL;
+    form.method = 'POST';
+    form.enctype = 'multipart/form-data';
+    form.acceptCharset = 'utf-8';
+    form.target = iframe.name;
+    form.style.display = 'none';
+
+    appendHiddenField(form, 'formID', JOTFORM_FORM_ID);
+    appendHiddenField(form, 'simple_spc', `${JOTFORM_FORM_ID}-${JOTFORM_FORM_ID}`);
+    appendHiddenField(form, 'submitSource', 'BPUU-DEMO');
+    appendHiddenField(form, 'submitDate', new Date().toISOString());
+    appendHiddenField(form, 'eventObserver', '1');
+    appendHiddenField(form, 'website', '');
+
+    Object.entries(buildJotformSubmissionFields()).forEach(([name, value]) => {
+        appendHiddenField(form, name, value);
+    });
+    appendSelectedFiles(form);
+
+    let successShown = false;
+    const completeSubmit = () => {
+        if (successShown) return;
+        successShown = true;
+        showSubmitSuccess();
+    };
+    iframe.addEventListener('load', completeSubmit);
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(completeSubmit, 4000);
 }
 
 function confirmSubmitForm() {
     summaryModalInstance.hide();
-    window.location.href = buildJotformPrefillUrl();
+    submitToJotform();
 }
 
 // =========================================================
