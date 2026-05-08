@@ -16,20 +16,62 @@ let studentDatabase = [];
 let contractDatabase = []; 
 let loadedDbs = 0; 
 let globalUserData = null;
+let staffDepartmentLookup = null;
+let staffDepartmentLookupSourceSize = -1;
 
 const OTHER_OVERNIGHT_PARKING_URL = "https://docs.google.com/forms/d/e/1FAIpQLSc0_fqdfSl6Ix0tPu_m8Z7gs7OWd-LXUPO-FLmhTIfv2aWyw/viewform";
 const JOTFORM_USER_TYPE_VALUES = {
-    staff: "staff = บุคลากร",
-    student: "student = นักศึกษา",
-    external: "external = บุคคลภายนอก"
+    staff: "บุคลากร",
+    student: "นักศึกษา",
+    external: "บุคคลภายนอก"
 };
 
 function uniqueNonEmpty(values) {
     return [...new Set(values.map(value => (value || '').trim()).filter(Boolean))];
 }
 
+function buildStaffDepartmentLookup() {
+    if (staffDepartmentLookup && staffDepartmentLookupSourceSize === staffDatabase.length) return staffDepartmentLookup;
+    staffDepartmentLookup = new Map();
+    staffDepartmentLookupSourceSize = staffDatabase.length;
+    staffDatabase.forEach(row => {
+        const code = (row[1] || '').trim();
+        const name = (row[8] || '').trim();
+        if (code && name && !staffDepartmentLookup.has(code)) {
+            staffDepartmentLookup.set(code, name);
+        }
+    });
+    return staffDepartmentLookup;
+}
+
+function getStaffDepartmentCodes(code) {
+    const normalized = (code || '').trim();
+    if (!/^\d{8}$/.test(normalized)) return normalized ? [normalized] : [];
+
+    const l2 = `${normalized.slice(0, 3)}00000`;
+    const l3 = `${normalized.slice(0, 5)}000`;
+
+    if (normalized.endsWith('00000')) return [l2];
+    if (normalized.endsWith('000')) return uniqueNonEmpty([l2, l3]);
+    return uniqueNonEmpty([l2, l3, normalized]);
+}
+
 function getStaffDepartment(data) {
-    return uniqueNonEmpty([data[8], data[15], data[16], data[17]]).join(' / ') || '-';
+    const lookup = buildStaffDepartmentLookup();
+    const currentCode = (data[1] || '').trim();
+    const fallbackName = (data[8] || '').trim();
+    const departmentNames = getStaffDepartmentCodes(currentCode)
+        .map(code => lookup.get(code))
+        .filter(Boolean);
+
+    if (fallbackName && !departmentNames.includes(fallbackName)) {
+        departmentNames.push(fallbackName);
+    }
+
+    if (!departmentNames.length) return '-';
+
+    // Show the hierarchy from the top level to the user's current unit.
+    return uniqueNonEmpty(departmentNames).join('\n');
 }
 
 function shouldHideExternalType(formName) {
@@ -355,6 +397,11 @@ function renderDynamicForm(formName, targetContainerId) {
             const overnightReasonOptions = currentLoginType === 'external'
                 ? '<option value="" selected disabled>-- กรุณาระบุเหตุผล --</option><option value="2">เหตุสุดวิสัย</option><option value="3">อื่น ๆ (ต้องดำเนินการขอจอดล่วงหน้าอย่างน้อย 1 สัปดาห์)</option>'
                 : '<option value="" selected disabled>-- กรุณาระบุเหตุผล --</option><option value="1">กรณีไปราชการ หรือ ปฏิบัติงานของมหาวิทยาลัย</option><option value="2">เหตุสุดวิสัย</option><option value="3">อื่น ๆ (ต้องดำเนินการขอจอดล่วงหน้าอย่างน้อย 1 สัปดาห์)</option>';
+            const overnightStaffFileHTML = currentLoginType === 'staff' ? `
+                    <div class="col-md-12">
+                        <label class="form-label text-ci-bluegrey fw-bold small">แนบไฟล์เพิ่มเติม <span class="text-muted fw-normal">(ถ้ามี)</span></label>
+                        <input type="file" class="form-control border-light shadow-sm" id="overnightStaffFile" accept=".pdf, .jpg, .png">
+                    </div>` : '';
             formHTML = `
                 <div class="row g-3 text-start">
                     ${overnightOtherPlaceHTML}
@@ -391,6 +438,7 @@ function renderDynamicForm(formName, targetContainerId) {
                     <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">จำนวนคืน</label><div class="input-group"><input type="text" class="form-control bg-light text-dark fw-bold text-center" id="overnightTotalDays" readonly value="0"><span class="input-group-text bg-white border-light text-ci-bluegrey">คืน</span></div></div>
                     <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">เหตุผลการขอจอด <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="overnightReason" onchange="toggleReasonDetails()">${overnightReasonOptions}</select></div>
                     <div class="col-md-12 p-3 bg-light rounded mt-3 shadow-sm border border-light" id="divReasonDetails" style="display:none; border-left: 4px solid var(--ci-orange) !important;"><label class="form-label fw-bold text-ci-orange small">ระบุรายละเอียดเพิ่มเติม <span class="req-star">*</span></label><textarea class="form-control mb-3 border-light" rows="3" id="in_overnight_detail" placeholder="โปรดระบุรายละเอียดให้ชัดเจน..."></textarea><div id="divReasonFile"><label class="form-label fw-bold text-ci-bluegrey small">แนบเอกสารประกอบการพิจารณา <span class="req-star">*</span></label><input type="file" class="form-control border-light" accept=".pdf, .jpg, .png"></div></div>
+                    ${overnightStaffFileHTML}
                     
                     <div class="col-12 mt-4">
                         <div class="alert small mb-2 border-0 rounded bg-light" style="border-left: 4px solid var(--ci-yellow) !important;">
@@ -580,7 +628,7 @@ function showSummaryModal() {
     let html = `<ul class="list-group list-group-flush small mb-3">`;
     const addRow = (label, value) => {
         if(value && value !== '-- กรุณาระบุเหตุผล --' && value !== '-- กรุณาระบุประเภท --') {
-            html += `<li class="list-group-item d-flex justify-content-between align-items-start px-0 bg-transparent border-light"><div class="ms-2 me-auto"><div class="fw-bold text-ci-bluegrey" style="font-size:0.75rem;">${label}</div><span class="text-dark fw-bold">${value}</span></div></li>`;
+            html += `<li class="list-group-item d-flex justify-content-between align-items-start px-0 bg-transparent border-light"><div class="ms-2 me-auto"><div class="fw-bold text-ci-bluegrey" style="font-size:0.75rem;">${label}</div><span class="text-dark fw-bold" style="white-space: pre-line;">${value}</span></div></li>`;
         }
     };
 
@@ -650,6 +698,7 @@ function showSummaryModal() {
         let sel = document.getElementById('overnightReason');
         addRow('เหตุผล', sel ? sel.options[sel.selectedIndex]?.text : "");
         addRow('รายละเอียดเหตุผล', document.getElementById('in_overnight_detail')?.value);
+        addRow('ไฟล์แนบเพิ่มเติม', document.getElementById('overnightStaffFile')?.files?.[0]?.name);
     }
     else if (currentSelectedForm === 'แบบฟอร์มขอใช้ตราประทับ') {
         let sel = document.getElementById('in_stamp_type');
