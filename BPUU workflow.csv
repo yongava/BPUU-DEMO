@@ -1,0 +1,224 @@
+จอดรถค้างคืน,"---
+config:
+  layout: dagre
+---
+flowchart TB
+    DeptApprove[""หัวหน้างานอนุมัติ""] -- Reject --> NotifyRejectStaff[""แจ้งสถานะคำขอปฏิเสธ""]
+    DeptApprove -- Approve --> BPUUCheck{""Staff BPUU พิจารณา""}
+    Type{""ประเภทผู้ใช้งาน?""} -- นักศึกษา และ บุคคลภายนอก --> BPUUCheck
+    BPUUCheck -- ขอข้อมูลเพิ่มเติม --> NotifyReject@{ label: ""<span style=\""background-color:\"">ส่ง Emailข้อมูลเพิ่มเติมไปยังผู้ขอ</span>"" }
+    Start([""เริ่มคำขอจอดรถค้างคืน""]) --> Type
+    Type -- บุคลากรภายใน --> DeptApprove
+    BPUUCheck -- ขอหัวหน้าBPUUอนุมัติ --> End[""BPUU Manager Approve""]
+    End --> n1([""จบกระบวนการ""])
+    End -- มีคำถามเพิ่มเติม --> BPUUCheck
+    NotifyReject -- ส่งข้อมูลเพิ่มเติม --> BPUUCheck
+    BPUUCheck -- Reject --> NotifyRejectStaff
+    NotifyRejectStaff --> n2[""ความต้องการของผู้ชอ""]
+    n4[""BPUU Staff ส่ง QR Code พร้อมระบุจำนวนเงิน<br>และขอข้อมูลออกใบเสร็จรับเงิน""] -- <br> --> n5@{ label: ""<span style=\""background-color:\"">ผู้ขอส่งสลิปโอนเงิน และ ข้อมูลออกใบเสร็จ</span>"" }
+    n2 -- ผู้ขอประสงค์จอดรถค้างคืนแบบมีค่าใช้จ่าย --> n4
+    n5 --> n6[""BPUU Staff ส่งใบเสร็จรับเงิน และ บันทึกข้อมูลลงในระบบ""]
+    n6 --> n1
+    n2 -- ผู้ขอไม่ประสงค์จอดรถค้างคืน --> n1
+
+    DeptApprove@{ shape: rect}
+    NotifyReject@{ shape: rect}
+    End@{ shape: rect}
+    n2@{ shape: diam}
+    n5@{ shape: rect}
+    style NotifyRejectStaff fill:#FFCDD2
+    style BPUUCheck fill:#fff4dd,stroke:#d4a017,stroke-width:2px
+    style NotifyReject fill:#FFF9C4,stroke:#000000,stroke-width:2px
+    style Start fill:#f9f,stroke:#333,stroke-width:2px
+    style End fill:#C8E6C9
+    style n2 fill:#FFCDD2"
+จอดรถรายเดือน,"---
+config:
+  layout: dagre
+---
+flowchart TB
+    Start([""เริ่มการขอจอดรถรายเดือน""]) --> Requester{""ผู้ยื่นคำขอ""}
+    Requester -- นักศึกษา / ลูกจ้างโครงการ หรือ เหมาจ้าง --> VP_Decision@{ label: ""<span style=\""background-color:\"">BPUU Staff ตรวจสอบเรื่อง และ</span>พิจารณาการขอจอดรถรายเดือน"" }
+    Requester -- ผู้ปกครองโรงเรียนดรุณสิขาลัย ศูนย์เด็กเล็ก หรือ คู่สัญญากับ มหาวิทยาลัย --> VP_Decision
+    VP_Decision -- <br> --> MgrSign2[""BPUU Manager Sign""]
+    MgrSign2 -- กรณีทั่วไป --> SendResult[""BPUU แจ้งกลับไปยังผู้ขอ<br>ส่ง QR Code ช่องทางการชำระเงิน และ แจ้งจำนวนเงิน เพื่อเรียกเก็บค่าใช้จ่าย<br>""]
+    Requester -- กรณีพิเศษ --> VP_Decision
+    SendResult --> n5[""ผู้ขอ ส่ง สลิปการโอนเงิน<br>""]
+    n5 --> n6[""BPUU ออกใบเสร็จและส่งไปยังผู้ร้องขอ พร้อมกรอกข้อมูล <br>1.เลขที่<br>2.วันที่ใบเสร็จ""]
+    n6 --> End([""จบกระบวนการ""])
+    VP_Decision -- ไม่เข้าเงื่อนไข หรือ เอกสารไม่ครบ --> Requester
+    MgrSign2 -- กรณีพิเศษ --> n7[""รองอธิการบดีฝ่ายการเงินฯ""]
+    n7 --> n8[""รองอธิการบดีอวุโสฝ่ายบริหาร""]
+    n8 --> n9[""อธิการบดี""]
+    n9 --> SendResult
+
+    VP_Decision@{ shape: diamond}
+    SendResult@{ shape: rect}
+    style Start fill:#f9f,stroke:#333
+    style VP_Decision fill:#fff4dd,stroke:#d4a017
+    style SendResult fill:#d4edda,stroke:#00C853
+    style n6 fill:#C8E6C9,stroke:#00C853
+    style n7 stroke:#000000,fill:#BBDEFB
+    style n8 fill:#BBDEFB
+    style n9 fill:#BBDEFB
+    linkStyle 9 stroke:#D50000,fill:none"
+กระบวนการส่งใบแจ้งหนี้หลังใช้ตราประทับ,"---
+config:
+  layout: dagre
+---
+flowchart TB
+    Start([""เริ่มต้นกระบวนการเรียกเก็บเงิน""]) --> BPUUCheck[""เจ้าหน้าที่ตรวจสอบและส่งรายงานบันทึกจอดฟรี<br>+ ใบตอบรับ ไปยังหน่วยงาน""]
+    BPUUCheck --> AckCheck@{ label: ""หน่วยงานตรวจสอบข้อมูล และ ตอบกลับ<span style=\""background-color:\"">(ภายใน 3 วัน)</span>"" }
+    D365Invoice[""BPUU Staff ออกใบแจ้งหนี้ในระบบ D365""] --> SendInv[""BPUU Staff กรอกข้อมูลเลขที่ และ วันที่ Invoice พร้อมแนบใบแจ้งหนี้""]
+    SendInv --> UnitBudget[""หน่วยงานตอบกลับ และ ส่งข้อมูลรหัสงบประมาณ FD01-04, FD07 (FD14 ถ้ามี)""]
+    UnitBudget --> VerifyBudget{""BPUU ตรวจสอบข้อมูลรหัสงบประมาณ""}
+    VerifyBudget -- ผิด --> ContactUnit[""BPUU Staff ดำเนินการส่งกลับไปให้หน่วยงานแก้ไข โดยเลือกเหตุผลการแก้ไข*""]
+    ContactUnit --> UnitBudget
+    VerifyBudget -- ถูกต้อง --> IssueDeduct[""BPUU Staff ดำเนินการบันทึก บัญชีรับ-จ่ายภายใน ในระบบ D365""]
+    AckCheck -- มีข้อมูลที่ไม่ถูกต้อง --> BPUUCheck
+    AckCheck -- ข้อมูลถูกต้อง --> D365Invoice
+    n1[""BPUU Staff ดำเนินการแนบเอกสาร Voucher ให้หน่วยงาน และ บันทึกข้อมูล เลขที่ Voucher และ วันที่""] --> End([""จบกระบวนการ""])
+    IssueDeduct --> n1
+
+    AckCheck@{ shape: rect}
+    D365Invoice@{ shape: rect}
+    SendInv@{ shape: rect}
+    style Start fill:#f9f,stroke:#333
+    style AckCheck fill:#fff4dd,stroke:#d4a017
+    style D365Invoice fill:#E1BEE7,stroke:#01579b
+    style SendInv fill:#C8E6C9
+    style VerifyBudget fill:#fff4dd,stroke:#d4a017
+    style IssueDeduct fill:#E1BEE7
+    style n1 fill:#C8E6C9"
+เพิ่ม แก้ไข ยกเลิก ทะเบียน,"---
+config:
+  layout: elk
+---
+flowchart TB
+    CheckUser{""ประเภทผู้ใช้งาน?""} -- บุคลากร --> Redirect[""Redirect ไปยังระบบ IBGM<br>https://app.ibgm.cloud/""]
+    Redirect --> End([""จบกระบวนการ""])
+    CheckUser -- นักศึกษา --> StudentReq[""กรอกรายละเอียดคำขอ""]
+    ToBPUU[""ส่งคำขอไปยัง BPUU""] --> BPUUProcess[""BPUU Staff ตรวจสอบและดำเนินการ""]
+    BPUUProcess --> UpdateDB[""อัปเดตข้อมูลในฐานข้อมูล Carpark""]
+    UpdateDB --> Notify[""BPUU Staff <br>แจ้งผลให้นักศึกษาทราบ""]
+    Notify --> End
+    Start([""เริ่มการขอ เพิ่ม/แก้ไข/ยกเลิก ทะเบียนรถ""]) --> CheckUser
+    StudentReq --> ToBPUU
+    n1[""คำขอจะแบ่งเป็น สามประเภท เพิ่ม แก้ไข ยกเลิก ซึ่ง แต่ละแบบจะมีหน้าตาฟอร์มที่กรอกต่างกัน""]
+
+    n1@{ shape: text}
+    style CheckUser fill:#fff4dd,stroke:#d4a017
+    style Redirect fill:#e1f5fe,stroke:#01579b
+    style Start fill:#f9f,stroke:#333"
+การขอใช้พื้นที่ชั่วคราว,"---
+config:
+  layout: elk
+---
+flowchart TB
+    Start([""เริ่มการขอใช้พื้นที่ชั่วคราว""]) --> Requester{""ผู้ยื่นคำขอ""}
+    DeptApprove[""หัวหน้างาน Approve""] --> VP_Decision@{ label: ""<span style=\""background-color:\"">BPUU Staff ตรวจสอบและ</span>พิจารณาการขอใช้พื้นที่ชั่วคราว"" }
+    DeptApprove -- Reject --> n8[""แจ้งสถานะคำขอไม่อนุมัติ""]
+    Requester -- หน่วยงานในกำกับ --> VP_Decision
+    Requester -- นักศึกษา --> VP_Decision
+    VP_Decision -- ขออนุมัติ --> MgrSign1[""BPUU Manager Sign""]
+    MgrSign1 -- ไม่มีค่าใช้จ่าย --> VP_Finance[""รองอธิการบดีฝ่ายการเงิน Approve""]
+    VP_Finance --> BPUU_Receive[""BPUU Staff รับสถานะกลับมา""]
+    BPUU_Receive --> n1[""BPUU ส่ง Email แจ้งกลับไปยังผู้ขอ""]
+    n1 --> End([""จบกระบวนการ""])
+    Requester -- บุคลากรภายใน KMUTT --> DeptApprove
+    Requester -- บุคคลภายนอก --> VP_Decision
+    SendResult[""BPUU ส่ง Email แจ้งกลับไปยังผู้ขอ<br>1. ส่ง QR ช่องทางชำระเงิน และ แจ้งจำนวนเงิน เพื่อเรียกเก็บค่าใช้จ่าย<br>2.ใบขอจอดรถชั่วคราว""] --> n5[""ผู้ขอ ส่ง <br>1. สลิปการโอน<br>2. ข้อมูลการออกใบเสร็จ<br>""]
+    n5 --> n6[""BPUU ส่งใบเสร็จอิเล็กทรอนิกส์ ไปยังผู้ร้องขอ<br>""]
+    n6 --> n9@{ label: ""<span style=\""background-color:\"">BPUU บันทึกข้อมูลใบเสร็จลงในระบบ<br>1. เลขที่ใบเสร็จ<br>2. วันที่ใบเสร็จ</span>"" }
+    n8 --> End
+    VP_Decision -- Reject --> n8
+    MgrSign1 -- ขอข้อมูลเพิ่มเติม --> VP_Decision
+    MgrSign1 -- มีค่าใช้จ่าย --> SendResult
+    VP_Decision -- ขอข้อมูลเพิ่มเติม --> Requester
+    n9 --> End
+
+    VP_Decision@{ shape: diamond}
+    n1@{ shape: rect}
+    SendResult@{ shape: rect}
+    n9@{ shape: rect}
+    style Start fill:#f9f,stroke:#333
+    style VP_Decision fill:#fff4dd,stroke:#d4a017
+    style n8 fill:#FFCDD2
+    style VP_Finance fill:#e1f5fe,stroke:#01579b
+    style BPUU_Receive fill:#C8E6C9
+    style n1 fill:#C8E6C9,stroke:#000000
+    style SendResult fill:#C8E6C9,stroke:#000000
+    style n6 fill:#C8E6C9,stroke:#000000
+    style n9 fill:#C8E6C9
+    linkStyle 17 stroke:#FF6D00,fill:none
+    linkStyle 19 stroke:#FF6D00,fill:none"
+แจ้งปัญหา,"---
+config:
+  layout: elk
+---
+flowchart TB
+    Redirect[""Form กรอกคำร้องเรียน""] --> n5[""BPUU รับเรื่อง""]
+    End[""BPUU แก้ไขปัญหา""] --> n2[""BPUU <br>1. ปิดงาน<br>2. สรุปการแก้ไขปัญหาไปยังผู้ร้องเรียน""]
+    n2 --> n3([""จบกระบวนการ""])
+    Start([""แจ้งปัญหา""]) --> n4[""ประเภทบุคลากร""]
+    n4 -- บุคคลภายนอก --> Redirect
+    n4 -- บุคลากรภายใน / นักศึกษา --> n1@{ label: ""<span style=\""background-color:\"">มี</span>ข้อความให้แจ้งผ่าน APP Modlink"" }
+    n1 --> Redirect
+    n5 --> End
+
+    End@{ shape: rect}
+    n1@{ shape: rect}
+    style Redirect fill:#e1f5fe,stroke:#000000
+    style n2 fill:#C8E6C9
+    style Start fill:#f9f,stroke:#333
+    style n1 fill:#FFE0B2"
+ขอเข้าพื้นที่ภายใต้คู่สัญญา,"flowchart TB
+    Start([""เริ่มการขอเข้าพื้นที่""]) --> VendorReq[""Vendor ส่งคำขอเข้าพื้นที่""]
+    VendorReq --> n1[""BPUU Staff พิจารณา""]
+    BPUUResult[""1. ส่งอีเมล์ผลอนุมัติ ให้ Vendor<br>2. ส่งอีเมล์ยืนยัน ให้ผู้ดูแลพื้นที่""] --> End([""จบกระบวนการ""])
+    n1 -- ไม่ผ่านการพิจารณา --> n2[""ส่งอีเมล์แจ้ง Vendor พร้อมระบุเหตุผล""]
+    n2 --> VendorReq
+    n1 -- ผ่านการพิจารณา --> n3[""BPUU Manager อนุมัติ""]
+    n3 -- ขอข้อมูลเพิ่มเติม --> n1
+    n3 -- ระบบส่งอีเมล์แจ้ง ไปยังผู้ดูแลพื้นที่ --> LMCheck[""ผู้ดูแลพื้นที่ ตรวจสอบวันที่ และ อนุมัติ หรือ แจ้งวันที่เหมาะสม(ในกรณีที่มีการเปลี่ยนวัน)""]
+    LMCheck -- ไม่มีการเปลี่ยนวัน --> BPUUResult
+    LMCheck -- มีการเปลี่ยนวัน --> n5[""BPUU Staff ทำการเปลี่ยนวันในระบบ""]
+    n5 --> BPUUResult
+    n4[""ในกรณีที่พี่มดอนุมัติแล้ว แต่มีการแจ้งเปลี่ยนวันจาก ผู้ดูแลพื้นที่ พี่มดไม่จำเป็นต้องอนุมัติอีกครั้ง""]
+
+    n1@{ shape: diam}
+    LMCheck@{ shape: rect}
+    n4@{ shape: text}
+    style Start fill:#f9f,stroke:#333
+    style n1 fill:#FFF9C4
+    style BPUUResult fill:#d4edda,stroke:#000000
+    style n2 fill:#FFE0B2
+    style n3 fill:#BBDEFB
+    style LMCheck fill:#E1BEE7,stroke:#000000
+    style n5 fill:#C8E6C9"
+การขอใช้ตราประทับ,"flowchart TB
+    Start([""เริ่มการขอใช้ตราประทับ""]) --> Requester{""ผู้ยื่นคำขอ""}
+    Requester -- บุคลากรภายใน KMUTT --> KMUTTType{""ขอในนาม?""}
+    KMUTTType -- หน่วยงาน --> DeptApprove[""หัวหน้างานอนุมัติ""]
+    KMUTTType -- โครงการ --> VP_Decision@{ label: ""<span style=\""background-color:\"">BPUU Staff ตรวจสอบและ</span>พิจารณาการขอใช้ตราประทับ"" }
+    DeptApprove --> VP_Decision
+    Requester -- หน่วยงานในกำกับ --> VP_Decision
+    Requester -- นักศึกษา --> VP_Decision
+    VP_Decision -- มีค่าใช้จ่าย --> MgrSign2[""BPUU Manager Approve""]
+    MgrSign2 --> SendResult@{ label: ""BPUU Staff ส่งคู่มือ และ รหัสตราประทับ และ รายละเอียดการใช้งานตราประทับ<span style=\""background-color:\"">ให้ผู้ขอ</span><br>"" }
+    SendResult --> End([""จบกระบวนการ""])
+    VP_Decision -- ยกเว้นค่าใช้จ่าย --> n1[""BPUU Manager Approve""]
+    n1 --> n2@{ label: ""<span style=\""background-color:\"">รองอธิการบดีฝ่ายการเงิน Approve</span>"" }
+    n2 --> SendResult
+    VP_Decision -- ขอเอกสารเพิ่มเติม เช่นเอกสารโครงการ --> Requester
+
+    VP_Decision@{ shape: diamond}
+    SendResult@{ shape: rect}
+    n2@{ shape: rect}
+    style Start fill:#f9f,stroke:#333
+    style VP_Decision fill:#fff4dd,stroke:#d4a017
+    style MgrSign2 fill:#FFE0B2
+    style SendResult fill:#d4edda,stroke:#28a745
+    style n1 fill:#FFE0B2
+    style n2 fill:#BBDEFB
+    linkStyle 13 stroke:#D50000,fill:none"

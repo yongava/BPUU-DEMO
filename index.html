@@ -11,11 +11,17 @@
 <body>
 
 <nav class="navbar navbar-dark bg-ci-orange mb-4 shadow-sm">
-    <div class="container">
-        <span class="navbar-brand mb-0 h1" style="cursor: pointer;" onclick="goHome()">
-            <i class="bi bi-building me-2"></i>ระบบกระบวนงาน (Workflow) การให้บริการของกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน
+    <div class="container d-flex flex-wrap align-items-center justify-content-between gap-2 py-2">
+        <span class="navbar-brand mb-0 h1 d-flex align-items-center text-wrap" style="cursor: pointer; line-height: 1.2;" onclick="goHome()">
+            <i class="bi bi-building me-2"></i>
+            <span class="d-none d-md-inline">ระบบกระบวนงาน (Workflow) การให้บริการของกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน</span>
+            <span class="d-inline d-md-none">ระบบกระบวนงาน BPUU</span>
         </span>
-        <span class="text-light small d-none d-md-block"></span>
+        <div class="d-none d-md-flex align-items-center gap-2 flex-shrink-0">
+            <a href="admin.html" class="btn btn-outline-light btn-sm fw-bold text-nowrap">
+                <i class="bi bi-speedometer2 me-1"></i>Admin
+            </a>
+        </div>
     </div>
 </nav>
 

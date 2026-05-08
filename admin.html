@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BPUU Admin | Request Tracker</title>
+    <meta name="theme-color" content="#111827">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+<nav class="navbar navbar-dark admin-navbar shadow-sm">
+    <div class="container">
+        <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="index.html">
+            <i class="bi bi-speedometer2"></i>
+            <span>BPUU Admin Request Tracker</span>
+        </a>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="badge rounded-pill bg-warning text-dark fw-bold px-3 py-2">Mock data mode</span>
+            <button type="button" class="btn btn-outline-light btn-sm fw-bold" id="reloadBtn">
+                <i class="bi bi-arrow-clockwise me-1"></i>รีโหลดตัวอย่าง
+            </button>
+            <a href="#stampCollectionSection" class="btn btn-outline-light btn-sm fw-bold">
+                <i class="bi bi-cash-coin me-1"></i>เก็บเงินตราประทับ
+            </a>
+            <a class="btn btn-outline-light btn-sm fw-bold" href="index.html">
+                <i class="bi bi-house-door-fill me-1"></i>กลับหน้าใช้งานหลัก
+            </a>
+        </div>
+    </div>
+</nav>
+
+<main class="container py-4 admin-shell">
+    <section class="row g-3 mb-4" id="statCards">
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="stat-card stat-total">
+                <div class="stat-label">คำขอที่แสดง</div>
+                <div class="stat-value" id="statTotal">0</div>
+                <div class="stat-foot">รายการในมุมมองปัจจุบัน</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="stat-card stat-active">
+                <div class="stat-label">รอดำเนินการ</div>
+                <div class="stat-value" id="statActive">0</div>
+                <div class="stat-foot">กำลังรออนุมัติหรือตรวจสอบ</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="stat-card stat-blocked">
+                <div class="stat-label">ติดขัด / รอแก้ไข</div>
+                <div class="stat-value" id="statBlocked">0</div>
+                <div class="stat-foot">มีข้อมูลที่ต้องทวนกลับ</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+            <div class="stat-card stat-closed">
+                <div class="stat-label">ปิดเรื่องแล้ว</div>
+                <div class="stat-value" id="statClosed">0</div>
+                <div class="stat-foot">ส่งผลลัพธ์ครบถ้วน</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel-card p-4 mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+            <div>
+                <h2 class="h5 fw-bold text-dark mb-1">แยกตามประเภทคำขอ</h2>
+                <p class="text-ci-bluegrey small mb-0">
+                    เลือกประเภทหรือใช้ตัวกรองอื่น เพื่อเช็ก ticket ที่กำลังวิ่งอยู่ในแต่ละ flow
+                </p>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span class="badge rounded-pill bg-light text-dark border border-light-subtle fw-bold px-3 py-2">
+                    <i class="bi bi-info-circle-fill text-ci-orange me-1"></i>
+                    Jotform API ยังไม่เชื่อม จึงแสดงข้อมูลตัวอย่าง
+                </span>
+            </div>
+        </div>
+
+        <div id="typeFilters" class="type-filters mb-4"></div>
+
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-lg-5">
+                <label class="form-label text-ci-bluegrey fw-bold small mb-2" for="searchInput">ค้นหา ticket / ชื่อผู้ขอ</label>
+                <input type="search" class="form-control filter-control" id="searchInput" placeholder="พิมพ์ ticket, ชื่อ, หน่วยงาน หรือสถานะ">
+            </div>
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label text-ci-bluegrey fw-bold small mb-2" for="statusFilter">กรองตามสถานะ</label>
+                <select class="form-select filter-control" id="statusFilter"></select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label text-ci-bluegrey fw-bold small mb-2" for="requesterFilter">กรองตามประเภทผู้ขอ</label>
+                <select class="form-select filter-control" id="requesterFilter"></select>
+            </div>
+            <div class="col-12 col-lg-1 d-grid">
+                <button type="button" class="btn btn-outline-secondary fw-bold h-100" id="resetFiltersBtn">
+                    ล้าง
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <div class="row g-4 align-items-start">
+        <div class="col-xl-8">
+            <section class="panel-card p-4 h-100">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                        <h2 class="h5 fw-bold text-dark mb-1">รายการคำขอ</h2>
+                        <p class="text-ci-bluegrey small mb-0">คลิกแต่ละ ticket เพื่อดู workflow step และสถานะโดยละเอียด</p>
+                    </div>
+                    <span class="badge rounded-pill bg-light text-dark border border-light-subtle fw-bold px-3 py-2" id="resultCount">
+                        0 รายการ
+                    </span>
+                </div>
+                <div id="ticketList" class="ticket-list"></div>
+            </section>
+        </div>
+
+        <div class="col-xl-4">
+            <section class="panel-card p-4 detail-pane h-100">
+                <div id="detailPanel"></div>
+            </section>
+        </div>
+    </div>
+
+    <section class="panel-card p-4 mt-4" id="stampCollectionSection">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+            <div>
+                <div class="hero-kicker text-ci-bluegrey mb-2">Finance / Stamp Collection</div>
+                <h2 class="h4 fw-bold mb-2 text-dark">เก็บเงินหลังใช้ตราประทับ</h2>
+                <p class="text-ci-bluegrey mb-0">
+                    ใช้สำหรับดูรายการที่ต้องเก็บเงิน ตรวจสลิป ออกใบเสร็จ และปิดรายการจากหน้าเดียว
+                </p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <span class="hero-chip collection-chip"><i class="bi bi-database-fill-exclamation me-1"></i>ใช้ mock data ก่อน</span>
+                <button type="button" class="btn btn-light fw-bold" id="paymentReloadBtn">
+                    <i class="bi bi-arrow-clockwise me-1"></i>รีโหลดตัวอย่าง
+                </button>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4" id="paymentStatCards"></div>
+
+        <div class="row g-4 align-items-start">
+            <div class="col-xl-8">
+                <div class="panel-card p-4 mb-3 collection-filter-panel">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                        <div>
+                            <h3 class="h5 fw-bold text-dark mb-1">คิวเก็บเงิน</h3>
+                            <p class="text-ci-bluegrey small mb-0">ค้นหา ticket หรือเปลี่ยนสถานะเพื่อจัดการรายการที่ยังไม่ปิด</p>
+                        </div>
+                        <span class="badge rounded-pill bg-light text-dark border border-light-subtle fw-bold px-3 py-2" id="paymentResultCount">
+                            0 รายการ
+                        </span>
+                    </div>
+
+                    <div class="row g-3 align-items-end">
+                        <div class="col-12 col-lg-5">
+                            <label class="form-label text-ci-bluegrey fw-bold small mb-2" for="paymentSearchInput">ค้นหา ticket / ชื่อผู้ขอ</label>
+                            <input type="search" class="form-control filter-control" id="paymentSearchInput" placeholder="พิมพ์ ticket, ชื่อ, หน่วยงาน หรือยอดเงิน">
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label class="form-label text-ci-bluegrey fw-bold small mb-2" for="paymentStatusFilter">กรองตามสถานะ</label>
+                            <select class="form-select filter-control" id="paymentStatusFilter"></select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label class="form-label text-ci-bluegrey fw-bold small mb-2" for="paymentRequesterFilter">กรองตามประเภทผู้ขอ</label>
+                            <select class="form-select filter-control" id="paymentRequesterFilter"></select>
+                        </div>
+                        <div class="col-12 col-lg-1 d-grid">
+                            <button type="button" class="btn btn-outline-secondary fw-bold h-100" id="paymentResetFiltersBtn">ล้าง</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="paymentList" class="ticket-list"></div>
+            </div>
+
+            <div class="col-xl-4">
+                <section class="panel-card p-4 payment-detail h-100">
+                    <div id="paymentDetailPanel"></div>
+                </section>
+            </div>
+        </div>
+    </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>
