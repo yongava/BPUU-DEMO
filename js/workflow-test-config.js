@@ -5,7 +5,7 @@ window.BPUU_WORKFLOW_TEST_CONFIG = {
         external: 'n.chotthanin@gmail.com'
     },
     roleEmails: {
-        bpuuStaff: 'dev.codegym@gmail.com',
+        bpuuStaff: 'yeongstorage@gmail.com',
         bpuuHead: 'yeongstorage@gmail.com',
         financeViceRector: 'yeongstorage@gmail.com',
         seniorViceRector: 'yeongstorage@gmail.com',
