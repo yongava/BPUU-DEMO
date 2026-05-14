@@ -427,6 +427,11 @@ function init() {
     bindEvents();
     window.addEventListener('storage', handleWorkflowStorageChange);
     window.addEventListener('storage', handlePlateRegistryStorageChange);
+    window.addEventListener('focus', refreshTicketsFromStorage);
+    window.addEventListener('pageshow', refreshTicketsFromStorage);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refreshTicketsFromStorage();
+    });
     state.selectedTicketId = new URLSearchParams(window.location.search).get('ticket') || '';
     state.expandedSummaryTicketId = '';
     collectionState.selectedPaymentId = '';
@@ -1499,6 +1504,10 @@ function applyPlateRegistryMutation(record, stepIndex, force = false) {
 
 function handleWorkflowStorageChange(event) {
     if (event.key !== TICKET_STORAGE_KEY && !LEGACY_TICKET_STORAGE_KEYS.includes(event.key)) return;
+    refreshTicketsFromStorage();
+}
+
+function refreshTicketsFromStorage() {
     ticketData = loadTickets();
     renderAll();
 }

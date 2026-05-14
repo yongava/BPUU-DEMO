@@ -166,23 +166,29 @@ async function handleApprovalAction(action) {
         currentTicket.stepIndex = nextStepIndex;
         currentTicket.status = getWorkflowStatus(currentTicket, workflow, nextStepIndex);
         currentTicket.note = 'อนุมัติผ่านลิงก์อีเมลแล้ว';
+        currentTicket.approvalSource = 'approve-page';
+        currentTicket.approvalUpdatedAt = nowIso;
         emailEventType = getEmailEventTypeForStep(workflow[nextStepIndex]);
         addApprovalDecision(currentTicket, 'approved');
     } else if (action === 'reject') {
         currentTicket.status = 'ไม่ผ่านการอนุมัติ';
         currentTicket.note = 'ไม่อนุมัติผ่านลิงก์อีเมล';
+        currentTicket.approvalSource = 'approve-page';
+        currentTicket.approvalUpdatedAt = nowIso;
         emailEventType = 'rejected';
         addApprovalDecision(currentTicket, 'rejected');
     }
 
     currentTicket.updatedAt = nowIso;
+    approvalTickets[ticketIndex] = currentTicket;
+    saveApprovalTickets();
 
     if (emailEventType) {
         await sendWorkflowEmailForTicket(currentTicket, emailEventType);
+        approvalTickets[ticketIndex] = currentTicket;
+        saveApprovalTickets();
     }
 
-    approvalTickets[ticketIndex] = currentTicket;
-    saveApprovalTickets();
     renderApprovalPage(action === 'approve' ? 'อนุมัติเรียบร้อยแล้ว' : 'บันทึกผลไม่อนุมัติเรียบร้อยแล้ว');
 }
 
