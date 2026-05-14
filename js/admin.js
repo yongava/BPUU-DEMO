@@ -1088,7 +1088,7 @@ function getRequesterEmail(ticket) {
 }
 
 function getTicketAdminLink(ticket) {
-    const url = new URL('admin.html', window.location.href);
+    const url = new URL('approve.html', window.location.href);
     url.searchParams.set('ticket', ticket.ticketId);
     return url.toString();
 }
