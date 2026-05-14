@@ -1220,7 +1220,30 @@ function saveWorkflowTickets(tickets) {
         localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(tickets));
         LEGACY_WORKFLOW_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
     } catch (error) {
-        // No-op in file mode or restricted storage environments.
+        const lightweightTickets = tickets.map(createLightweightWorkflowTicket);
+        try {
+            localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(lightweightTickets));
+            LEGACY_WORKFLOW_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+            console.warn('Saved workflow tickets without inline attachment data because browser storage is full.', error);
+        } catch (fallbackError) {
+            console.error('Failed to save workflow tickets to localStorage.', fallbackError);
+        }
+    }
+}
+
+function notifyWorkflowTicketsChanged() {
+    try {
+        localStorage.setItem(`${WORKFLOW_STORAGE_KEY}-updated-at`, new Date().toISOString());
+    } catch (error) {
+        // Storage may be unavailable, but BroadcastChannel can still notify open tabs.
+    }
+
+    try {
+        const channel = new BroadcastChannel('bpuu-workflow-tickets');
+        channel.postMessage({ type: 'tickets-updated', at: new Date().toISOString() });
+        channel.close();
+    } catch (error) {
+        // Older browsers can rely on the localStorage ping above.
     }
 }
 
@@ -1238,6 +1261,19 @@ function saveWorkflowTicketRecord(ticket) {
     }
 
     saveWorkflowTickets(latestTickets);
+}
+
+function createLightweightWorkflowTicket(ticket) {
+    const lightweight = { ...ticket };
+    if (Array.isArray(lightweight.selectedAttachments)) {
+        lightweight.selectedAttachments = lightweight.selectedAttachments.map(file => ({
+            name: file.name || 'ไฟล์แนบ',
+            type: file.type || '',
+            size: file.size || 0,
+            dataUrl: ''
+        }));
+    }
+    return lightweight;
 }
 
 function getNextWorkflowTicketId(tickets) {
@@ -1607,10 +1643,14 @@ async function submitWorkflowLocally() {
 
     tickets.unshift(ticket);
     saveWorkflowTickets(tickets);
+    notifyWorkflowTicketsChanged();
     showSubmitSuccess();
 
     sendAndLogWorkflowEmail(ticket, 'new-submission-approval')
-        .finally(() => saveWorkflowTicketRecord(ticket));
+        .finally(() => {
+            saveWorkflowTicketRecord(ticket);
+            notifyWorkflowTicketsChanged();
+        });
 }
 
 function appendSelectedFiles(form) {

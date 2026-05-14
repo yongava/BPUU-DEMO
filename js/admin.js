@@ -361,6 +361,7 @@ const STAMP_COLLECTION_WORKFLOW = [
 const PLATE_REGISTRY = window.BPUU_PLATE_REGISTRY || null;
 
 const TICKET_STORAGE_KEY = 'bpuu-workflow-tickets';
+const TICKET_STORAGE_PING_KEY = `${TICKET_STORAGE_KEY}-updated-at`;
 const LEGACY_TICKET_STORAGE_KEYS = ['bpuu-admin-tickets'];
 const EMAIL_EVENT_LABELS = {
     received: 'รับคำขอ',
@@ -427,6 +428,7 @@ function init() {
     bindEvents();
     window.addEventListener('storage', handleWorkflowStorageChange);
     window.addEventListener('storage', handlePlateRegistryStorageChange);
+    bindWorkflowBroadcast();
     window.addEventListener('focus', refreshTicketsFromStorage);
     window.addEventListener('pageshow', refreshTicketsFromStorage);
     document.addEventListener('visibilitychange', () => {
@@ -1503,13 +1505,25 @@ function applyPlateRegistryMutation(record, stepIndex, force = false) {
 }
 
 function handleWorkflowStorageChange(event) {
-    if (event.key !== TICKET_STORAGE_KEY && !LEGACY_TICKET_STORAGE_KEYS.includes(event.key)) return;
+    if (event.key !== TICKET_STORAGE_KEY && event.key !== TICKET_STORAGE_PING_KEY && !LEGACY_TICKET_STORAGE_KEYS.includes(event.key)) return;
     refreshTicketsFromStorage();
 }
 
 function refreshTicketsFromStorage() {
     ticketData = loadTickets();
     renderAll();
+}
+
+function bindWorkflowBroadcast() {
+    try {
+        const channel = new BroadcastChannel('bpuu-workflow-tickets');
+        channel.addEventListener('message', (event) => {
+            if (event.data?.type !== 'tickets-updated') return;
+            refreshTicketsFromStorage();
+        });
+    } catch (error) {
+        // The storage ping still keeps older browsers in sync.
+    }
 }
 
 function loadPlateRegistry() {

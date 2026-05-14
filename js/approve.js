@@ -1,4 +1,5 @@
 const APPROVAL_TICKET_STORAGE_KEY = 'bpuu-workflow-tickets';
+const APPROVAL_TICKET_STORAGE_PING_KEY = `${APPROVAL_TICKET_STORAGE_KEY}-updated-at`;
 const APPROVAL_LEGACY_TICKET_STORAGE_KEYS = ['bpuu-admin-tickets'];
 const APPROVAL_CONFIG = window.BPUU_WORKFLOW_TEST_CONFIG || {};
 
@@ -49,6 +50,7 @@ function loadApprovalTickets() {
 function saveApprovalTickets() {
     localStorage.setItem(APPROVAL_TICKET_STORAGE_KEY, JSON.stringify(approvalTickets));
     APPROVAL_LEGACY_TICKET_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+    notifyApprovalTicketsChanged();
 }
 
 function saveApprovalTicketRecord(ticket) {
@@ -67,6 +69,22 @@ function saveApprovalTicketRecord(ticket) {
     approvalTickets = latestTickets;
     currentTicket = approvalTickets.find(item => item.ticketId === ticket.ticketId) || ticket;
     saveApprovalTickets();
+}
+
+function notifyApprovalTicketsChanged() {
+    try {
+        localStorage.setItem(APPROVAL_TICKET_STORAGE_PING_KEY, new Date().toISOString());
+    } catch (error) {
+        // Storage may be unavailable, but BroadcastChannel can still notify open tabs.
+    }
+
+    try {
+        const channel = new BroadcastChannel('bpuu-workflow-tickets');
+        channel.postMessage({ type: 'tickets-updated', at: new Date().toISOString() });
+        channel.close();
+    } catch (error) {
+        // Older browsers can rely on the localStorage ping above.
+    }
 }
 
 function renderApprovalPage(message = '', tone = 'success') {
