@@ -7,8 +7,8 @@ window.BPUU_WORKFLOW_TEST_CONFIG = {
         external: 'n.chotthanin@gmail.com'
     },
     roleEmails: {
-        bpuuStaff: 'yeongstorage@gmail.com',
-        bpuuHead: 'yeongstorage@gmail.com',
+        bpuuStaff: 'bpuu.dev1@kmutt.ac.th',
+        bpuuHead: 'bpuu.dev2@kmutt.ac.th',
         financeViceRector: 'yeongstorage@gmail.com',
         seniorViceRector: 'yeongstorage@gmail.com',
         president: 'yeongstorage@gmail.com',
