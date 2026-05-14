@@ -112,6 +112,8 @@ function resolveApproverEmail(name, position, fallback = '') {
         roleKey = 'financeViceRector';
     } else if (normalized.includes('ผู้คุมพื้นที่') || normalized.includes('ผู้ดูแลพื้นที่')) {
         roleKey = 'areaController';
+    } else if (normalized.includes('manager')) {
+        roleKey = 'bpuuManager';
     } else if (normalized.includes('หัวหน้าฝ่าย') || normalized.includes('หัวหน้างาน')) {
         roleKey = 'bpuuHead';
     } else if (normalized.includes('bpuu')) {
@@ -152,6 +154,7 @@ function getEmailRecipientForStep(ticket, step) {
     if (/รองอธิการบดีฝ่ายการเงิน|การเงิน/i.test(step)) return roleEmails.financeViceRector || approverEmail;
     if (/ผู้คุมพื้นที่|ผู้ดูแลพื้นที่/i.test(step)) return roleEmails.areaController || approverEmail;
     if (/หัวหน้างาน|หัวหน้าฝ่าย/i.test(step)) return roleEmails.bpuuHead || approverEmail;
+    if (/manager/i.test(step)) return roleEmails.bpuuManager || roleEmails.bpuuStaff || approverEmail;
     if (/bpuu/i.test(step) || /พิจารณา|ตรวจสอบ|อนุมัติ|รับเรื่อง|แก้ไขปัญหา|อัปเดตฐานข้อมูล|บันทึกบัญชี|ออกใบแจ้งหนี้|ตรวจรหัสงบประมาณ|ออกใบเสร็จ/i.test(normalizedStep)) {
         return roleEmails.bpuuStaff || approverEmail;
     }
