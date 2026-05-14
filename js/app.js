@@ -1246,6 +1246,52 @@ function getSelectedPlateAction() {
     return document.querySelector('input[name="plateAction"]:checked')?.value || 'เพิ่ม';
 }
 
+function getPlateRequestPayload() {
+    const action = getSelectedPlateAction();
+    const count = Math.min(5, Math.max(1, Number(document.getElementById('plateActionCount')?.value || 1)));
+
+    if (action === 'แก้ไข') {
+        const items = [];
+        for (let i = 1; i <= count; i++) {
+            items.push({
+                index: i,
+                oldPlate: document.getElementById(`plateOld${i}`)?.value || '',
+                newPlate: document.getElementById(`plateNew${i}`)?.value || ''
+            });
+        }
+
+        return {
+            plateAction: action,
+            plateCount: count,
+            plateItems: items,
+            plateRequest: {
+                action,
+                count,
+                items
+            }
+        };
+    }
+
+    const items = [];
+    for (let i = 1; i <= count; i++) {
+        items.push({
+            index: i,
+            plate: document.getElementById(`plate${i}`)?.value || ''
+        });
+    }
+
+    return {
+        plateAction: action,
+        plateCount: count,
+        plateItems: items,
+        plateRequest: {
+            action,
+            count,
+            items
+        }
+    };
+}
+
 function getSelectedStampRequestFor() {
     return document.querySelector('input[name="stampRequestFor"]:checked')?.value || 'โครงการ';
 }
@@ -1349,6 +1395,7 @@ function getWorkflowSubmissionConfig() {
 
     if (currentSelectedForm === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์') {
         const plateAction = getSelectedPlateAction();
+        const plateRequest = getPlateRequestPayload();
 
         if (currentLoginType === 'staff') {
             return {
@@ -1361,7 +1408,8 @@ function getWorkflowSubmissionConfig() {
                 routeSummary: 'redirect ไป IBGM',
                 contextLabel: 'ประเภทคำขอ',
                 contextValue: plateAction,
-                note: 'บุคลากรถูกส่งต่อไป IBGM'
+                note: 'บุคลากรถูกส่งต่อไป IBGM',
+                ...plateRequest
             };
         }
 
@@ -1375,7 +1423,8 @@ function getWorkflowSubmissionConfig() {
             routeSummary: 'BPUU → Carpark',
             contextLabel: 'คณะ / สาขา',
             contextValue: getInputValue('reqFaculty') || '-',
-            note: `คำขอทะเบียนของนักศึกษา (${plateAction})`
+            note: `คำขอทะเบียนของนักศึกษา (${plateAction})`,
+            ...plateRequest
         };
     }
 
@@ -1446,6 +1495,7 @@ function logPlateRedirectTicket() {
     const tickets = loadWorkflowTickets();
     const requesterDisplayEmail = requester.displayEmail || '';
     const requesterSubmittedEmail = requester.submittedEmail || requester.email || '';
+    const plateRequest = getPlateRequestPayload();
 
     tickets.unshift({
         ticketId: getNextWorkflowTicketId(tickets),
@@ -1470,6 +1520,7 @@ function logPlateRedirectTicket() {
         approverEmail: '',
         approverDisplayEmail: '',
         approverSubmittedEmail: '',
+        ...plateRequest,
         emailDetails: {
             requesterDisplayEmail,
             requesterSubmittedEmail,

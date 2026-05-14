@@ -129,6 +129,29 @@
         </div>
     </div>
 
+    <section class="panel-card p-4 mt-4" id="plateRegistrySection">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+            <div>
+                <div class="hero-kicker text-ci-bluegrey mb-2">Parking / Registry</div>
+                <h2 class="h4 fw-bold mb-2 text-dark">ทะเบียนรถในระบบ</h2>
+                <p class="text-ci-bluegrey mb-0">
+                    รายการทะเบียนที่ผ่านขั้นตอนอัปเดตจะถูกเก็บใน localStorage และแสดงตรงนี้เพื่อทดสอบการเพิ่ม แก้ไข และยกเลิก
+                </p>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span class="hero-chip registry-chip"><i class="bi bi-database-fill-check me-1"></i><span id="registryCount">0 รายการ</span></span>
+                <button type="button" class="btn btn-light fw-bold" id="registryReloadBtn">
+                    <i class="bi bi-arrow-clockwise me-1"></i>รีเฟรชทะเบียน
+                </button>
+                <button type="button" class="btn btn-outline-danger fw-bold" id="registryClearBtn">
+                    <i class="bi bi-trash3 me-1"></i>ล้างทะเบียนทดสอบ
+                </button>
+            </div>
+        </div>
+
+        <div class="row g-3" id="registryList"></div>
+    </section>
+
     <section class="panel-card p-4 mt-4" id="stampCollectionSection">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
             <div>
@@ -193,6 +216,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/plate-registry.js"></script>
 <script src="js/workflow-test-config.js"></script>
 <script src="js/admin.js"></script>
 </body>

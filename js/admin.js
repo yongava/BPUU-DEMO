@@ -358,6 +358,8 @@ const STAMP_COLLECTION_WORKFLOW = [
     'ปิดรายการ'
 ];
 
+const PLATE_REGISTRY = window.BPUU_PLATE_REGISTRY || null;
+
 const TICKET_STORAGE_KEY = 'bpuu-workflow-tickets';
 const LEGACY_TICKET_STORAGE_KEYS = ['bpuu-admin-tickets'];
 const EMAIL_EVENT_LABELS = {
@@ -372,6 +374,7 @@ const EMAIL_EVENT_LABELS = {
 
 let ticketData = loadTickets();
 let stampCollectionData = loadStampCollections();
+let plateRegistryData = loadPlateRegistry();
 const state = {
     typeKey: 'all',
     status: 'all',
@@ -415,10 +418,15 @@ function init() {
     dom.paymentRequesterFilter = document.getElementById('paymentRequesterFilter');
     dom.paymentReloadBtn = document.getElementById('paymentReloadBtn');
     dom.paymentResetFiltersBtn = document.getElementById('paymentResetFiltersBtn');
+    dom.registryList = document.getElementById('registryList');
+    dom.registryCount = document.getElementById('registryCount');
+    dom.registryReloadBtn = document.getElementById('registryReloadBtn');
+    dom.registryClearBtn = document.getElementById('registryClearBtn');
 
     populateFilterOptions();
     bindEvents();
     window.addEventListener('storage', handleWorkflowStorageChange);
+    window.addEventListener('storage', handlePlateRegistryStorageChange);
     state.selectedTicketId = new URLSearchParams(window.location.search).get('ticket') || '';
     state.expandedSummaryTicketId = '';
     collectionState.selectedPaymentId = '';
@@ -544,6 +552,17 @@ function bindEvents() {
         resetCollectionState();
         renderAll();
     });
+
+    dom.registryReloadBtn?.addEventListener('click', () => {
+        loadPlateRegistry();
+        renderAll();
+    });
+
+    dom.registryClearBtn?.addEventListener('click', () => {
+        if (!confirm('ต้องการล้างทะเบียนรถทดสอบทั้งหมดหรือไม่?')) return;
+        clearPlateRegistry();
+        renderAll();
+    });
 }
 
 function resetState() {
@@ -613,6 +632,7 @@ function renderAll() {
     renderStats(filteredTickets);
     renderTicketList(filteredTickets);
     renderDetailPanel(filteredTickets);
+    renderRegistrySection();
     renderCollectionSection();
 }
 
@@ -1435,6 +1455,7 @@ async function handleTicketAction(action, ticketId) {
         record.status = getWorkflowStatus(record, workflow, nextStepIndex);
         record.note = record.note || 'อนุมัติและส่งต่อไปขั้นถัดไป';
         emailEventType = getEmailEventTypeForStep(record, workflow[nextStepIndex]);
+        applyPlateRegistryMutation(record, nextStepIndex);
     } else if (action === 'return') {
         const blockedStepIndex = findBlockedStepIndex(workflow, record.stepIndex);
         record.stepIndex = blockedStepIndex;
@@ -1446,6 +1467,7 @@ async function handleTicketAction(action, ticketId) {
         record.status = record.status.includes('แล้ว') ? record.status : 'ปิดเรื่องแล้ว';
         record.note = 'ปิดเรื่องผ่านการดำเนินการบนเว็บแล้ว';
         emailEventType = 'completed';
+        applyPlateRegistryMutation(record, record.stepIndex, true);
     }
 
     if (emailEventType) {
@@ -1458,10 +1480,88 @@ async function handleTicketAction(action, ticketId) {
     renderAll();
 }
 
+function applyPlateRegistryMutation(record, stepIndex, force = false) {
+    if (!PLATE_REGISTRY || record.typeKey !== 'plate' || record.workflowKey !== 'plateStudent') return;
+    if (record.plateRegistryAppliedAt) return;
+
+    const workflow = getWorkflowTemplate(record);
+    const targetStep = workflow[stepIndex] || '';
+    const shouldApply = force || /อัปเดตฐานข้อมูล Carpark/i.test(targetStep);
+    if (!shouldApply) return;
+
+    const result = PLATE_REGISTRY.applyTicket(record);
+    if (!result.changed && !result.appliedCount) return;
+
+    record.plateRegistryAppliedAt = new Date().toISOString();
+    record.plateRegistryApplied = true;
+    loadPlateRegistry();
+}
+
 function handleWorkflowStorageChange(event) {
     if (event.key !== TICKET_STORAGE_KEY && !LEGACY_TICKET_STORAGE_KEYS.includes(event.key)) return;
     ticketData = loadTickets();
     renderAll();
+}
+
+function loadPlateRegistry() {
+    plateRegistryData = PLATE_REGISTRY ? PLATE_REGISTRY.loadRegistry() : [];
+    return plateRegistryData;
+}
+
+function clearPlateRegistry() {
+    if (!PLATE_REGISTRY) return;
+    PLATE_REGISTRY.clearRegistry();
+    plateRegistryData = [];
+}
+
+function handlePlateRegistryStorageChange(event) {
+    if (!PLATE_REGISTRY) return;
+    if (event.key !== PLATE_REGISTRY.STORAGE_KEY && event.key !== PLATE_REGISTRY.HISTORY_KEY) return;
+    loadPlateRegistry();
+    renderAll();
+}
+
+function renderRegistrySection() {
+    if (!dom.registryList || !dom.registryCount || !PLATE_REGISTRY) return;
+
+    const registry = loadPlateRegistry().slice().sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+    dom.registryCount.textContent = `${registry.length} รายการ`;
+
+    if (!registry.length) {
+        dom.registryList.innerHTML = `
+            <div class="col-12">
+                <div class="detail-empty text-center">
+                    <div class="empty-state-icon">
+                        <i class="bi bi-database-fill"></i>
+                    </div>
+                    <h3 class="h5 fw-bold text-dark mb-2">ยังไม่มีทะเบียนรถในระบบ</h3>
+                    <p class="mb-0">เมื่อมี ticket ประเภททะเบียนรถผ่านขั้นตอนอัปเดต Carpark รายการจะถูกเก็บไว้ใน localStorage และแสดงตรงนี้</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    dom.registryList.innerHTML = registry.map(item => `
+        <div class="col-12 col-md-6 col-xl-4">
+            <div class="registry-card h-100">
+                <div class="d-flex justify-content-between align-items-start gap-3">
+                    <div>
+                        <div class="registry-plate">${escapeHtml(item.plate)}</div>
+                        <div class="registry-meta">${escapeHtml(item.requesterName || 'ไม่ระบุผู้ขอ')}</div>
+                    </div>
+                    <span class="badge rounded-pill bg-success-subtle text-success-emphasis fw-bold">active</span>
+                </div>
+                <div class="registry-details mt-3">
+                    <div><span class="registry-label">ประเภท</span>${escapeHtml(item.requesterType || '-')}</div>
+                    <div><span class="registry-label">คำขอ</span>${escapeHtml(item.action || '-')}</div>
+                    <div><span class="registry-label">Ticket</span>${escapeHtml(item.sourceTicketId || '-')}</div>
+                    <div><span class="registry-label">อัปเดต</span>${escapeHtml(formatDateTime(item.updatedAt))}</div>
+                </div>
+                ${item.note ? `<div class="registry-note mt-3">${escapeHtml(item.note)}</div>` : ''}
+            </div>
+        </div>
+    `).join('');
 }
 
 function findBlockedStepIndex(workflow, currentStepIndex) {

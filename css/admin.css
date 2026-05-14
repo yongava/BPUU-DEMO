@@ -129,6 +129,54 @@ body {
     backdrop-filter: blur(14px);
 }
 
+.registry-card {
+    padding: 18px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.registry-plate {
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: var(--admin-text);
+}
+
+.registry-meta {
+    margin-top: 0.2rem;
+    font-size: 0.9rem;
+    color: var(--admin-muted);
+}
+
+.registry-details {
+    display: grid;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--admin-text);
+}
+
+.registry-label {
+    display: inline-block;
+    min-width: 4rem;
+    margin-right: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--admin-muted);
+}
+
+.registry-note {
+    padding: 0.75rem 0.85rem;
+    border-radius: 14px;
+    background: rgba(15, 118, 110, 0.08);
+    color: #0f172a;
+    font-size: 0.92rem;
+    line-height: 1.5;
+}
+
 .stat-card {
     position: relative;
     overflow: hidden;
