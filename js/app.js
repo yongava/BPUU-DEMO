@@ -1224,6 +1224,22 @@ function saveWorkflowTickets(tickets) {
     }
 }
 
+function saveWorkflowTicketRecord(ticket) {
+    const latestTickets = loadWorkflowTickets();
+    const ticketIndex = latestTickets.findIndex(item => item.ticketId === ticket.ticketId);
+
+    if (ticketIndex === -1) {
+        latestTickets.unshift(ticket);
+    } else {
+        latestTickets[ticketIndex] = {
+            ...latestTickets[ticketIndex],
+            ...ticket
+        };
+    }
+
+    saveWorkflowTickets(latestTickets);
+}
+
 function getNextWorkflowTicketId(tickets) {
     const currentYear = new Date().getFullYear();
     let maxSequence = WORKFLOW_BASE_SEQUENCE;
@@ -1594,7 +1610,7 @@ async function submitWorkflowLocally() {
     showSubmitSuccess();
 
     sendAndLogWorkflowEmail(ticket, 'new-submission-approval')
-        .finally(() => saveWorkflowTickets(tickets));
+        .finally(() => saveWorkflowTicketRecord(ticket));
 }
 
 function appendSelectedFiles(form) {

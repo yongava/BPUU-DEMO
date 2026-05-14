@@ -51,6 +51,24 @@ function saveApprovalTickets() {
     APPROVAL_LEGACY_TICKET_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
 }
 
+function saveApprovalTicketRecord(ticket) {
+    const latestTickets = loadApprovalTickets();
+    const ticketIndex = latestTickets.findIndex(item => item.ticketId === ticket.ticketId);
+
+    if (ticketIndex === -1) {
+        latestTickets.unshift(ticket);
+    } else {
+        latestTickets[ticketIndex] = {
+            ...latestTickets[ticketIndex],
+            ...ticket
+        };
+    }
+
+    approvalTickets = latestTickets;
+    currentTicket = approvalTickets.find(item => item.ticketId === ticket.ticketId) || ticket;
+    saveApprovalTickets();
+}
+
 function renderApprovalPage(message = '', tone = 'success') {
     const root = document.getElementById('approvalRoot');
     if (!root) return;
@@ -180,13 +198,11 @@ async function handleApprovalAction(action) {
     }
 
     currentTicket.updatedAt = nowIso;
-    approvalTickets[ticketIndex] = currentTicket;
-    saveApprovalTickets();
+    saveApprovalTicketRecord(currentTicket);
 
     if (emailEventType) {
         await sendWorkflowEmailForTicket(currentTicket, emailEventType);
-        approvalTickets[ticketIndex] = currentTicket;
-        saveApprovalTickets();
+        saveApprovalTicketRecord(currentTicket);
     }
 
     renderApprovalPage(action === 'approve' ? 'อนุมัติเรียบร้อยแล้ว' : 'บันทึกผลไม่อนุมัติเรียบร้อยแล้ว');
