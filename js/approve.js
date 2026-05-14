@@ -174,11 +174,15 @@ function renderTimeline(ticket, workflow) {
             : index === ticket.stepIndex
                 ? 'กำลังอยู่ขั้นตอนนี้'
                 : 'รอดำเนินการ';
+        const email = getWorkflowStepEmail(ticket, step);
+        const titleHtml = email
+            ? `${escapeHtml(step)} <span class="step-email">(${escapeHtml(email)})</span>`
+            : escapeHtml(step);
         return `
             <div class="approval-step ${stateClass}">
                 <div class="approval-step-dot">${index < ticket.stepIndex ? '<i class="bi bi-check"></i>' : index + 1}</div>
                 <div>
-                    <div class="approval-step-title">${escapeHtml(step)}</div>
+                    <div class="approval-step-title">${titleHtml}</div>
                     <div class="approval-step-status">${escapeHtml(status)}</div>
                 </div>
             </div>

@@ -227,6 +227,12 @@ body {
     font-weight: 900;
 }
 
+.approval-step-title .step-email {
+    color: var(--approve-muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
 .approval-step-status {
     color: var(--approve-muted);
     font-size: 0.75rem;
