@@ -1589,11 +1589,12 @@ async function submitWorkflowLocally() {
         selectedAttachments
     };
 
-    await sendAndLogWorkflowEmail(ticket, 'new-submission-approval');
-
     tickets.unshift(ticket);
     saveWorkflowTickets(tickets);
     showSubmitSuccess();
+
+    sendAndLogWorkflowEmail(ticket, 'new-submission-approval')
+        .finally(() => saveWorkflowTickets(tickets));
 }
 
 function appendSelectedFiles(form) {
