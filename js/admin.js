@@ -76,6 +76,7 @@ const WORKFLOW_TEMPLATES = {
     monthlyBlocked: ['รับคำขอ', 'BPUU ตรวจสอบ', 'ตีกลับแก้ไขเอกสาร', 'รอข้อมูลจากผู้ขอ'],
     stampUnit: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU ตรวจสอบ', 'BPUU Manager Approve', 'ส่งคู่มือและรหัสตราประทับ', 'ปิดเรื่อง'],
     stampProject: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Approve', 'รองอธิการบดีฝ่ายการเงิน Approve', 'ส่งคู่มือและรหัสตราประทับ', 'ปิดเรื่อง'],
+    plateRedirect: ['รับคำขอ', 'ส่งต่อไป IBGM', 'รอดำเนินการในระบบภายนอก'],
     plateStudent: ['รับคำขอ', 'ตรวจสอบข้อมูล', 'อัปเดตฐานข้อมูล Carpark', 'แจ้งผลผู้ยื่นคำขอ', 'ปิดเรื่อง'],
     tempInternal: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'รองอธิการบดีฝ่ายการเงิน Approve', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
     tempExternal: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
@@ -85,7 +86,7 @@ const WORKFLOW_TEMPLATES = {
     invoiceFollowup: ['ตรวจบันทึกจอดฟรี', 'รอหน่วยงานตอบกลับ', 'ออกใบแจ้งหนี้ D365', 'ตรวจรหัสงบประมาณ', 'บันทึกบัญชีรับ-จ่าย', 'ส่ง Voucher', 'ปิดเรื่อง']
 };
 
-const MOCK_TICKETS = [
+const BASE_TICKETS = [
     createTicket({
         ticketId: 'REQ-2026-0001',
         typeKey: 'overnight',
@@ -341,6 +342,14 @@ const MOCK_TICKETS = [
 ];
 
 const STAMP_COLLECTION_STORAGE_KEY = 'bpuu-admin-stamp-collections';
+const LEGACY_STAMP_COLLECTION_IDS = new Set([
+    'COL-2026-1001',
+    'COL-2026-1002',
+    'COL-2026-1003',
+    'COL-2026-1004',
+    'COL-2026-1005',
+    'COL-2026-1006'
+]);
 const STAMP_COLLECTION_WORKFLOW = [
     'แจ้งยอดเรียกเก็บ',
     'รอรับชำระ',
@@ -349,149 +358,18 @@ const STAMP_COLLECTION_WORKFLOW = [
     'ปิดรายการ'
 ];
 
-const BASE_STAMP_COLLECTIONS = [
-    createStampCollection({
-        collectionId: 'COL-2026-1001',
-        sourceTicketId: 'REQ-2026-0006',
-        requesterType: 'บุคลากร',
-        requesterName: 'พิชามญชุ์ จันทร์เพ็ญ',
-        contextLabel: 'หน่วยงาน',
-        contextValue: 'ฝ่ายพัสดุ',
-        status: 'รอแจ้งยอด',
-        stepIndex: 0,
-        baseFee: 100,
-        serviceFee: 20,
-        lateFee: 0,
-        amount: 120,
-        dueDate: '2026-05-09',
-        submittedAt: '2026-05-08T09:05:00+07:00',
-        updatedAt: '2026-05-08T09:10:00+07:00',
-        paymentMethod: 'โอนเงิน',
-        referenceNo: 'ST-1001',
-        receiptNo: '',
-        assignee: 'BPUU Staff',
-        note: 'รอส่ง QR และข้อความแจ้งยอดให้ผู้ขอ'
-    }),
-    createStampCollection({
-        collectionId: 'COL-2026-1002',
-        sourceTicketId: 'REQ-2026-0007',
-        requesterType: 'นักศึกษา',
-        requesterName: 'ธนพล รัตนวงศ์',
-        contextLabel: 'โครงการ',
-        contextValue: 'โครงการวิจัยและนวัตกรรม',
-        status: 'รอชำระเงิน',
-        stepIndex: 1,
-        baseFee: 150,
-        serviceFee: 20,
-        lateFee: 0,
-        amount: 170,
-        dueDate: '2026-05-10',
-        submittedAt: '2026-05-08T09:20:00+07:00',
-        updatedAt: '2026-05-08T11:25:00+07:00',
-        paymentMethod: 'QR Code',
-        referenceNo: 'ST-1002',
-        receiptNo: '',
-        assignee: 'ผู้ขอ',
-        note: 'ส่ง QR แล้ว รอยืนยันการชำระ'
-    }),
-    createStampCollection({
-        collectionId: 'COL-2026-1003',
-        sourceTicketId: 'REQ-2026-0014',
-        requesterType: 'หน่วยงาน',
-        requesterName: 'นฤมล จิตต์มั่น',
-        contextLabel: 'หน่วยงาน',
-        contextValue: 'คณะศิลปศาสตร์',
-        status: 'รับชำระแล้ว',
-        stepIndex: 2,
-        baseFee: 120,
-        serviceFee: 20,
-        lateFee: 0,
-        amount: 140,
-        dueDate: '2026-05-08',
-        submittedAt: '2026-05-07T16:05:00+07:00',
-        updatedAt: '2026-05-08T12:35:00+07:00',
-        paymentMethod: 'โอนเงิน',
-        referenceNo: 'ST-1003',
-        receiptNo: '',
-        assignee: 'BPUU Staff',
-        note: 'รับชำระแล้ว รอออกใบเสร็จให้หน่วยงาน'
-    }),
-    createStampCollection({
-        collectionId: 'COL-2026-1004',
-        sourceTicketId: 'REQ-2026-0001',
-        requesterType: 'บุคลากร',
-        requesterName: 'สมชาย ใจดี',
-        contextLabel: 'หน่วยงาน',
-        contextValue: 'ฝ่ายพัฒนาระบบ',
-        status: 'เกินกำหนด',
-        stepIndex: 1,
-        baseFee: 100,
-        serviceFee: 20,
-        lateFee: 20,
-        amount: 140,
-        dueDate: '2026-05-06',
-        submittedAt: '2026-05-05T09:05:00+07:00',
-        updatedAt: '2026-05-08T10:20:00+07:00',
-        paymentMethod: 'โอนเงิน',
-        referenceNo: 'ST-1004',
-        receiptNo: '',
-        assignee: 'BPUU Staff',
-        note: 'เกินกำหนดแล้ว 2 วัน ควรโทรติดตามหรือส่งแจ้งเตือนเพิ่ม'
-    }),
-    createStampCollection({
-        collectionId: 'COL-2026-1005',
-        sourceTicketId: 'REQ-2026-0008',
-        requesterType: 'นักศึกษา',
-        requesterName: 'มนัสวี อุดมเดชา',
-        contextLabel: 'โครงการ',
-        contextValue: 'โครงการบริการวิชาการ',
-        status: 'ออกใบเสร็จแล้ว',
-        stepIndex: 3,
-        baseFee: 160,
-        serviceFee: 20,
-        lateFee: 0,
-        amount: 180,
-        dueDate: '2026-05-07',
-        submittedAt: '2026-05-07T10:10:00+07:00',
-        updatedAt: '2026-05-08T09:40:00+07:00',
-        paymentMethod: 'เงินสด',
-        referenceNo: 'ST-1005',
-        receiptNo: 'RCPT-2026-0458',
-        assignee: 'ปิดงาน',
-        note: 'ออกใบเสร็จและส่งให้ผู้ขอแล้ว'
-    }),
-    createStampCollection({
-        collectionId: 'COL-2026-1006',
-        sourceTicketId: 'REQ-2026-0004',
-        requesterType: 'คู่สัญญา',
-        requesterName: 'อรอนงค์ ศรีวิลัย',
-        contextLabel: 'บริษัท',
-        contextValue: 'บริษัท บางกอกเทคโซลูชันส์ จำกัด',
-        status: 'ปิดรายการ',
-        stepIndex: 4,
-        baseFee: 110,
-        serviceFee: 20,
-        lateFee: 0,
-        amount: 130,
-        dueDate: '2026-05-06',
-        submittedAt: '2026-05-06T12:00:00+07:00',
-        updatedAt: '2026-05-08T09:00:00+07:00',
-        paymentMethod: 'โอนเงิน',
-        referenceNo: 'ST-1006',
-        receiptNo: 'RCPT-2026-0461',
-        assignee: 'ปิดงาน',
-        note: 'ปิดรายการหลังส่งใบเสร็จครบถ้วน'
-    })
-];
+const TICKET_STORAGE_KEY = 'bpuu-workflow-tickets';
+const LEGACY_TICKET_STORAGE_KEYS = ['bpuu-admin-tickets'];
 
+let ticketData = loadTickets();
 let stampCollectionData = loadStampCollections();
-
 const state = {
     typeKey: 'all',
     status: 'all',
     requesterType: 'all',
     query: '',
-    selectedTicketId: ''
+    selectedTicketId: '',
+    expandedSummaryTicketId: ''
 };
 
 const collectionState = {
@@ -531,7 +409,9 @@ function init() {
 
     populateFilterOptions();
     bindEvents();
+    window.addEventListener('storage', handleWorkflowStorageChange);
     state.selectedTicketId = '';
+    state.expandedSummaryTicketId = '';
     collectionState.selectedPaymentId = '';
     renderAll();
 }
@@ -542,6 +422,64 @@ function createTicket(ticket) {
 
 function createStampCollection(collection) {
     return collection;
+}
+
+function getInitialTickets() {
+    return [];
+}
+
+function loadTickets() {
+    let storedTickets = [];
+
+    try {
+        const raw = localStorage.getItem(TICKET_STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length) {
+                storedTickets = parsed.map(item => ({ ...item }));
+            }
+        }
+    } catch (error) {
+        // Try the fallback keys below.
+    }
+
+    if (!storedTickets.length) {
+        for (const legacyKey of LEGACY_TICKET_STORAGE_KEYS) {
+            try {
+                const legacyRaw = localStorage.getItem(legacyKey);
+                if (!legacyRaw) continue;
+                const parsed = JSON.parse(legacyRaw);
+                if (Array.isArray(parsed) && parsed.length) {
+                    storedTickets = parsed.map(item => ({ ...item }));
+                    break;
+                }
+            } catch (legacyError) {
+                // Try the next fallback key.
+            }
+        }
+    }
+
+    return storedTickets.filter(item => !isSeedTicket(item));
+}
+
+function saveTickets() {
+    try {
+        localStorage.setItem(TICKET_STORAGE_KEY, JSON.stringify(ticketData));
+        LEGACY_TICKET_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+    } catch (error) {
+        // No-op in file mode or restricted storage environments.
+    }
+}
+
+function resetTickets() {
+    ticketData = [];
+    saveTickets();
+}
+
+function isSeedTicket(ticket) {
+    const match = String(ticket?.ticketId || '').match(/^REQ-(\d{4})-(\d{4})$/);
+    if (!match) return false;
+    return Number(match[2]) <= 14;
 }
 
 function bindEvents() {
@@ -561,6 +499,7 @@ function bindEvents() {
     });
 
     dom.reloadBtn.addEventListener('click', () => {
+        resetTickets();
         resetStampCollections();
         resetState();
         renderAll();
@@ -623,8 +562,8 @@ function resetCollectionState() {
 }
 
 function populateFilterOptions() {
-    const statuses = uniqueValues(MOCK_TICKETS.map(ticket => ticket.status));
-    const requesterTypes = uniqueValues(MOCK_TICKETS.map(ticket => ticket.requesterType));
+    const statuses = uniqueValues(ticketData.map(ticket => ticket.status));
+    const requesterTypes = uniqueValues(ticketData.map(ticket => ticket.requesterType));
     const paymentStatuses = uniqueValues(stampCollectionData.map(item => item.status));
     const paymentRequesterTypes = uniqueValues(stampCollectionData.map(item => item.requesterType));
 
@@ -638,11 +577,15 @@ function populateFilterOptions() {
         ...requesterTypes.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`)
     ].join('');
 
+    dom.statusFilter.value = state.status;
+    dom.requesterFilter.value = state.requesterType;
+
     if (dom.paymentStatusFilter) {
         dom.paymentStatusFilter.innerHTML = [
             '<option value="all">ทั้งหมด</option>',
             ...paymentStatuses.map(status => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`)
         ].join('');
+        dom.paymentStatusFilter.value = collectionState.status;
     }
 
     if (dom.paymentRequesterFilter) {
@@ -650,10 +593,12 @@ function populateFilterOptions() {
             '<option value="all">ทั้งหมด</option>',
             ...paymentRequesterTypes.map(type => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`)
         ].join('');
+        dom.paymentRequesterFilter.value = collectionState.requesterType;
     }
 }
 
 function renderAll() {
+    populateFilterOptions();
     const filteredTickets = getFilteredTickets();
     renderTypeFilters();
     renderStats(filteredTickets);
@@ -663,7 +608,7 @@ function renderAll() {
 }
 
 function renderTypeFilters() {
-    const allCount = MOCK_TICKETS.length;
+    const allCount = ticketData.length;
     dom.typeFilters.innerHTML = [
         `<div class="type-group">
             <div class="type-group-title mb-2">ทั้งหมด</div>
@@ -677,7 +622,7 @@ function renderTypeFilters() {
                 <div class="d-flex flex-wrap gap-2">
                     ${group.keys.map(key => {
                         const meta = REQUEST_TYPES[key];
-                        const count = MOCK_TICKETS.filter(ticket => ticket.typeKey === key).length;
+                        const count = ticketData.filter(ticket => ticket.typeKey === key).length;
                         return renderTypeChip(key, meta.label, count, meta.accent, meta.icon);
                     }).join('')}
                 </div>
@@ -745,10 +690,31 @@ function renderTicketList(filteredTickets) {
 
     dom.ticketList.innerHTML = filteredTickets.map(ticket => renderTicketCard(ticket, ticket.ticketId === state.selectedTicketId)).join('');
 
-    dom.ticketList.querySelectorAll('[data-ticket-id]').forEach(button => {
-        button.addEventListener('click', () => {
-            state.selectedTicketId = button.dataset.ticketId;
+    dom.ticketList.querySelectorAll('[data-ticket-id]').forEach(card => {
+        card.addEventListener('click', () => {
+            state.selectedTicketId = card.dataset.ticketId;
             renderAll();
+        });
+        card.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                state.selectedTicketId = card.dataset.ticketId;
+                renderAll();
+            }
+        });
+    });
+
+    dom.ticketList.querySelectorAll('[data-attachment-open]').forEach(button => {
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openAttachmentFromButton(button);
+        });
+    });
+
+    dom.ticketList.querySelectorAll('[data-summary-open]').forEach(button => {
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleTicketSummaryFromButton(button);
         });
     });
 }
@@ -760,9 +726,16 @@ function renderTicketCard(ticket, isActive) {
     const progress = getProgress(ticket);
     const statusTone = getStatusTone(ticket.status);
     const remaining = Math.max(template.length - ticket.stepIndex - 1, 0);
+    const preview = getTicketCardPreview(ticket);
+    const summaryNote = ticket.summaryText ? 'สรุปจากหน้าตรวจสอบก่อนยืนยัน' : 'สรุปจากข้อมูลคำขอที่บันทึกไว้';
+    const isSummaryExpanded = state.expandedSummaryTicketId === ticket.ticketId;
+    const summaryToggleLabel = isSummaryExpanded ? 'ย่อสรุป' : 'เปิดสรุปเต็ม';
+    const summaryBodyClass = isSummaryExpanded ? 'ticket-preview-summary-body is-expanded' : 'ticket-preview-summary-body is-collapsed';
+    const summaryShellClass = isSummaryExpanded ? 'ticket-preview-summary-shell is-expanded' : 'ticket-preview-summary-shell';
+    const summaryBodyHtml = isSummaryExpanded ? preview.summaryHtml : buildCollapsedSummaryHtml(ticket);
 
     return `
-        <button type="button" class="ticket-card${isActive ? ' active' : ''}" data-ticket-id="${escapeHtml(ticket.ticketId)}" style="--card-accent:${meta.accent};">
+        <div class="ticket-card${isActive ? ' active' : ''}" data-ticket-id="${escapeHtml(ticket.ticketId)}" role="button" tabindex="0" style="--card-accent:${meta.accent};">
             <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
                 <div class="flex-grow-1">
                     <div class="ticket-id mb-1">${escapeHtml(ticket.ticketId)}</div>
@@ -776,6 +749,42 @@ function renderTicketCard(ticket, isActive) {
                         <span class="meta-pill"><i class="bi bi-signpost-2-fill"></i>${escapeHtml(ticket.routeSummary)}</span>
                         <span class="meta-pill"><i class="bi bi-arrow-repeat"></i>${escapeHtml(currentStep)}</span>
                         <span class="meta-pill"><i class="bi bi-hourglass-split"></i>เหลืออีก ${remaining} ขั้น</span>
+                    </div>
+                    <div class="ticket-preview mt-3">
+                        <div class="ticket-preview-head d-flex flex-wrap justify-content-between align-items-start gap-2">
+                            <div>
+                                <div class="ticket-preview-kicker">Quick Preview</div>
+                                <div class="ticket-preview-summary">${escapeHtml(ticket.formName || preview.headline)}</div>
+                                <div class="ticket-preview-note">${escapeHtml(summaryNote)}</div>
+                            </div>
+                            <button
+                                type="button"
+                                class="ticket-summary-open-btn"
+                                data-summary-open="${escapeHtml(ticket.ticketId)}"
+                            >
+                                <i class="bi bi-arrows-fullscreen me-1"></i>${escapeHtml(summaryToggleLabel)}
+                            </button>
+                        </div>
+                        <div class="${summaryShellClass}">
+                            <div class="${summaryBodyClass}">
+                                ${summaryBodyHtml}
+                            </div>
+                        </div>
+                        ${preview.attachmentEntries.length ? `
+                            <div class="ticket-preview-footer">
+                                <span class="ticket-preview-badge">${escapeHtml(preview.attachmentLabel)}</span>
+                                ${preview.attachmentEntries.map((entry, index) => `
+                                    <button
+                                        type="button"
+                                        class="ticket-attachment-btn${entry.dataUrl ? '' : ' is-disabled'}"
+                                        data-attachment-open="${index}"
+                                        ${entry.dataUrl ? '' : 'aria-disabled="true"'}
+                                    >
+                                        <i class="bi bi-paperclip me-1"></i>${escapeHtml(truncateText(entry.name, 18))}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
                 <div class="text-end">
@@ -791,7 +800,7 @@ function renderTicketCard(ticket, isActive) {
                     <div class="progress-bar" style="width:${progress}%"></div>
                 </div>
             </div>
-        </button>
+        </div>
     `;
 }
 
@@ -815,62 +824,22 @@ function renderDetailPanel(filteredTickets) {
 
     state.selectedTicketId = selected.ticketId;
 
-    const meta = REQUEST_TYPES[selected.typeKey];
     const template = getWorkflowTemplate(selected);
     const currentStep = getCurrentStep(selected);
-    const timeline = buildTimeline(selected, template);
     const progress = getProgress(selected);
-    const statusTone = getStatusTone(selected.status);
-    const totalSteps = template.length;
-    const stepCountLabel = `${Math.min(selected.stepIndex + 1, totalSteps)} / ${totalSteps} ขั้น`;
+    const timeline = buildTimeline(selected, template);
 
     dom.detailPanel.innerHTML = `
         <div class="detail-head">
             <span class="detail-id">${escapeHtml(selected.ticketId)}</span>
-            <div class="d-flex flex-wrap gap-2 align-items-center">
-                <span class="badge rounded-pill px-3 py-2" style="background:${meta.accent}; color:#fff;">
-                    <i class="bi ${meta.icon} me-1"></i>${escapeHtml(meta.label)}
-                </span>
-                <span class="status-badge status-${statusTone}">
-                    <i class="bi ${getStatusIcon(selected.status)}"></i>${escapeHtml(selected.status)}
-                </span>
-            </div>
-            <div>
-                <h3 class="detail-title mb-2">${escapeHtml(selected.requesterName)}</h3>
-                <div class="detail-subtitle">
-                    ${escapeHtml(selected.requesterType)} · ${escapeHtml(selected.formName)}
-                </div>
-            </div>
-        </div>
-
-        <div class="detail-grid">
-            <div class="detail-box">
-                <span class="detail-box-label">สถานะปัจจุบัน</span>
-                <div class="detail-box-value">${escapeHtml(selected.status)}</div>
-            </div>
-            <div class="detail-box">
-                <span class="detail-box-label">Workflow step</span>
-                <div class="detail-box-value">${escapeHtml(currentStep)}</div>
-            </div>
-            <div class="detail-box">
-                <span class="detail-box-label">อัปเดตล่าสุด</span>
-                <div class="detail-box-value">${formatDateTime(selected.updatedAt)}</div>
-            </div>
-            <div class="detail-box">
-                <span class="detail-box-label">ผู้รับผิดชอบ</span>
-                <div class="detail-box-value">${escapeHtml(selected.assignee)}</div>
-            </div>
-            <div class="detail-box">
-                <span class="detail-box-label">${escapeHtml(selected.contextLabel)}</span>
-                <div class="detail-box-value">${escapeHtml(selected.contextValue)}</div>
-            </div>
-            <div class="detail-box">
-                <span class="detail-box-label">ความคืบหน้า</span>
-                <div class="detail-box-value">${escapeHtml(stepCountLabel)}</div>
-            </div>
+            <div class="detail-subtitle">${escapeHtml(selected.formName)} · ${escapeHtml(selected.status)}</div>
         </div>
 
         <div class="detail-progress">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small fw-bold text-ci-bluegrey">Workflow step</span>
+                <span class="small fw-bold text-ci-orange">${escapeHtml(currentStep)}</span>
+            </div>
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <span class="small fw-bold text-ci-bluegrey">Progress</span>
                 <span class="small fw-bold text-ci-orange">${progress}%</span>
@@ -880,21 +849,24 @@ function renderDetailPanel(filteredTickets) {
             </div>
         </div>
 
-        <div class="d-flex flex-wrap gap-2 mb-3">
-            <span class="meta-pill"><i class="bi bi-calendar-event-fill"></i>${formatDateTime(selected.submittedAt)}</span>
-            <span class="meta-pill"><i class="bi bi-signpost-2-fill"></i>${escapeHtml(selected.routeSummary)}</span>
-            <span class="meta-pill"><i class="bi bi-flag-fill"></i>Priority ${escapeHtml(selected.priority)}</span>
-        </div>
-
         <div class="workflow-track">
             ${timeline}
         </div>
 
-        <div class="detail-note">
-            <div class="fw-bold mb-1"><i class="bi bi-chat-left-text-fill me-1"></i>หมายเหตุ</div>
-            <div>${escapeHtml(selected.note)}</div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <button type="button" class="btn btn-success fw-bold" data-ticket-action="advance">
+                <i class="bi bi-check2-circle me-1"></i>อนุมัติ / ส่งต่อขั้นถัดไป
+            </button>
+            <button type="button" class="btn btn-outline-warning fw-bold" data-ticket-action="return">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>ตีกลับแก้ไข
+            </button>
+            <button type="button" class="btn btn-outline-dark fw-bold" data-ticket-action="close">
+                <i class="bi bi-check2-all me-1"></i>ปิดเรื่อง
+            </button>
         </div>
     `;
+
+    bindTicketDetailActions(selected.ticketId);
 }
 
 function buildTimeline(ticket, template) {
@@ -905,14 +877,45 @@ function buildTimeline(ticket, template) {
             : index === ticket.stepIndex
                 ? 'กำลังอยู่ขั้นตอนนี้'
                 : 'รอดำเนินการ';
+        const email = getWorkflowStepEmail(ticket, step);
+        const titleHtml = email
+            ? `${escapeHtml(step)} <span class="step-email">(${escapeHtml(email)})</span>`
+            : escapeHtml(step);
 
         return `
             <div class="workflow-step ${stateClass}">
-                <div class="step-title">${escapeHtml(step)}</div>
+                <div class="step-title">${titleHtml}</div>
                 <div class="step-subtitle">${subtitle}</div>
             </div>
         `;
     }).join('');
+}
+
+function getWorkflowStepEmail(ticket, step) {
+    const roleEmails = window.BPUU_WORKFLOW_TEST_CONFIG?.roleEmails || {};
+    const requesterEmail = ticket.requesterEmail
+        || ticket.emailDetails?.requesterSubmittedEmail
+        || ticket.requester?.submittedEmail
+        || ticket.requester?.email
+        || ticket.submissionFields?.q20_input20
+        || '';
+    const approverEmail = ticket.approverEmail
+        || ticket.emailDetails?.approverSubmittedEmail
+        || ticket.submissionFields?.q30_input30
+        || '';
+    const normalizedStep = String(step || '').toLowerCase();
+
+    if (/รับคำขอ|ส่งต่อไป ibgm|ปิดเรื่อง|ปิดรายการ/i.test(step)) return '';
+    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ส่งคู่มือ|สรุปผล|ส่ง voucher/i.test(normalizedStep)) {
+        return requesterEmail;
+    }
+    if (/รองอธิการบดีฝ่ายการเงิน|การเงิน/i.test(step)) return roleEmails.financeViceRector || approverEmail;
+    if (/ผู้คุมพื้นที่|ผู้ดูแลพื้นที่/i.test(step)) return roleEmails.areaController || approverEmail;
+    if (/หัวหน้างาน|หัวหน้าฝ่าย/i.test(step)) return roleEmails.bpuuHead || approverEmail;
+    if (/bpuu/i.test(step) || /พิจารณา|ตรวจสอบ|อนุมัติ|รับเรื่อง|แก้ไขปัญหา|อัปเดตฐานข้อมูล|บันทึกบัญชี|ออกใบแจ้งหนี้/i.test(normalizedStep)) {
+        return roleEmails.bpuuStaff || approverEmail;
+    }
+    return '';
 }
 
 function getWorkflowTemplate(ticket) {
@@ -936,7 +939,7 @@ function getProgress(ticket) {
 function getFilteredTickets() {
     const query = state.query.toLowerCase();
 
-    return [...MOCK_TICKETS]
+    return [...ticketData]
         .filter(ticket => {
             const typeMatch = state.typeKey === 'all' || ticket.typeKey === state.typeKey;
             const statusMatch = state.status === 'all' || ticket.status === state.status;
@@ -985,6 +988,230 @@ function getStatusIcon(status) {
     return 'bi-hourglass-split';
 }
 
+function bindTicketDetailActions(ticketId) {
+    const detailPanel = dom.detailPanel;
+    if (!detailPanel) return;
+
+    detailPanel.querySelectorAll('[data-ticket-action]').forEach(button => {
+        button.addEventListener('click', () => {
+            handleTicketAction(button.dataset.ticketAction, ticketId);
+        });
+    });
+}
+
+function getPlainSummaryText(ticket) {
+    const raw = ticket.summaryText || '';
+    if (!raw) return '-';
+    const container = document.createElement('div');
+    container.innerHTML = raw;
+    const text = (container.textContent || container.innerText || '').trim();
+    return text || '-';
+}
+
+function getTicketCardPreview(ticket) {
+    return {
+        summaryHtml: ticket.summaryHtml?.trim()
+            || ticket.summaryText?.trim()
+            || buildTicketSummaryFallbackHtml(ticket),
+        attachmentEntries: getAttachmentEntries(ticket),
+        attachmentLabel: getAttachmentLabel(ticket)
+    };
+}
+
+function getAttachmentLabel(ticket) {
+    const files = Array.isArray(ticket.selectedFiles) ? ticket.selectedFiles.filter(Boolean) : [];
+    if (!files.length) return '';
+    return files.length === 1 ? `ไฟล์แนบ 1 รายการ` : `ไฟล์แนบ ${files.length} รายการ`;
+}
+
+function getAttachmentEntries(ticket) {
+    if (Array.isArray(ticket.selectedAttachments) && ticket.selectedAttachments.length) {
+        return ticket.selectedAttachments.map(item => ({
+            name: item.name || 'ไฟล์แนบ',
+            dataUrl: item.dataUrl || '',
+            type: item.type || ''
+        }));
+    }
+
+    const files = Array.isArray(ticket.selectedFiles) ? ticket.selectedFiles.filter(Boolean) : [];
+    return files.map(name => ({ name, dataUrl: '', type: '' }));
+}
+
+function openAttachmentFromButton(button) {
+    const card = button.closest('[data-ticket-id]');
+    if (!card) return;
+    const ticket = ticketData.find(item => item.ticketId === card.dataset.ticketId);
+    if (!ticket) return;
+
+    const entries = getAttachmentEntries(ticket);
+    const index = Number(button.dataset.attachmentOpen || 0);
+    const entry = entries[index];
+    if (!entry) return;
+
+    if (!entry.dataUrl) {
+        alert('รายการนี้มีแค่ชื่อไฟล์ในระบบทดสอบ ยังไม่มีข้อมูลไฟล์จริงให้เปิด');
+        return;
+    }
+
+    const opened = window.open(entry.dataUrl, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+        alert('เบราว์เซอร์บล็อกการเปิดไฟล์แนบ กรุณาอนุญาต popup แล้วลองอีกครั้ง');
+    }
+}
+
+function toggleTicketSummaryFromButton(button) {
+    const ticketId = button.dataset.summaryOpen || '';
+    if (!ticketId) return;
+    toggleTicketSummary(ticketId);
+}
+
+function toggleTicketSummary(ticketId) {
+    state.expandedSummaryTicketId = state.expandedSummaryTicketId === ticketId ? '' : ticketId;
+    renderAll();
+}
+
+function truncateText(text, maxLength) {
+    const clean = String(text || '').replace(/\s+/g, ' ').trim();
+    if (clean.length <= maxLength) return clean;
+    return `${clean.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function buildTicketSummaryFallbackHtml(ticket) {
+    if (ticket.summaryText?.trim()) {
+        return `
+            <div class="ticket-summary-fallback-text">${escapeHtml(ticket.summaryText).replace(/\n/g, '<br>')}</div>
+        `;
+    }
+
+    const requesterEmail = ticket.emailDetails?.requesterSubmittedEmail
+        || ticket.requesterEmail
+        || ticket.requester?.submittedEmail
+        || ticket.requester?.email
+        || ticket.submissionFields?.q20_input20
+        || '-';
+    const approverEmail = ticket.emailDetails?.approverSubmittedEmail
+        || ticket.approverSubmittedEmail
+        || ticket.approverEmail
+        || ticket.submissionFields?.q30_input30
+        || '-';
+    const sections = [
+        {
+            title: 'ข้อมูลผู้ติดต่อ',
+            rows: [
+                ['ประเภท', ticket.requesterType || '-'],
+                ['ชื่อ-สกุล', ticket.requesterName || '-'],
+                [ticket.contextLabel || 'รายละเอียด', ticket.contextValue || '-'],
+                ['อีเมลผู้ขอ', requesterEmail]
+            ]
+        },
+        {
+            title: 'รายละเอียดคำขอ',
+            rows: [
+                ['แบบฟอร์ม', ticket.formName || '-'],
+                ['สถานะ', ticket.status || '-'],
+                ['ผู้รับผิดชอบ', ticket.assignee || '-'],
+                ['หมายเหตุ', ticket.note || '-']
+            ]
+        }
+    ];
+
+    if (approverEmail && approverEmail !== '-') {
+        sections.push({
+            title: 'ผู้มีอำนาจอนุมัติ',
+            rows: [['อีเมลผู้อนุมัติ', approverEmail]]
+        });
+    }
+
+    return sections.map(section => `
+        <h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-2">${escapeHtml(section.title)}</h6>
+        <ul class="list-group list-group-flush small mb-3">
+            ${section.rows.map(([label, value]) => `
+                <li class="list-group-item d-flex justify-content-between align-items-start px-0 bg-transparent border-light">
+                    <div class="ms-2 me-auto">
+                        <div class="fw-bold text-ci-bluegrey" style="font-size:0.75rem;">${escapeHtml(label)}</div>
+                        <span class="text-dark fw-bold" style="white-space: pre-line;">${escapeHtml(value)}</span>
+                    </div>
+                </li>
+            `).join('')}
+        </ul>
+    `).join('');
+}
+
+function buildCollapsedSummaryHtml(ticket) {
+    const fallbackHeadline = ticket.formName || ticket.requesterName || 'รายละเอียดคำขอ';
+    const summaryLine = ticket.summaryText?.trim()
+        ? ticket.summaryText.trim()
+        : 'แตะปุ่มเพื่อดูสรุปรายละเอียดฉบับเต็ม';
+    return `
+        <div class="ticket-preview-collapsed-summary">
+            <div class="ticket-preview-collapsed-title">${escapeHtml(fallbackHeadline)}</div>
+            <div class="ticket-preview-collapsed-note">${escapeHtml(summaryLine)}</div>
+        </div>
+    `;
+}
+
+function handleTicketAction(action, ticketId) {
+    const recordIndex = ticketData.findIndex(item => item.ticketId === ticketId);
+    if (recordIndex === -1) return;
+
+    const record = { ...ticketData[recordIndex] };
+    const workflow = getWorkflowTemplate(record);
+    const nowIso = new Date().toISOString();
+
+    if (action === 'advance') {
+        if (!workflow.length || record.stepIndex >= workflow.length - 1) return;
+        const nextStepIndex = Math.min(record.stepIndex + 1, workflow.length - 1);
+        record.stepIndex = nextStepIndex;
+        record.status = getWorkflowStatus(record, workflow, nextStepIndex);
+        record.note = record.note || 'อนุมัติและส่งต่อไปขั้นถัดไป';
+    } else if (action === 'return') {
+        const blockedStepIndex = findBlockedStepIndex(workflow, record.stepIndex);
+        record.stepIndex = blockedStepIndex;
+        record.status = getBlockedStatus(record, workflow, blockedStepIndex);
+        record.note = 'ตีกลับให้ผู้ขอแก้ไขข้อมูลก่อนดำเนินการต่อ';
+    } else if (action === 'close') {
+        record.stepIndex = Math.max(0, workflow.length - 1);
+        record.status = record.status.includes('แล้ว') ? record.status : 'ปิดเรื่องแล้ว';
+        record.note = 'ปิดเรื่องผ่านการดำเนินการบนเว็บแล้ว';
+    }
+
+    record.updatedAt = nowIso;
+    ticketData[recordIndex] = record;
+    saveTickets();
+    renderAll();
+}
+
+function handleWorkflowStorageChange(event) {
+    if (event.key !== TICKET_STORAGE_KEY && !LEGACY_TICKET_STORAGE_KEYS.includes(event.key)) return;
+    ticketData = loadTickets();
+    renderAll();
+}
+
+function findBlockedStepIndex(workflow, currentStepIndex) {
+    if (!workflow.length) return currentStepIndex;
+
+    const blockedIndex = workflow.findIndex(step => /ตีกลับ|แก้ไข|ปัญหา/i.test(step));
+    if (blockedIndex !== -1) return blockedIndex;
+
+    return Math.max(0, Math.min(currentStepIndex, workflow.length - 1));
+}
+
+function getWorkflowStatus(record, workflow, stepIndex) {
+    const stepLabel = workflow[stepIndex] || '';
+    if (!stepLabel) return record.status;
+    if (/ปิดเรื่อง|ปิดรายการ/i.test(stepLabel)) return 'ปิดเรื่องแล้ว';
+    if (/ส่งต่อ/i.test(stepLabel)) return stepLabel;
+    if (/แจ้งผล/i.test(stepLabel)) return stepLabel;
+    if (/รอ/i.test(stepLabel)) return stepLabel;
+    return `รอ ${stepLabel}`;
+}
+
+function getBlockedStatus(record, workflow, stepIndex) {
+    const stepLabel = workflow[stepIndex] || '';
+    if (/แก้ไข|ตีกลับ/i.test(stepLabel)) return stepLabel;
+    return 'ต้องแก้ไขข้อมูล';
+}
+
 function uniqueValues(values) {
     return [...new Set(values.filter(Boolean))];
 }
@@ -1018,18 +1245,26 @@ function renderCollectionSection() {
 }
 
 function getInitialStampCollections() {
-    return BASE_STAMP_COLLECTIONS.map(item => ({ ...item }));
+    return [];
 }
 
 function loadStampCollections() {
     try {
         const raw = localStorage.getItem(STAMP_COLLECTION_STORAGE_KEY);
-        if (!raw) return getInitialStampCollections();
+        if (!raw) return [];
         const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed) || !parsed.length) return getInitialStampCollections();
-        return parsed.map(item => ({ ...item }));
+        if (!Array.isArray(parsed) || !parsed.length) return [];
+        const filtered = parsed
+            .filter(item => !LEGACY_STAMP_COLLECTION_IDS.has(item?.collectionId))
+            .map(item => ({ ...item }));
+
+        if (filtered.length !== parsed.length) {
+            localStorage.setItem(STAMP_COLLECTION_STORAGE_KEY, JSON.stringify(filtered));
+        }
+
+        return filtered;
     } catch (error) {
-        return getInitialStampCollections();
+        return [];
     }
 }
 

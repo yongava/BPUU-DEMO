@@ -3,6 +3,10 @@ const STUDENT_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRzYO0
 const CONTRACT_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRzYO0Kyv2yxDlo40zJ06bkb3Vh70X_HZj5gowDC_wHjCF2LxoaCu4CFLkBzd6j2Q4Do_3-ntiipx3-/pub?gid=1831450496&single=true&output=csv";
 const JOTFORM_FORM_ID = "261200763585052";
 const JOTFORM_SUBMIT_URL = `https://submit.jotform.com/submit/${JOTFORM_FORM_ID}`;
+const WORKFLOW_STORAGE_KEY = 'bpuu-workflow-tickets';
+const LEGACY_WORKFLOW_STORAGE_KEYS = ['bpuu-admin-tickets'];
+const WORKFLOW_BASE_SEQUENCE = 14;
+const WORKFLOW_TEST_CONFIG = window.BPUU_WORKFLOW_TEST_CONFIG || {};
 
 let currentSelectedForm = "";
 let loginModalInstance = null;
@@ -72,6 +76,32 @@ function getStaffDepartment(data) {
 
     // Show the hierarchy from the top level to the user's current unit.
     return uniqueNonEmpty(departmentNames).join('\n');
+}
+
+function getTestEmailOverride(group, key, fallback = '') {
+    const value = String(WORKFLOW_TEST_CONFIG?.[group]?.[key] || '').trim();
+    return value || fallback || '';
+}
+
+function resolveRequesterEmail(loginType, fallback = '') {
+    return getTestEmailOverride('requesterEmails', loginType, fallback);
+}
+
+function resolveApproverEmail(name, position, fallback = '') {
+    const normalized = `${name || ''} ${position || ''}`.toLowerCase();
+    let roleKey = '';
+
+    if (normalized.includes('รองอธิการบดีฝ่ายการเงิน')) {
+        roleKey = 'financeViceRector';
+    } else if (normalized.includes('ผู้คุมพื้นที่') || normalized.includes('ผู้ดูแลพื้นที่')) {
+        roleKey = 'areaController';
+    } else if (normalized.includes('หัวหน้าฝ่าย') || normalized.includes('หัวหน้างาน')) {
+        roleKey = 'bpuuHead';
+    } else if (normalized.includes('bpuu')) {
+        roleKey = 'bpuuStaff';
+    }
+
+    return roleKey ? getTestEmailOverride('roleEmails', roleKey, fallback) : (fallback || '');
 }
 
 function shouldHideExternalType(formName) {
@@ -227,6 +257,7 @@ function selectForm(formName) {
     currentSelectedForm = formName;
     
     if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์' && currentLoginType === 'staff') {
+        logPlateRedirectTicket();
         window.open('https://app.ibgm.cloud/signin', '_blank');
         return; 
     }
@@ -547,7 +578,9 @@ function renderDynamicForm(formName, targetContainerId) {
                     <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ชื่อกิจกรรม <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="in_area_event"></div>
                     <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ทะเบียนรถยนต์ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="text" class="form-control border-light shadow-sm" id="in_area_plate" placeholder="เช่น 1กข2345 (ไม่ต้องเว้นวรรค)"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="areaStartDate"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">เวลาเริ่มต้น <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="areaStartTime" step="60"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="areaEndDate"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">เวลาสิ้นสุด <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="areaEndTime" step="60"></div>
                     <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">วัตถุประสงค์ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj1" value="ประชาสัมพันธ์"><label class="form-check-label" for="obj1">ประชาสัมพันธ์</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj2" value="แจกผลิตภัณฑ์"><label class="form-check-label" for="obj2">แจกผลิตภัณฑ์</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj3" value="อื่นๆ" onchange="toggleOtherInput('obj3', 'objOtherText')"><label class="form-check-label text-nowrap" for="obj3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="objOtherText" placeholder="โปรดระบุ" disabled></div></div>
                     <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">สถานที่ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc1" value="อาคารจอดรถ 1 (S2)"><label class="form-check-label" for="loc1">อาคารจอดรถ 1 (S2)</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc2" value="โรงอาหาร (S14)"><label class="form-check-label" for="loc2">โรงอาหาร (S14)</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc3" value="อื่นๆ" onchange="toggleOtherInput('loc3', 'locOtherText')"><label class="form-check-label text-nowrap" for="loc3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="locOtherText" placeholder="โปรดระบุสถานที่" disabled></div></div>
                     
@@ -626,25 +659,25 @@ function showSummaryModal() {
     }
 
     let html = `<ul class="list-group list-group-flush small mb-3">`;
-    const addRow = (label, value) => {
+    const addRow = (label, value, valueClass = 'text-dark fw-bold') => {
         if(value && value !== '-- กรุณาระบุเหตุผล --' && value !== '-- กรุณาระบุประเภท --') {
-            html += `<li class="list-group-item d-flex justify-content-between align-items-start px-0 bg-transparent border-light"><div class="ms-2 me-auto"><div class="fw-bold text-ci-bluegrey" style="font-size:0.75rem;">${label}</div><span class="text-dark fw-bold" style="white-space: pre-line;">${value}</span></div></li>`;
+            html += `<li class="list-group-item d-flex justify-content-between align-items-start px-0 bg-transparent border-light"><div class="ms-2 me-auto"><div class="fw-bold text-ci-bluegrey" style="font-size:0.75rem;">${label}</div><span class="${valueClass}" style="white-space: pre-line;">${value}</span></div></li>`;
         }
     };
 
     html += `<h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-2">ข้อมูลผู้ติดต่อ</h6>`;
     if (currentLoginType === 'staff') {
         addRow('ประเภท', 'บุคลากร');
-        addRow('ชื่อ-สกุล', document.getElementById('reqName').value);
+        addRow('ชื่อ-สกุล', document.getElementById('reqName').value, 'text-dark');
         addRow('ตำแหน่ง', document.getElementById('reqPosition').value);
-        addRow('หน่วยงาน', document.getElementById('reqDeptCode').value);
+        addRow('หน่วยงาน', document.getElementById('reqDeptCode').value, 'text-dark');
         addRow('เบอร์โทรภายใน', document.getElementById('reqInternalPhone').value);
         addRow('อีเมล', document.getElementById('reqEmail').value);
         addRow('เบอร์โทรมือถือ', document.getElementById('reqPhone').value || '-');
     } else if (currentLoginType === 'student') {
         addRow('ประเภท', 'นักศึกษา');
         addRow('รหัสประจำตัว', document.getElementById('reqEmpId').value);
-        addRow('ชื่อ-สกุล', document.getElementById('reqName').value);
+        addRow('ชื่อ-สกุล', document.getElementById('reqName').value, 'text-dark');
         addRow('สถานภาพ', document.getElementById('reqStatus').value);
         addRow('คณะ/สังกัด', document.getElementById('reqFaculty').value);
         addRow('อีเมล', document.getElementById('reqEmail').value);
@@ -656,8 +689,8 @@ function showSummaryModal() {
         if(document.getElementById('extType3')?.checked) extType = document.getElementById('extTypeOther').value || "อื่นๆ";
         
         if (!shouldHideExternalType(currentSelectedForm)) addRow('ประเภทผู้ขอ', extType);
-        addRow('ชื่อ-สกุล', document.getElementById('extFname').value + ' ' + document.getElementById('extLname').value);
-        addRow('หน่วยงาน/บริษัท', document.getElementById('extCompany').value);
+        addRow('ชื่อ-สกุล', document.getElementById('extFname').value + ' ' + document.getElementById('extLname').value, 'text-dark');
+        addRow('หน่วยงาน/บริษัท', document.getElementById('extCompany').value, 'text-dark');
         addRow('เบอร์โทร', document.getElementById('extPhone').value);
         addRow('อีเมล', document.getElementById('extEmail').value);
     }
@@ -733,7 +766,9 @@ function showSummaryModal() {
         addRow('ชื่อกิจกรรม', document.getElementById('in_area_event')?.value);
         addRow('ทะเบียนรถ', document.getElementById('in_area_plate')?.value);
         addRow('วันที่เริ่มต้น', document.getElementById('areaStartDate')?.value);
+        addRow('เวลาเริ่มต้น', document.getElementById('areaStartTime')?.value);
         addRow('วันที่สิ้นสุด', document.getElementById('areaEndDate')?.value);
+        addRow('เวลาสิ้นสุด', document.getElementById('areaEndTime')?.value);
         let objs = []; if(document.getElementById('obj1')?.checked) objs.push('ประชาสัมพันธ์'); if(document.getElementById('obj2')?.checked) objs.push('แจกผลิตภัณฑ์'); if(document.getElementById('obj3')?.checked) objs.push(document.getElementById('objOtherText')?.value || 'อื่นๆ');
         addRow('วัตถุประสงค์', objs.join(', '));
         let locs = []; if(document.getElementById('loc1')?.checked) locs.push('อาคารจอดรถ 1 (S2)'); if(document.getElementById('loc2')?.checked) locs.push('โรงอาหาร (S14)'); if(document.getElementById('loc3')?.checked) locs.push(document.getElementById('locOtherText')?.value || 'อื่นๆ');
@@ -774,6 +809,10 @@ function getTextValue(id) {
     return (document.getElementById(id)?.innerText || '').trim();
 }
 
+function getHtmlValue(id) {
+    return (document.getElementById(id)?.innerHTML || '').trim();
+}
+
 function getSelectedOptionText(id) {
     const el = document.getElementById(id);
     if (!el || el.selectedIndex < 0) return '';
@@ -807,10 +846,14 @@ function appendHiddenField(form, name, value) {
 
 function getRequesterDataForJotform() {
     if (currentLoginType === 'staff') {
+        const displayEmail = getInputValue('reqEmail');
+        const submittedEmail = resolveRequesterEmail('staff', displayEmail);
         return {
             requesterId: getInputValue('reqEmpId'),
             requesterName: getInputValue('reqName'),
-            email: getInputValue('reqEmail'),
+            displayEmail,
+            email: submittedEmail,
+            submittedEmail,
             phone: getInputValue('reqPhone'),
             department: getInputValue('reqDeptCode'),
             position: getInputValue('reqPosition'),
@@ -822,10 +865,14 @@ function getRequesterDataForJotform() {
     }
 
     if (currentLoginType === 'student') {
+        const displayEmail = getInputValue('reqEmail');
+        const submittedEmail = resolveRequesterEmail('student', displayEmail);
         return {
             requesterId: getInputValue('reqEmpId'),
             requesterName: getInputValue('reqName'),
-            email: getInputValue('reqEmail'),
+            displayEmail,
+            email: submittedEmail,
+            submittedEmail,
             phone: getInputValue('reqPhone'),
             department: getInputValue('reqFaculty'),
             position: '',
@@ -836,10 +883,14 @@ function getRequesterDataForJotform() {
         };
     }
 
+    const displayEmail = getInputValue('extEmail');
+    const submittedEmail = resolveRequesterEmail('external', displayEmail);
     return {
         requesterId: '',
         requesterName: `${getInputValue('extFname')} ${getInputValue('extLname')}`.trim(),
-        email: getInputValue('extEmail'),
+        displayEmail,
+        email: submittedEmail,
+        submittedEmail,
         phone: getInputValue('extPhone'),
         department: getInputValue('extCompany'),
         position: '',
@@ -870,10 +921,361 @@ function buildJotformSubmissionFields() {
         q27_input27: requester.major,
         q28_input28: getInputValue('appName'),
         q29_input29: getInputValue('appPosition'),
-        q30_input30: approverEmail.includes('@') ? approverEmail : '',
+        q30_input30: resolveApproverEmail(getInputValue('appName'), getInputValue('appPosition'), approverEmail),
         q31_input31: 'ใช่',
         q32_summary: summaryText
     };
+}
+
+function loadWorkflowTickets() {
+    try {
+        const raw = localStorage.getItem(WORKFLOW_STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed.map(item => ({ ...item }));
+        }
+    } catch (error) {
+        // Fall through to legacy keys.
+    }
+
+    for (const key of LEGACY_WORKFLOW_STORAGE_KEYS) {
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed.map(item => ({ ...item }));
+        } catch (error) {
+            // Try the next fallback key.
+        }
+    }
+
+    return [];
+}
+
+function saveWorkflowTickets(tickets) {
+    try {
+        localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(tickets));
+        LEGACY_WORKFLOW_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+    } catch (error) {
+        // No-op in file mode or restricted storage environments.
+    }
+}
+
+function getNextWorkflowTicketId(tickets) {
+    const currentYear = new Date().getFullYear();
+    let maxSequence = WORKFLOW_BASE_SEQUENCE;
+
+    tickets.forEach(ticket => {
+        const match = String(ticket.ticketId || '').match(/^REQ-(\d{4})-(\d{4})$/);
+        if (!match) return;
+        if (Number(match[1]) !== currentYear) return;
+        maxSequence = Math.max(maxSequence, Number(match[2]));
+    });
+
+    return `REQ-${currentYear}-${String(maxSequence + 1).padStart(4, '0')}`;
+}
+
+function getRequesterTypeLabel() {
+    return JOTFORM_USER_TYPE_VALUES[currentLoginType] || '';
+}
+
+function getSelectedPlateAction() {
+    return document.querySelector('input[name="plateAction"]:checked')?.value || 'เพิ่ม';
+}
+
+function getSelectedStampRequestFor() {
+    return document.querySelector('input[name="stampRequestFor"]:checked')?.value || 'โครงการ';
+}
+
+function collectSelectedFileNames() {
+    return [...document.querySelectorAll('.view-section.active input[type="file"]')]
+        .flatMap(input => [...(input.files || [])].map(file => file.name));
+}
+
+function collectSelectedFilePayloads() {
+    const fileInputs = [...document.querySelectorAll('.view-section.active input[type="file"]')]
+        .filter(input => input.files && input.files.length > 0);
+
+    const filePromises = fileInputs.flatMap(input => [...input.files].map(file => readFileAsDataUrl(file).then(dataUrl => ({
+        name: file.name,
+        type: file.type || '',
+        size: file.size || 0,
+        dataUrl
+    }))));
+
+    return Promise.all(filePromises);
+}
+
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function getWorkflowSubmissionConfig() {
+    if (currentSelectedForm === 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)') {
+        if (currentLoginType === 'staff') {
+            return {
+                typeKey: 'overnight',
+                workflowKey: 'overnightStaff',
+                status: 'รอหัวหน้างานอนุมัติ',
+                stepIndex: 1,
+                assignee: 'หัวหน้างาน',
+                priority: 'สูง',
+                routeSummary: 'หัวหน้างาน → BPUU',
+                contextLabel: 'หน่วยงาน',
+                contextValue: getInputValue('reqDeptCode') || getInputValue('extCompany') || '-',
+                note: 'รอหัวหน้างานอนุมัติก่อนเข้าสู่ BPUU'
+            };
+        }
+
+        return {
+            typeKey: 'overnight',
+            workflowKey: 'overnightExternal',
+            status: 'รอ BPUU พิจารณา',
+            stepIndex: 1,
+            assignee: 'BPUU Staff',
+            priority: 'กลาง',
+            routeSummary: 'BPUU ตรวจสอบโดยตรง',
+            contextLabel: 'องค์กร',
+            contextValue: getInputValue('extCompany') || '-',
+            note: 'ส่งเข้าพิจารณาโดย BPUU โดยตรง'
+        };
+    }
+
+    if (currentSelectedForm === 'แบบฟอร์มขอจอดรถรายเดือน') {
+        const requesterForOther = currentLoginType === 'staff' && document.getElementById('monthlyForOther')?.checked;
+        const monthlyOwner = requesterForOther
+            ? `${getInputValue('monthlyOtherName')} (${getInputValue('monthlyOtherEmail') || '-'})`.trim()
+            : 'ตนเอง';
+
+        return {
+            typeKey: 'monthly',
+            workflowKey: 'monthlyRegular',
+            status: 'รอ BPUU ตรวจสอบ',
+            stepIndex: 1,
+            assignee: 'BPUU Staff',
+            priority: 'สูง',
+            routeSummary: 'BPUU → ผู้ขอ',
+            contextLabel: 'ผู้ใช้บริการจริง',
+            contextValue: monthlyOwner || 'ตนเอง',
+            note: requesterForOther ? 'ขอให้ผู้อื่น' : 'ขอให้ตนเอง'
+        };
+    }
+
+    if (currentSelectedForm === 'แบบฟอร์มขอใช้ตราประทับ') {
+        const stampFor = getSelectedStampRequestFor();
+        const isUnit = stampFor === 'หน่วยงาน';
+
+        return {
+            typeKey: 'stamp',
+            workflowKey: isUnit ? 'stampUnit' : 'stampProject',
+            status: isUnit ? 'รอหัวหน้างานอนุมัติ' : 'รอ BPUU ตรวจสอบ',
+            stepIndex: 1,
+            assignee: isUnit ? 'หัวหน้างาน' : 'BPUU Staff',
+            priority: 'สูง',
+            routeSummary: isUnit ? 'หัวหน้างาน → BPUU' : 'BPUU → ฝ่ายการเงิน',
+            contextLabel: 'ขอในนาม',
+            contextValue: stampFor,
+            note: `ขอใช้ตราประทับในนาม${stampFor}`
+        };
+    }
+
+    if (currentSelectedForm === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์') {
+        const plateAction = getSelectedPlateAction();
+
+        if (currentLoginType === 'staff') {
+            return {
+                typeKey: 'plate',
+                workflowKey: 'plateRedirect',
+                status: 'ส่งต่อไป IBGM',
+                stepIndex: 1,
+                assignee: 'ระบบ IBGM',
+                priority: 'กลาง',
+                routeSummary: 'redirect ไป IBGM',
+                contextLabel: 'ประเภทคำขอ',
+                contextValue: plateAction,
+                note: 'บุคลากรถูกส่งต่อไป IBGM'
+            };
+        }
+
+        return {
+            typeKey: 'plate',
+            workflowKey: 'plateStudent',
+            status: 'รอ BPUU ตรวจสอบ',
+            stepIndex: 1,
+            assignee: 'BPUU Staff',
+            priority: 'กลาง',
+            routeSummary: 'BPUU → Carpark',
+            contextLabel: 'คณะ / สาขา',
+            contextValue: getInputValue('reqFaculty') || '-',
+            note: `คำขอทะเบียนของนักศึกษา (${plateAction})`
+        };
+    }
+
+    if (currentSelectedForm === 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว') {
+        const requesterIsStaff = currentLoginType === 'staff';
+        return {
+            typeKey: 'temporary',
+            workflowKey: requesterIsStaff ? 'tempInternal' : 'tempExternal',
+            status: requesterIsStaff ? 'รอหัวหน้างานอนุมัติ' : 'รอ BPUU ตรวจสอบ',
+            stepIndex: 1,
+            assignee: requesterIsStaff ? 'หัวหน้างาน' : 'BPUU Staff',
+            priority: 'สูง',
+            routeSummary: requesterIsStaff ? 'หัวหน้างาน → BPUU → การเงิน' : 'BPUU → ผู้ขอ',
+            contextLabel: requesterIsStaff ? 'หน่วยงาน' : 'องค์กร',
+            contextValue: requesterIsStaff ? (getInputValue('reqDeptCode') || '-') : (getInputValue('extCompany') || '-'),
+            note: getInputValue('in_area_event') || 'คำขอใช้พื้นที่ชั่วคราว'
+        };
+    }
+
+    if (currentSelectedForm === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') {
+        return {
+            typeKey: 'contract',
+            workflowKey: 'contractVendor',
+            status: 'รอ BPUU พิจารณา',
+            stepIndex: 1,
+            assignee: 'BPUU Staff',
+            priority: 'กลาง',
+            routeSummary: 'BPUU → ผู้ดูแลพื้นที่',
+            contextLabel: 'บริษัท',
+            contextValue: getInputValue('contractCompany') || getInputValue('extCompany') || '-',
+            note: 'คำขอเข้าพื้นที่คู่สัญญา'
+        };
+    }
+
+    if (currentSelectedForm === 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ') {
+        const internalIssue = currentLoginType === 'staff' || currentLoginType === 'student';
+        return {
+            typeKey: 'issue',
+            workflowKey: internalIssue ? 'issueInternal' : 'issueExternal',
+            status: internalIssue ? 'ส่งต่อไป Modlink' : 'รับเรื่อง',
+            stepIndex: 1,
+            assignee: internalIssue ? 'Modlink / BPUU' : 'BPUU Staff',
+            priority: 'กลาง',
+            routeSummary: internalIssue ? 'Modlink → BPUU' : 'BPUU รับเรื่อง',
+            contextLabel: 'กลุ่มปัญหา',
+            contextValue: getSelectedOptionText('issueCategory') || '-',
+            note: getInputValue('issueDetail') || 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ'
+        };
+    }
+
+    return {
+        typeKey: 'issue',
+        workflowKey: 'issueExternal',
+        status: 'รับเรื่อง',
+        stepIndex: 1,
+        assignee: 'BPUU Staff',
+        priority: 'กลาง',
+        routeSummary: 'BPUU รับเรื่อง',
+        contextLabel: 'รายละเอียด',
+        contextValue: '-',
+        note: 'คำขอไม่อยู่ในหมวดที่กำหนด'
+    };
+}
+
+function logPlateRedirectTicket() {
+    const submittedAt = new Date().toISOString();
+    const requester = getRequesterDataForJotform();
+    const tickets = loadWorkflowTickets();
+    const requesterDisplayEmail = requester.displayEmail || '';
+    const requesterSubmittedEmail = requester.submittedEmail || requester.email || '';
+
+    tickets.unshift({
+        ticketId: getNextWorkflowTicketId(tickets),
+        typeKey: 'plate',
+        requesterType: getRequesterTypeLabel(),
+        requesterName: requester.requesterName || getInputValue('reqName') || 'ไม่ระบุชื่อ',
+        contextLabel: 'ปลายทาง',
+        contextValue: 'IBGM',
+        formName: 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์',
+        status: 'ส่งต่อไป IBGM',
+        workflowKey: 'plateRedirect',
+        stepIndex: 1,
+        submittedAt,
+        updatedAt: submittedAt,
+        assignee: 'ระบบ IBGM',
+        priority: 'กลาง',
+        routeSummary: 'redirect ไป IBGM',
+        note: 'บุคลากรถูกส่งต่อไป IBGM',
+        submissionMode: 'redirect',
+        requester,
+        requesterEmail: requesterSubmittedEmail,
+        approverEmail: '',
+        approverDisplayEmail: '',
+        approverSubmittedEmail: '',
+        emailDetails: {
+            requesterDisplayEmail,
+            requesterSubmittedEmail,
+            approverDisplayEmail: '',
+            approverSubmittedEmail: ''
+        }
+    });
+
+    saveWorkflowTickets(tickets);
+}
+
+function buildWorkflowTicketRecord() {
+    const requester = getRequesterDataForJotform();
+    const config = getWorkflowSubmissionConfig();
+    const submittedAt = new Date().toISOString();
+    const tickets = loadWorkflowTickets();
+    const summaryHtml = getHtmlValue('summaryContent');
+    const summaryText = getTextValue('summaryContent');
+    const rawSubmissionFields = buildJotformSubmissionFields();
+    const approverDisplayEmail = getTextValue('appEmail');
+    const approverSubmittedEmail = resolveApproverEmail(getInputValue('appName'), getInputValue('appPosition'), approverDisplayEmail);
+    const requesterDisplayEmail = requester.displayEmail || '';
+    const requesterSubmittedEmail = requester.submittedEmail || requester.email || '';
+
+    return {
+        ticketId: getNextWorkflowTicketId(tickets),
+        typeKey: config.typeKey,
+        requesterType: getRequesterTypeLabel(),
+        requesterName: requester.requesterName || getInputValue('reqName') || getInputValue('extFname') || 'ไม่ระบุชื่อ',
+        contextLabel: config.contextLabel,
+        contextValue: config.contextValue,
+        formName: currentSelectedForm,
+        status: config.status,
+        workflowKey: config.workflowKey,
+        stepIndex: config.stepIndex,
+        submittedAt,
+        updatedAt: submittedAt,
+        assignee: config.assignee,
+        priority: config.priority,
+        routeSummary: config.routeSummary,
+        note: config.note,
+        submissionMode: 'local-storage',
+        summaryHtml,
+        summaryText,
+        selectedFiles: collectSelectedFileNames(),
+        requester,
+        requesterEmail: requesterSubmittedEmail,
+        approverEmail: approverSubmittedEmail,
+        approverDisplayEmail,
+        approverSubmittedEmail,
+        emailDetails: {
+            requesterDisplayEmail,
+            requesterSubmittedEmail,
+            approverDisplayEmail,
+            approverSubmittedEmail
+        },
+        submissionFields: rawSubmissionFields
+    };
+}
+
+async function submitWorkflowLocally() {
+    const tickets = loadWorkflowTickets();
+    const selectedAttachments = await collectSelectedFilePayloads();
+    tickets.unshift({
+        ...buildWorkflowTicketRecord(),
+        selectedAttachments
+    });
+    saveWorkflowTickets(tickets);
+    showSubmitSuccess();
 }
 
 function appendSelectedFiles(form) {
@@ -950,9 +1352,9 @@ function submitToJotform() {
     setTimeout(completeSubmit, 4000);
 }
 
-function confirmSubmitForm() {
+async function confirmSubmitForm() {
     summaryModalInstance.hide();
-    submitToJotform();
+    await submitWorkflowLocally();
 }
 
 // =========================================================
