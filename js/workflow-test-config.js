@@ -9,5 +9,9 @@ window.BPUU_WORKFLOW_TEST_CONFIG = {
         bpuuHead: 'yeongstorage@gmail.com',
         financeViceRector: 'yeongstorage@gmail.com',
         areaController: 'yeongstorage@gmail.com'
+    },
+    emailTransport: {
+        endpoint: '',
+        mode: 'mailto'
     }
 };

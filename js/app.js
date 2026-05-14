@@ -29,6 +29,10 @@ const JOTFORM_USER_TYPE_VALUES = {
     student: "นักศึกษา",
     external: "บุคคลภายนอก"
 };
+const LOCAL_WORKFLOW_TEMPLATES = {
+    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง']
+};
 
 function uniqueNonEmpty(values) {
     return [...new Set(values.map(value => (value || '').trim()).filter(Boolean))];
@@ -102,6 +106,122 @@ function resolveApproverEmail(name, position, fallback = '') {
     }
 
     return roleKey ? getTestEmailOverride('roleEmails', roleKey, fallback) : (fallback || '');
+}
+
+function getLocalWorkflowStep(ticket) {
+    const steps = LOCAL_WORKFLOW_TEMPLATES[ticket.workflowKey] || [];
+    return steps[Math.max(0, Math.min(ticket.stepIndex || 0, steps.length - 1))] || '';
+}
+
+function getWorkflowAdminLink(ticket) {
+    const url = new URL('admin.html', window.location.href);
+    url.searchParams.set('ticket', ticket.ticketId);
+    return url.toString();
+}
+
+function getEmailRecipientForStep(ticket, step) {
+    const roleEmails = WORKFLOW_TEST_CONFIG.roleEmails || {};
+    const requesterEmail = ticket.requesterEmail
+        || ticket.emailDetails?.requesterSubmittedEmail
+        || ticket.requester?.submittedEmail
+        || ticket.requester?.email
+        || '';
+    const approverEmail = ticket.approverEmail
+        || ticket.emailDetails?.approverSubmittedEmail
+        || '';
+    const normalizedStep = String(step || '').toLowerCase();
+
+    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ/i.test(normalizedStep)) {
+        return requesterEmail;
+    }
+    if (/หัวหน้างาน|หัวหน้าฝ่าย/i.test(step)) return roleEmails.bpuuHead || approverEmail;
+    if (/bpuu|พิจารณา|ตรวจสอบ|อนุมัติ/i.test(normalizedStep)) return roleEmails.bpuuStaff || approverEmail;
+    return '';
+}
+
+function buildWorkflowEmail(ticket, eventType = 'approval-request') {
+    const step = getLocalWorkflowStep(ticket);
+    const recipient = eventType === 'received'
+        ? ticket.requesterEmail
+        : getEmailRecipientForStep(ticket, step);
+    const requesterName = ticket.requesterName || ticket.requester?.requesterName || '-';
+    const serviceType = ticket.formName || 'คำขอใช้บริการ';
+    const details = ticket.summaryText || ticket.note || '-';
+    const submittedAt = formatThaiDateTime(ticket.submittedAt || new Date().toISOString());
+    const adminLink = getWorkflowAdminLink(ticket);
+
+    if (eventType === 'received') {
+        return {
+            to: recipient,
+            subject: `[Received] ระบบได้รับคำขอ ${serviceType} (Ref: ${ticket.ticketId})`,
+            body: [
+                `เรียน คุณ ${requesterName}`,
+                '',
+                `ระบบกระบวนงานการให้บริการของกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU) ได้รับคำขอใช้บริการ "${serviceType}" ของท่านเรียบร้อยแล้ว`,
+                '',
+                'รายละเอียดคำขอ:',
+                `- หมายเลขคำขอ (Ticket No.): ${ticket.ticketId}`,
+                `- วันที่ส่งเรื่อง: ${submittedAt}`,
+                '- สถานะปัจจุบัน: รอการตรวจสอบ (Pending Review)',
+                '',
+                'เจ้าหน้าที่จะดำเนินการตรวจสอบข้อมูลและแจ้งผลการพิจารณาให้ท่านทราบผ่านทางอีเมลนี้',
+                '',
+                'ขอแสดงความนับถือ',
+                'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)',
+                'มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี'
+            ].join('\n')
+        };
+    }
+
+    return {
+        to: recipient,
+        subject: `[Action Required] อนุมัติคำขอใช้บริการ ${serviceType} - คุณ ${requesterName}`,
+        body: [
+            'เรียน ผู้อนุมัติ',
+            '',
+            'มีรายการคำขอใหม่รอการอนุมัติจากท่าน กรุณาตรวจสอบรายละเอียดดังนี้:',
+            '',
+            'ข้อมูลคำขอ:',
+            `- ผู้ขอ: ${requesterName}`,
+            `- ประเภทบริการ: ${serviceType}`,
+            `- ขั้นตอนปัจจุบัน: ${step || '-'}`,
+            `- รายละเอียด: ${details}`,
+            '',
+            'กรุณาเลือกผลการพิจารณาในระบบ:',
+            adminLink,
+            '',
+            'หมายเหตุ: ในช่วงทดสอบ ระบบจะเปิดอีเมลฉบับนี้ผ่าน mail client เพื่อให้ตรวจสอบเนื้อหาและส่งจริงได้'
+        ].join('\n')
+    };
+}
+
+function openWorkflowEmail(email) {
+    if (!email?.to) return false;
+    const mailtoUrl = `mailto:${encodeURIComponent(email.to)}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`;
+    const opened = window.open(mailtoUrl, '_blank', 'noopener,noreferrer');
+    if (!opened) window.location.href = mailtoUrl;
+    return true;
+}
+
+function addWorkflowEmailEvent(ticket, email, eventType, status) {
+    ticket.emailEvents = Array.isArray(ticket.emailEvents) ? ticket.emailEvents : [];
+    ticket.emailEvents.unshift({
+        id: `email-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        eventType,
+        to: email?.to || '',
+        subject: email?.subject || '',
+        status,
+        createdAt: new Date().toISOString()
+    });
+}
+
+function formatThaiDateTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    return new Intl.DateTimeFormat('th-TH', {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+    }).format(date);
 }
 
 function shouldHideExternalType(formName) {
@@ -1270,10 +1390,18 @@ function buildWorkflowTicketRecord() {
 async function submitWorkflowLocally() {
     const tickets = loadWorkflowTickets();
     const selectedAttachments = await collectSelectedFilePayloads();
-    tickets.unshift({
+    const ticket = {
         ...buildWorkflowTicketRecord(),
         selectedAttachments
-    });
+    };
+
+    if (ticket.typeKey === 'overnight') {
+        const approvalEmail = buildWorkflowEmail(ticket, 'approval-request');
+        addWorkflowEmailEvent(ticket, approvalEmail, 'approval-request', 'prepared-mailto');
+        openWorkflowEmail(approvalEmail);
+    }
+
+    tickets.unshift(ticket);
     saveWorkflowTickets(tickets);
     showSubmitSuccess();
 }
