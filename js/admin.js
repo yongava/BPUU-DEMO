@@ -362,6 +362,7 @@ const TICKET_STORAGE_KEY = 'bpuu-workflow-tickets';
 const LEGACY_TICKET_STORAGE_KEYS = ['bpuu-admin-tickets'];
 const EMAIL_EVENT_LABELS = {
     received: 'รับคำขอ',
+    'new-submission-approval': 'คำขอใหม่',
     'approval-request': 'ขออนุมัติ',
     'payment-notification': 'แจ้งชำระเงิน',
     completed: 'แจ้งผลอนุมัติ',
@@ -1099,6 +1100,7 @@ async function sendWorkflowEmailViaApi(email, ticket, eventType) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                from: window.BPUU_WORKFLOW_TEST_CONFIG?.systemEmail || '',
                 to: email.to,
                 subject: email.subject,
                 text: email.body,

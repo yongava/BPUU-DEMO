@@ -1,4 +1,6 @@
 window.BPUU_WORKFLOW_TEST_CONFIG = {
+    systemEmail: 'dev.codegym@gmail.com',
+    primaryApprovalEmail: 'yeongstorage@gmail.com',
     requesterEmails: {
         staff: 'n.chotthanin@gmail.com',
         student: 'n.chotthanin@gmail.com',

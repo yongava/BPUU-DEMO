@@ -1,0 +1,11 @@
+{
+  "name": "bpuu-demo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "check": "node --check js/app.js && node --check js/admin.js && node --check netlify/functions/send-email.js"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16"
+  }
+}

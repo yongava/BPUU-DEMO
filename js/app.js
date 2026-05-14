@@ -169,9 +169,15 @@ function getEmailEventTypeForStep(step) {
 
 function buildWorkflowEmail(ticket, eventType = 'approval-request') {
     const step = getLocalWorkflowStep(ticket);
+    const primaryApprovalEmail = WORKFLOW_TEST_CONFIG.primaryApprovalEmail
+        || WORKFLOW_TEST_CONFIG.roleEmails?.bpuuHead
+        || WORKFLOW_TEST_CONFIG.roleEmails?.bpuuStaff
+        || '';
     const recipient = eventType === 'received'
         ? ticket.requesterEmail
-        : getEmailRecipientForStep(ticket, step);
+        : eventType === 'new-submission-approval'
+            ? primaryApprovalEmail
+            : getEmailRecipientForStep(ticket, step);
     const requesterName = ticket.requesterName || ticket.requester?.requesterName || '-';
     const serviceType = ticket.formName || 'คำขอใช้บริการ';
     const details = ticket.summaryText || ticket.note || '-';
@@ -197,6 +203,32 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
                 'ขอแสดงความนับถือ',
                 'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)',
                 'มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี'
+            ].join('\n')
+        };
+    }
+
+    if (eventType === 'new-submission-approval') {
+        return {
+            to: recipient,
+            subject: `[Action Required] มีคำขอใหม่รออนุมัติ ${serviceType} (Ref: ${ticket.ticketId})`,
+            body: [
+                'เรียน ผู้อนุมัติ',
+                '',
+                'ระบบ BPUU ได้รับคำขอใหม่และต้องการให้ท่านตรวจสอบ/อนุมัติผ่านหน้าเว็บ',
+                '',
+                'ข้อมูลคำขอ:',
+                `- หมายเลขคำขอ: ${ticket.ticketId}`,
+                `- ผู้ขอ: ${requesterName}`,
+                `- ประเภทบริการ: ${serviceType}`,
+                `- ขั้นตอนปัจจุบัน: ${step || '-'}`,
+                `- วันที่ส่งเรื่อง: ${submittedAt}`,
+                `- รายละเอียด: ${details}`,
+                '',
+                'กรุณาเปิดรายการนี้ในระบบ:',
+                adminLink,
+                '',
+                'ขอแสดงความนับถือ',
+                'BPUU Workflow System'
             ].join('\n')
         };
     }
@@ -283,6 +315,7 @@ async function sendWorkflowEmailViaApi(email, ticket, eventType) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                from: WORKFLOW_TEST_CONFIG.systemEmail || '',
                 to: email.to,
                 subject: email.subject,
                 text: email.body,
@@ -1505,12 +1538,7 @@ async function submitWorkflowLocally() {
         selectedAttachments
     };
 
-    await sendAndLogWorkflowEmail(ticket, 'received');
-
-    const currentStepEventType = getEmailEventTypeForStep(getLocalWorkflowStep(ticket));
-    if (currentStepEventType) {
-        await sendAndLogWorkflowEmail(ticket, currentStepEventType);
-    }
+    await sendAndLogWorkflowEmail(ticket, 'new-submission-approval');
 
     tickets.unshift(ticket);
     saveWorkflowTickets(tickets);
