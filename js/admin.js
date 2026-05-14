@@ -361,7 +361,9 @@ const STAMP_COLLECTION_WORKFLOW = [
 const TICKET_STORAGE_KEY = 'bpuu-workflow-tickets';
 const LEGACY_TICKET_STORAGE_KEYS = ['bpuu-admin-tickets'];
 const EMAIL_EVENT_LABELS = {
+    received: 'รับคำขอ',
     'approval-request': 'ขออนุมัติ',
+    'payment-notification': 'แจ้งชำระเงิน',
     completed: 'แจ้งผลอนุมัติ',
     rejected: 'แจ้งผลไม่อนุมัติ',
     'more-info': 'ขอข้อมูลเพิ่มเติม'
@@ -834,14 +836,12 @@ function renderDetailPanel(filteredTickets) {
     const currentStep = getCurrentStep(selected);
     const progress = getProgress(selected);
     const timeline = buildTimeline(selected, template);
-    const emailControls = selected.typeKey === 'overnight'
-        ? `
-            <button type="button" class="btn btn-ci-orange fw-bold" data-ticket-action="email">
-                <i class="bi bi-envelope-paper-fill me-1"></i>ส่งอีเมลขั้นตอนนี้
-            </button>
-        `
-        : '';
-    const emailLog = selected.typeKey === 'overnight' ? renderEmailEventLog(selected) : '';
+    const emailControls = `
+        <button type="button" class="btn btn-ci-orange fw-bold" data-ticket-action="email">
+            <i class="bi bi-envelope-paper-fill me-1"></i>ส่งอีเมลขั้นตอนนี้
+        </button>
+    `;
+    const emailLog = renderEmailEventLog(selected);
 
     dom.detailPanel.innerHTML = `
         <div class="detail-head">
@@ -923,9 +923,11 @@ function getWorkflowStepEmail(ticket, step) {
     const normalizedStep = String(step || '').toLowerCase();
 
     if (/รับคำขอ|ส่งต่อไป ibgm|ปิดเรื่อง|ปิดรายการ/i.test(step)) return '';
-    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ส่งคู่มือ|สรุปผล|ส่ง voucher/i.test(normalizedStep)) {
+    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(normalizedStep)) {
         return requesterEmail;
     }
+    if (/อธิการบดี/i.test(step) && !/รองอธิการบดี/i.test(step)) return roleEmails.president || roleEmails.financeViceRector || approverEmail;
+    if (/รองอธิการบดีอาวุโส/i.test(step)) return roleEmails.seniorViceRector || roleEmails.financeViceRector || approverEmail;
     if (/รองอธิการบดีฝ่ายการเงิน|การเงิน/i.test(step)) return roleEmails.financeViceRector || approverEmail;
     if (/ผู้คุมพื้นที่|ผู้ดูแลพื้นที่/i.test(step)) return roleEmails.areaController || approverEmail;
     if (/หัวหน้างาน|หัวหน้าฝ่าย/i.test(step)) return roleEmails.bpuuHead || approverEmail;
@@ -937,13 +939,58 @@ function getWorkflowStepEmail(ticket, step) {
 
 function buildWorkflowEmail(ticket, eventType = 'approval-request') {
     const step = getCurrentStep(ticket);
-    const recipient = eventType === 'approval-request'
+    const recipient = eventType === 'approval-request' || eventType === 'payment-notification'
         ? getWorkflowStepEmail(ticket, step)
         : getRequesterEmail(ticket);
     const requesterName = ticket.requesterName || ticket.requester?.requesterName || '-';
     const serviceType = ticket.formName || REQUEST_TYPES[ticket.typeKey]?.label || 'คำขอใช้บริการ';
     const details = ticket.summaryText || ticket.note || '-';
     const adminLink = getTicketAdminLink(ticket);
+
+    if (eventType === 'received') {
+        return {
+            to: recipient,
+            subject: `[Received] ระบบได้รับคำขอ ${serviceType} (Ref: ${ticket.ticketId})`,
+            body: [
+                `เรียน คุณ ${requesterName}`,
+                '',
+                `ระบบกระบวนงานการให้บริการของกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU) ได้รับคำขอใช้บริการ "${serviceType}" ของท่านเรียบร้อยแล้ว`,
+                '',
+                'รายละเอียดคำขอ:',
+                `- หมายเลขคำขอ (Ticket No.): ${ticket.ticketId}`,
+                `- วันที่ส่งเรื่อง: ${formatDateTime(ticket.submittedAt || new Date().toISOString())}`,
+                `- สถานะปัจจุบัน: ${ticket.status || 'รอการตรวจสอบ'}`,
+                '',
+                'เจ้าหน้าที่จะดำเนินการตรวจสอบข้อมูลและแจ้งผลการพิจารณาให้ท่านทราบผ่านทางอีเมลนี้',
+                '',
+                'ขอแสดงความนับถือ',
+                'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
+            ].join('\n')
+        };
+    }
+
+    if (eventType === 'payment-notification') {
+        return {
+            to: recipient,
+            subject: `[Payment Required] แจ้งยอดชำระเงิน ${serviceType} (Ref: ${ticket.ticketId})`,
+            body: [
+                `เรียน คุณ ${requesterName}`,
+                '',
+                `กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน ขอแจ้งขั้นตอนชำระเงินสำหรับคำขอ "${serviceType}"`,
+                '',
+                `หมายเลขคำขอ: ${ticket.ticketId}`,
+                `สถานะปัจจุบัน: ${ticket.status}`,
+                `ขั้นตอนปัจจุบัน: ${step || '-'}`,
+                `รายละเอียด: ${details}`,
+                '',
+                'กรุณาตรวจสอบรายละเอียดเพิ่มเติมจากระบบ หรือรอเอกสาร/QR Code จากเจ้าหน้าที่',
+                getTicketAdminLink(ticket),
+                '',
+                'ขอแสดงความนับถือ',
+                'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
+            ].join('\n')
+        };
+    }
 
     if (eventType === 'rejected' || eventType === 'more-info') {
         const isMoreInfo = eventType === 'more-info';
@@ -1026,24 +1073,55 @@ function getTicketAdminLink(ticket) {
 }
 
 function getEmailEventTypeForStep(ticket, step) {
-    if (/ปิดเรื่อง/i.test(step || '')) return '';
-    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ/i.test(step || '')) return 'completed';
+    const value = String(step || '').toLowerCase();
+    if (/ปิดเรื่อง|ปิดรายการ|รับคำขอ|รับเรื่อง|ส่งต่อไป ibgm/i.test(value)) return '';
+    if (/ตีกลับ|แก้ไขเอกสาร|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ/i.test(value)) return 'more-info';
+    if (/ส่ง qr code|แจ้งยอด|รอชำระเงิน/i.test(value)) return 'payment-notification';
+    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(value)) return 'completed';
     return 'approval-request';
 }
 
 function shouldSendWorkflowEmail(ticket) {
-    return ticket.typeKey === 'overnight';
+    return getWorkflowTemplate(ticket).length > 0;
 }
 
-function openWorkflowEmail(email) {
-    if (!email?.to) return false;
-    const mailtoUrl = `mailto:${encodeURIComponent(email.to)}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`;
-    const opened = window.open(mailtoUrl, '_blank', 'noopener,noreferrer');
-    if (!opened) window.location.href = mailtoUrl;
-    return true;
+function getEmailTransportEndpoint() {
+    return String(window.BPUU_WORKFLOW_TEST_CONFIG?.emailTransport?.endpoint || '/api/send-email').trim();
 }
 
-function addWorkflowEmailEvent(ticket, email, eventType, status) {
+async function sendWorkflowEmailViaApi(email, ticket, eventType) {
+    if (!email?.to) return { ok: false, status: 'skipped', error: 'Missing recipient email' };
+    const endpoint = getEmailTransportEndpoint();
+    if (!endpoint) return { ok: false, status: 'skipped', error: 'Missing email API endpoint' };
+
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to: email.to,
+                subject: email.subject,
+                text: email.body,
+                body: email.body,
+                ticketId: ticket.ticketId,
+                eventType,
+                workflowKey: ticket.workflowKey,
+                step: getCurrentStep(ticket)
+            })
+        });
+
+        if (!response.ok) {
+            const message = await response.text().catch(() => '');
+            return { ok: false, status: 'failed', error: message || `HTTP ${response.status}` };
+        }
+
+        return { ok: true, status: 'sent' };
+    } catch (error) {
+        return { ok: false, status: 'failed', error: error?.message || 'Email API request failed' };
+    }
+}
+
+function addWorkflowEmailEvent(ticket, email, eventType, status, errorMessage = '') {
     ticket.emailEvents = Array.isArray(ticket.emailEvents) ? ticket.emailEvents : [];
     ticket.emailEvents.unshift({
         id: `email-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -1051,16 +1129,17 @@ function addWorkflowEmailEvent(ticket, email, eventType, status) {
         to: email?.to || '',
         subject: email?.subject || '',
         status,
+        errorMessage,
         createdAt: new Date().toISOString()
     });
 }
 
-function sendWorkflowEmailForTicket(ticket, eventType) {
+async function sendWorkflowEmailForTicket(ticket, eventType) {
     if (!shouldSendWorkflowEmail(ticket)) return false;
     const email = buildWorkflowEmail(ticket, eventType);
-    const opened = openWorkflowEmail(email);
-    addWorkflowEmailEvent(ticket, email, eventType, opened ? 'prepared-mailto' : 'blocked');
-    return opened;
+    const result = await sendWorkflowEmailViaApi(email, ticket, eventType);
+    addWorkflowEmailEvent(ticket, email, eventType, result.status, result.error || '');
+    return result.ok;
 }
 
 function getWorkflowTemplate(ticket) {
@@ -1138,8 +1217,10 @@ function bindTicketDetailActions(ticketId) {
     if (!detailPanel) return;
 
     detailPanel.querySelectorAll('[data-ticket-action]').forEach(button => {
-        button.addEventListener('click', () => {
-            handleTicketAction(button.dataset.ticketAction, ticketId);
+        button.addEventListener('click', async () => {
+            const buttons = [...detailPanel.querySelectorAll('[data-ticket-action]')];
+            buttons.forEach(item => { item.disabled = true; });
+            await handleTicketAction(button.dataset.ticketAction, ticketId);
         });
     });
 }
@@ -1166,6 +1247,7 @@ function renderEmailEventLog(ticket) {
                     </div>
                     <div class="email-log-subject">${escapeHtml(event.subject || '-')}</div>
                     <div class="email-log-meta">${escapeHtml(event.to || '-')} · ${escapeHtml(formatDateTime(event.createdAt))}</div>
+                    ${event.errorMessage ? `<div class="email-log-error">${escapeHtml(event.errorMessage)}</div>` : ''}
                 </div>
             `).join('')}
         </div>
@@ -1323,7 +1405,7 @@ function buildCollapsedSummaryHtml(ticket) {
     `;
 }
 
-function handleTicketAction(action, ticketId) {
+async function handleTicketAction(action, ticketId) {
     const recordIndex = ticketData.findIndex(item => item.ticketId === ticketId);
     if (recordIndex === -1) return;
 
@@ -1335,7 +1417,7 @@ function handleTicketAction(action, ticketId) {
     if (action === 'email') {
         emailEventType = getEmailEventTypeForStep(record, getCurrentStep(record));
         if (emailEventType) {
-            sendWorkflowEmailForTicket(record, emailEventType);
+            await sendWorkflowEmailForTicket(record, emailEventType);
         }
         record.updatedAt = nowIso;
         ticketData[recordIndex] = record;
@@ -1365,7 +1447,7 @@ function handleTicketAction(action, ticketId) {
     }
 
     if (emailEventType) {
-        sendWorkflowEmailForTicket(record, emailEventType);
+        await sendWorkflowEmailForTicket(record, emailEventType);
     }
 
     record.updatedAt = nowIso;

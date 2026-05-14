@@ -8,10 +8,12 @@ window.BPUU_WORKFLOW_TEST_CONFIG = {
         bpuuStaff: 'dev.codegym@gmail.com',
         bpuuHead: 'yeongstorage@gmail.com',
         financeViceRector: 'yeongstorage@gmail.com',
+        seniorViceRector: 'yeongstorage@gmail.com',
+        president: 'yeongstorage@gmail.com',
         areaController: 'yeongstorage@gmail.com'
     },
     emailTransport: {
-        endpoint: '',
-        mode: 'mailto'
+        endpoint: '/api/send-email',
+        mode: 'api'
     }
 };
