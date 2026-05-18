@@ -394,18 +394,9 @@ const collectionState = {
 
 const dom = {};
 
-bootAdminPage();
-
-function bootAdminPage() {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            void init();
-        }, { once: true });
-        return;
-    }
-
+setTimeout(() => {
     void init();
-}
+}, 0);
 
 async function init() {
     dom.typeFilters = document.getElementById('typeFilters');

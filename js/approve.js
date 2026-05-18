@@ -24,18 +24,9 @@ const APPROVAL_WORKFLOW_TEMPLATES = {
 let approvalTickets = [];
 let currentTicket = null;
 
-bootApprovalPage();
-
-function bootApprovalPage() {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            void initApprovalPage();
-        }, { once: true });
-        return;
-    }
-
+setTimeout(() => {
     void initApprovalPage();
-}
+}, 0);
 
 async function initApprovalPage() {
     try {
