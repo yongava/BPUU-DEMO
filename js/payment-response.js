@@ -169,6 +169,7 @@ async function handlePaymentResponseSubmit() {
     if (PAYMENT_RESPONSE_STATE.submitting) return;
     PAYMENT_RESPONSE_STATE.submitting = true;
     renderPaymentResponseMessage('กำลังส่งข้อมูล...', 'info');
+    const form = document.getElementById('paymentResponseForm');
 
     try {
         const ticket = PAYMENT_RESPONSE_STATE.ticket;
@@ -214,7 +215,7 @@ async function handlePaymentResponseSubmit() {
         await sendPaymentSlipEmail(PAYMENT_RESPONSE_STATE.ticket, slipAttachment);
 
         renderPaymentResponseMessage('ส่งสลิปและข้อมูลเรียบร้อยแล้ว BPUU Staff จะตรวจสอบต่อทันที', 'success');
-        form.querySelectorAll('input, textarea, button').forEach(item => {
+        form?.querySelectorAll('input, textarea, button').forEach(item => {
             if (item instanceof HTMLButtonElement || item instanceof HTMLInputElement || item instanceof HTMLTextAreaElement) {
                 item.disabled = true;
             }
