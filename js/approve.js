@@ -23,19 +23,21 @@ const APPROVAL_WORKFLOW_TEMPLATES = {
 
 let approvalTickets = [];
 let currentTicket = null;
+let approvalLinkContext = { ticketId: '', approvalToken: '' };
 
 setTimeout(() => {
     void initApprovalPage();
 }, 0);
 
 async function initApprovalPage() {
+    approvalLinkContext = readApprovalLinkContext();
     try {
         approvalTickets = await loadApprovalTickets();
     } catch (error) {
         console.error('Failed to load approval tickets from backend.', error);
         approvalTickets = [];
     }
-    const ticketId = new URLSearchParams(window.location.search).get('ticket') || '';
+    const ticketId = approvalLinkContext.ticketId || '';
     currentTicket = approvalTickets.find(ticket => ticket.ticketId === ticketId) || null;
     renderApprovalPage();
 }
@@ -60,6 +62,86 @@ function notifyApprovalTicketsChanged() {
     window.BPUU_WORKFLOW_API.notifyChanged();
 }
 
+function getApprovalLinkTools() {
+    return window.BPUU_APPROVAL_LINKS || {};
+}
+
+function readApprovalLinkContext() {
+    const tools = getApprovalLinkTools();
+    if (typeof tools.readApprovalLinkContext === 'function') {
+        return tools.readApprovalLinkContext();
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    return {
+        ticketId: String(params.get('ticket') || '').trim(),
+        approvalToken: String(params.get('approval') || '').trim()
+    };
+}
+
+function evaluateApprovalLinkState(ticket, currentStep) {
+    const tools = getApprovalLinkTools();
+    if (typeof tools.getApprovalLinkState === 'function') {
+        return tools.getApprovalLinkState(ticket, currentStep, approvalLinkContext.approvalToken);
+    }
+
+    const ticketToken = String(ticket?.approvalLinkToken || '').trim();
+    const token = String(approvalLinkContext.approvalToken || '').trim();
+    const usedAt = String(ticket?.approvalLinkUsedAt || '').trim();
+    const step = String(currentStep || '').trim();
+    const ticketStep = String(ticket?.approvalLinkStep || '').trim();
+    const stepMatches = !ticketStep || !step || ticketStep === step;
+
+    if (!ticket) return { allowed: false, reason: 'missing-ticket', stepMatches: false, tokenMatches: false };
+    if (usedAt) return { allowed: false, reason: 'used', stepMatches, tokenMatches: false };
+    if (!stepMatches) return { allowed: false, reason: 'step-mismatch', stepMatches: false, tokenMatches: false };
+    if (ticketToken) {
+        if (!token) return { allowed: false, reason: 'token-required', stepMatches, tokenMatches: false };
+        if (token !== ticketToken) return { allowed: false, reason: 'token-mismatch', stepMatches, tokenMatches: false };
+        return { allowed: true, reason: 'token-match', stepMatches, tokenMatches: true };
+    }
+    if (token) return { allowed: false, reason: 'token-mismatch', stepMatches, tokenMatches: false };
+    return { allowed: true, reason: 'legacy', stepMatches, tokenMatches: true };
+}
+
+function markApprovalLinkUsed(ticket, currentStep) {
+    const tools = getApprovalLinkTools();
+    if (typeof tools.consumeApprovalLink === 'function') {
+        return tools.consumeApprovalLink(ticket, currentStep);
+    }
+
+    if (ticket && typeof ticket === 'object') {
+        ticket.approvalLinkUsedAt = new Date().toISOString();
+        if (currentStep) {
+            ticket.approvalLinkStep = String(currentStep || '').trim();
+        }
+    }
+
+    return ticket;
+}
+
+function getApprovalLinkStateMessage(state) {
+    const tools = getApprovalLinkTools();
+    if (typeof tools.getApprovalLinkStateMessage === 'function') {
+        return tools.getApprovalLinkStateMessage(state);
+    }
+
+    switch (state?.reason) {
+        case 'used':
+            return 'ลิงก์นี้ถูกใช้งานแล้ว และอนุมัติ/ไม่อนุมัติได้เพียงครั้งเดียว';
+        case 'step-mismatch':
+            return 'ลิงก์นี้เป็นของขั้นตอนเดิม กรุณาใช้ลิงก์ในอีเมลฉบับล่าสุด';
+        case 'token-required':
+            return 'ลิงก์นี้ต้องเปิดจากอีเมลฉบับล่าสุด';
+        case 'token-mismatch':
+            return 'ลิงก์นี้ไม่ตรงกับรายการที่เปิดใช้งานอยู่';
+        case 'legacy':
+            return 'ลิงก์รุ่นเก่า ยังอนุมัติหรือไม่อนุมัติได้เพียงครั้งเดียว';
+        default:
+            return 'ลิงก์นี้ไม่พร้อมสำหรับการอนุมัติ';
+    }
+}
+
 function renderApprovalPage(message = '', tone = 'success') {
     const root = document.getElementById('approvalRoot');
     if (!root) return;
@@ -80,6 +162,10 @@ function renderApprovalPage(message = '', tone = 'success') {
     const workflow = getWorkflowTemplate(currentTicket);
     const currentStep = getCurrentStep(currentTicket);
     const canApproveWithCost = /^overnight/i.test(currentTicket.workflowKey || '') && /BPUU Manager พิจารณา/i.test(String(currentStep || ''));
+    const approvalState = evaluateApprovalLinkState(currentTicket, currentStep);
+    const canTakeAction = Boolean(approvalState.allowed);
+    const approvalStateMessage = getApprovalLinkStateMessage(approvalState);
+    const showLockBanner = !canTakeAction && !message;
     const summaryHtml = currentTicket.summaryHtml?.trim()
         ? currentTicket.summaryHtml
         : buildFallbackSummary(currentTicket);
@@ -115,6 +201,7 @@ function renderApprovalPage(message = '', tone = 'success') {
                     ขั้นตอนปัจจุบัน
                 </div>
                 <div>${renderTimeline(currentTicket, workflow)}</div>
+                ${canTakeAction ? `
                 <div class="approval-actions">
                     <button type="button" class="approval-action-btn approve" data-approval-action="approve">
                         <i class="bi bi-check2-circle me-1"></i>Approve
@@ -128,17 +215,24 @@ function renderApprovalPage(message = '', tone = 'success') {
                         <i class="bi bi-x-circle me-1"></i>Reject
                     </button>
                 </div>
+                ` : showLockBanner ? `
+                <div class="approval-result error">
+                    ${escapeHtml(approvalStateMessage)}
+                </div>
+                ` : ''}
                 ${message ? `<div class="approval-result ${tone === 'error' ? 'error' : ''}">${escapeHtml(message)}</div>` : ''}
             </aside>
         </div>
     `;
 
-    root.querySelectorAll('[data-approval-action]').forEach(button => {
-        button.addEventListener('click', async () => {
-            root.querySelectorAll('[data-approval-action]').forEach(item => { item.disabled = true; });
-            await handleApprovalAction(button.dataset.approvalAction);
+    if (canTakeAction) {
+        root.querySelectorAll('[data-approval-action]').forEach(button => {
+            button.addEventListener('click', async () => {
+                root.querySelectorAll('[data-approval-action]').forEach(item => { item.disabled = true; });
+                await handleApprovalAction(button.dataset.approvalAction);
+            });
         });
-    });
+    }
 }
 
 function renderTimeline(ticket, workflow) {
@@ -171,13 +265,30 @@ function renderTimeline(ticket, workflow) {
 
 async function handleApprovalAction(action) {
     if (!currentTicket) return;
-    const ticketIndex = approvalTickets.findIndex(ticket => ticket.ticketId === currentTicket.ticketId);
-    if (ticketIndex === -1) return;
 
     try {
+        approvalTickets = await loadApprovalTickets();
+        const latestTicket = approvalTickets.find(ticket => ticket.ticketId === currentTicket.ticketId) || null;
+        if (!latestTicket) {
+            renderApprovalPage('ไม่พบคำขอที่ต้องอนุมัติ', 'error');
+            return;
+        }
+
+        currentTicket = latestTicket;
+
+        const ticketIndex = approvalTickets.findIndex(ticket => ticket.ticketId === currentTicket.ticketId);
+        if (ticketIndex === -1) return;
+
         const workflow = getWorkflowTemplate(currentTicket);
         const nowIso = new Date().toISOString();
         let emailEventType = '';
+        const currentStep = getCurrentStep(currentTicket);
+        const approvalState = evaluateApprovalLinkState(currentTicket, currentStep);
+
+        if (!approvalState.allowed) {
+            renderApprovalPage(getApprovalLinkStateMessage(approvalState), 'error');
+            return;
+        }
 
         if (action === 'approve' || action === 'approve-paid') {
             const nextStepIndex = workflow.length
@@ -190,6 +301,7 @@ async function handleApprovalAction(action) {
                 : 'อนุมัติผ่านลิงก์อีเมลแล้ว';
             currentTicket.approvalSource = 'approve-page';
             currentTicket.approvalUpdatedAt = nowIso;
+            markApprovalLinkUsed(currentTicket, currentStep);
             currentTicket.paymentRequired = action === 'approve-paid';
             emailEventType = action === 'approve' ? getEmailEventTypeForStep(workflow[nextStepIndex]) : '';
             addApprovalDecision(currentTicket, 'approved');
@@ -198,6 +310,7 @@ async function handleApprovalAction(action) {
             currentTicket.note = 'ไม่อนุมัติผ่านลิงก์อีเมล';
             currentTicket.approvalSource = 'approve-page';
             currentTicket.approvalUpdatedAt = nowIso;
+            markApprovalLinkUsed(currentTicket, currentStep);
             emailEventType = 'rejected';
             addApprovalDecision(currentTicket, 'rejected');
         }
@@ -330,6 +443,8 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
             'กรุณาเลือกผลการพิจารณาในระบบ:',
             link,
             '',
+            'หมายเหตุ: ลิงก์นี้ใช้อนุมัติหรือไม่อนุมัติได้เพียงครั้งเดียวเท่านั้น',
+            '',
             'ขอแสดงความนับถือ',
             'BPUU Workflow System'
         ].join('\n')
@@ -370,6 +485,11 @@ function getRequesterEmail(ticket) {
 }
 
 function getApprovalLink(ticket) {
+    const tools = window.BPUU_APPROVAL_LINKS || {};
+    if (typeof tools.buildApprovalLinkUrl === 'function') {
+        return tools.buildApprovalLinkUrl(ticket, getCurrentStep(ticket), window.location.href);
+    }
+
     const url = new URL('approve.html', window.location.href);
     url.searchParams.set('ticket', ticket.ticketId);
     return url.toString();

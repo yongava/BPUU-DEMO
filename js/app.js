@@ -129,6 +129,11 @@ function getLocalWorkflowStep(ticket) {
 }
 
 function getWorkflowAdminLink(ticket) {
+    const tools = window.BPUU_APPROVAL_LINKS || {};
+    if (typeof tools.buildApprovalLinkUrl === 'function') {
+        return tools.buildApprovalLinkUrl(ticket, getLocalWorkflowStep(ticket), window.location.href);
+    }
+
     const url = new URL('approve.html', window.location.href);
     url.searchParams.set('ticket', ticket.ticketId);
     return url.toString();
@@ -230,6 +235,8 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
                 'กรุณาเปิดรายการนี้ในระบบ:',
                 adminLink,
                 '',
+                'หมายเหตุ: ลิงก์นี้ใช้อนุมัติหรือไม่อนุมัติได้เพียงครั้งเดียวเท่านั้น',
+                '',
                 'ขอแสดงความนับถือ',
                 'BPUU Workflow System'
             ].join('\n')
@@ -313,7 +320,7 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
             'กรุณาเลือกผลการพิจารณาในระบบ:',
             adminLink,
             '',
-            'หมายเหตุ: ลิงก์นี้ใช้สำหรับเข้าระบบอนุมัติผ่านหน้าเว็บ'
+            'หมายเหตุ: ลิงก์นี้ใช้อนุมัติหรือไม่อนุมัติได้เพียงครั้งเดียวเท่านั้น'
         ].join('\n')
     };
 }

@@ -1172,7 +1172,7 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
             'กรุณาเลือกผลการพิจารณาในระบบ:',
             adminLink,
             '',
-            'หมายเหตุ: ในช่วงทดสอบ ระบบจะเปิดอีเมลฉบับนี้ผ่าน mail client เพื่อให้ตรวจสอบเนื้อหาและส่งจริงได้'
+            'หมายเหตุ: ลิงก์นี้ใช้อนุมัติหรือไม่อนุมัติได้เพียงครั้งเดียวเท่านั้น'
         ].join('\n')
     };
 }
@@ -1187,6 +1187,11 @@ function getRequesterEmail(ticket) {
 }
 
 function getTicketAdminLink(ticket) {
+    const tools = window.BPUU_APPROVAL_LINKS || {};
+    if (typeof tools.buildApprovalLinkUrl === 'function') {
+        return tools.buildApprovalLinkUrl(ticket, getCurrentStep(ticket), window.location.href);
+    }
+
     const url = new URL('approve.html', window.location.href);
     url.searchParams.set('ticket', ticket.ticketId);
     return url.toString();
