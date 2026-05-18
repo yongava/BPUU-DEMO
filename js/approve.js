@@ -4,8 +4,8 @@ const APPROVAL_LEGACY_TICKET_STORAGE_KEYS = ['bpuu-admin-tickets'];
 const APPROVAL_CONFIG = window.BPUU_WORKFLOW_TEST_CONFIG || {};
 
 const APPROVAL_WORKFLOW_TEMPLATES = {
-    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU Staff พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightExternal: ['รับคำขอ', 'BPUU Staff พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
     monthlyRegular: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'ส่ง QR Code / แจ้งยอด', 'รอชำระเงิน', 'ออกใบเสร็จ', 'ปิดเรื่อง'],
     monthlySpecial: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'รองอธิการบดีฝ่ายการเงินฯ', 'รองอธิการบดีอาวุโสฝ่ายบริหาร', 'อธิการบดี', 'แจ้งผลกลับผู้ขอ'],
     monthlyBlocked: ['รับคำขอ', 'BPUU ตรวจสอบ', 'ตีกลับแก้ไขเอกสาร', 'รอข้อมูลจากผู้ขอ'],
@@ -187,7 +187,7 @@ function renderApprovalPage(message = '', tone = 'success') {
 
     const workflow = getWorkflowTemplate(currentTicket);
     const currentStep = getCurrentStep(currentTicket);
-    const canApproveWithCost = currentTicket.workflowKey === 'overnightStaff' && /BPUU พิจารณา/i.test(String(currentStep || ''));
+    const canApproveWithCost = currentTicket.workflowKey === 'overnightStaff' && /BPUU Staff พิจารณา/i.test(String(currentStep || ''));
     const approvalState = evaluateApprovalLinkState(currentTicket, currentStep);
     const canTakeAction = Boolean(approvalState.allowed);
     const approvalStateMessage = getApprovalLinkStateMessage(approvalState);
@@ -327,6 +327,8 @@ async function handleApprovalAction(action, options = {}) {
         const workingTicket = cloneTicket(latestTicket);
         const decisionStep = currentStep;
 
+        const isOvernightWorkflow = /^overnight/i.test(latestTicket.workflowKey || '');
+
         if (action === 'approve' || action === 'approve-paid') {
             if (action === 'approve-paid') {
                 const amount = Number(options.paymentAmount || 0);
@@ -363,17 +365,32 @@ async function handleApprovalAction(action, options = {}) {
                 emailEventType = 'payment-notification';
                 addApprovalDecision(workingTicket, 'approved-with-cost', decisionStep);
             } else {
-                const nextStepIndex = workflow.length
-                    ? Math.min((latestTicket.stepIndex || 0) + 1, workflow.length - 1)
-                    : latestTicket.stepIndex || 0;
-                workingTicket.stepIndex = nextStepIndex;
-                workingTicket.status = getWorkflowStatus(workingTicket, workflow, nextStepIndex);
-                workingTicket.note = 'อนุมัติผ่านลิงก์อีเมลแล้ว';
-                workingTicket.approvalSource = 'approve-page';
-                workingTicket.approvalUpdatedAt = nowIso;
-                markApprovalLinkUsed(workingTicket, currentStep);
-                emailEventType = getEmailEventTypeForStep(workflow[nextStepIndex]);
-                addApprovalDecision(workingTicket, 'approved', decisionStep);
+                const finalStepIndex = isOvernightWorkflow && /BPUU Manager พิจารณา/i.test(String(currentStep || '')) && !latestTicket.paymentRequired
+                    ? workflow.findIndex(step => /แจ้งผลกลับผู้ขอ/i.test(step))
+                    : -1;
+
+                if (finalStepIndex >= 0) {
+                    workingTicket.stepIndex = finalStepIndex;
+                    workingTicket.status = getWorkflowStatus(workingTicket, workflow, finalStepIndex);
+                    workingTicket.note = 'อนุมัติและแจ้งผลกลับผู้ขอแล้ว';
+                    workingTicket.approvalSource = 'approve-page';
+                    workingTicket.approvalUpdatedAt = nowIso;
+                    markApprovalLinkUsed(workingTicket, currentStep);
+                    emailEventType = 'completed';
+                    addApprovalDecision(workingTicket, 'approved', decisionStep);
+                } else {
+                    const nextStepIndex = workflow.length
+                        ? Math.min((latestTicket.stepIndex || 0) + 1, workflow.length - 1)
+                        : latestTicket.stepIndex || 0;
+                    workingTicket.stepIndex = nextStepIndex;
+                    workingTicket.status = getWorkflowStatus(workingTicket, workflow, nextStepIndex);
+                    workingTicket.note = 'อนุมัติผ่านลิงก์อีเมลแล้ว';
+                    workingTicket.approvalSource = 'approve-page';
+                    workingTicket.approvalUpdatedAt = nowIso;
+                    markApprovalLinkUsed(workingTicket, currentStep);
+                    emailEventType = getEmailEventTypeForStep(workflow[nextStepIndex]);
+                    addApprovalDecision(workingTicket, 'approved', decisionStep);
+                }
             }
         } else if (action === 'reject') {
             workingTicket.status = 'ไม่ผ่านการอนุมัติ';

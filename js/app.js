@@ -30,8 +30,8 @@ const JOTFORM_USER_TYPE_VALUES = {
     external: "บุคคลภายนอก"
 };
 const LOCAL_WORKFLOW_TEMPLATES = {
-    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU Staff พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightExternal: ['รับคำขอ', 'BPUU Staff พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
     monthlyRegular: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'ส่ง QR Code / แจ้งยอด', 'รอชำระเงิน', 'ออกใบเสร็จ', 'ปิดเรื่อง'],
     monthlySpecial: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'รองอธิการบดีฝ่ายการเงินฯ', 'รองอธิการบดีอาวุโสฝ่ายบริหาร', 'อธิการบดี', 'แจ้งผลกลับผู้ขอ'],
     monthlyBlocked: ['รับคำขอ', 'BPUU ตรวจสอบ', 'ตีกลับแก้ไขเอกสาร', 'รอข้อมูลจากผู้ขอ'],
@@ -303,6 +303,12 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
         };
     }
 
+    const overnightApprovalNote = ticket.workflowKey === 'overnightStaff' && /BPUU Staff พิจารณา/i.test(step || '')
+        ? 'หมายเหตุ: ถ้าเป็นกรณีมีค่าใช้จ่าย ให้เลือก "อนุมัติ-มีค่าใช้จ่าย" เพื่อระบุยอดเงินและแนบ QR Code ระบบจะส่งต่อให้ผู้ขอชำระเงินทันที'
+        : ticket.workflowKey === 'overnightStaff' && /BPUU Manager พิจารณา/i.test(step || '')
+            ? 'หมายเหตุ: กรณีปกติให้กด Approve เพื่อแจ้งผลกลับผู้ขอและปิดงาน'
+            : '';
+
     return {
         to: recipient,
         subject: `[Action Required] อนุมัติคำขอใช้บริการ ${serviceType} - คุณ ${requesterName}`,
@@ -317,6 +323,7 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
             `- ขั้นตอนปัจจุบัน: ${step || '-'}`,
             `- รายละเอียด: ${details}`,
             '',
+            ...(overnightApprovalNote ? [overnightApprovalNote, ''] : []),
             'กรุณาเลือกผลการพิจารณาในระบบ:',
             adminLink,
             '',
@@ -1364,14 +1371,14 @@ function getWorkflowSubmissionConfig() {
         return {
             typeKey: 'overnight',
             workflowKey: 'overnightExternal',
-            status: 'รอ BPUU พิจารณา',
+            status: 'รอ BPUU Staff พิจารณา',
             stepIndex: 1,
             assignee: 'BPUU Staff',
             priority: 'กลาง',
-            routeSummary: 'BPUU ตรวจสอบโดยตรง',
+            routeSummary: 'BPUU Staff ตรวจสอบโดยตรง',
             contextLabel: 'องค์กร',
             contextValue: getInputValue('extCompany') || '-',
-            note: 'ส่งเข้าพิจารณาโดย BPUU โดยตรง'
+            note: 'ส่งเข้าพิจารณาโดย BPUU Staff โดยตรง'
         };
     }
 

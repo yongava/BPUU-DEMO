@@ -69,8 +69,8 @@ const TYPE_GROUPS = [
 ];
 
 const WORKFLOW_TEMPLATES = {
-    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU Staff พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightExternal: ['รับคำขอ', 'BPUU Staff พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
     monthlyRegular: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'ส่ง QR Code / แจ้งยอด', 'รอชำระเงิน', 'ออกใบเสร็จ', 'ปิดเรื่อง'],
     monthlySpecial: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'รองอธิการบดีฝ่ายการเงินฯ', 'รองอธิการบดีอาวุโสฝ่ายบริหาร', 'อธิการบดี', 'แจ้งผลกลับผู้ขอ'],
     monthlyBlocked: ['รับคำขอ', 'BPUU ตรวจสอบ', 'ตีกลับแก้ไขเอกสาร', 'รอข้อมูลจากผู้ขอ'],
@@ -113,15 +113,15 @@ const BASE_TICKETS = [
         contextLabel: 'องค์กร',
         contextValue: 'บริษัท เอ็มพลัส เซอร์วิส จำกัด',
         formName: 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)',
-        status: 'รอ BPUU พิจารณา',
+        status: 'รอ BPUU Staff พิจารณา',
         workflowKey: 'overnightExternal',
         stepIndex: 1,
         submittedAt: '2026-05-08T09:05:00+07:00',
         updatedAt: '2026-05-08T11:02:00+07:00',
         assignee: 'BPUU Staff',
         priority: 'กลาง',
-        routeSummary: 'BPUU ตรวจสอบโดยตรง',
-        note: 'ผู้ขอเป็นบุคคลภายนอก จึงเข้าสู่การพิจารณาของ BPUU โดยตรง'
+        routeSummary: 'BPUU Staff ตรวจสอบโดยตรง',
+        note: 'ผู้ขอเป็นบุคคลภายนอก จึงเข้าสู่การพิจารณาของ BPUU Staff โดยตรง'
     }),
     createTicket({
         ticketId: 'REQ-2026-0003',
@@ -1155,6 +1155,12 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
         };
     }
 
+    const overnightApprovalNote = ticket.workflowKey === 'overnightStaff' && /BPUU Staff พิจารณา/i.test(step || '')
+        ? 'หมายเหตุ: ถ้าเป็นกรณีมีค่าใช้จ่าย ให้เลือก "อนุมัติ-มีค่าใช้จ่าย" เพื่อระบุยอดเงินและแนบ QR Code ระบบจะส่งต่อให้ผู้ขอชำระเงินทันที'
+        : ticket.workflowKey === 'overnightStaff' && /BPUU Manager พิจารณา/i.test(step || '')
+            ? 'หมายเหตุ: กรณีปกติให้กด Approve เพื่อแจ้งผลกลับผู้ขอและปิดงาน'
+            : '';
+
     return {
         to: recipient,
         subject: `[Action Required] อนุมัติคำขอใช้บริการ ${serviceType} - คุณ ${requesterName}`,
@@ -1169,6 +1175,7 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
             `- ขั้นตอนปัจจุบัน: ${step || '-'}`,
             `- รายละเอียด: ${details}`,
             '',
+            ...(overnightApprovalNote ? [overnightApprovalNote, ''] : []),
             'กรุณาเลือกผลการพิจารณาในระบบ:',
             adminLink,
             '',
@@ -1571,12 +1578,26 @@ async function handleTicketAction(action, ticketId) {
 
     if (action === 'advance') {
         if (!workflow.length || record.stepIndex >= workflow.length - 1) return;
-        const nextStepIndex = Math.min(record.stepIndex + 1, workflow.length - 1);
-        record.stepIndex = nextStepIndex;
-        record.status = getWorkflowStatus(record, workflow, nextStepIndex);
-        record.note = record.note || 'อนุมัติและส่งต่อไปขั้นถัดไป';
-        emailEventType = getEmailEventTypeForStep(record, workflow[nextStepIndex]);
-        applyPlateRegistryMutation(record, nextStepIndex);
+        const currentStep = getCurrentStep(record);
+        const shouldCompleteOvernight = isOvernightWorkflowTicket(record)
+            && /BPUU Manager พิจารณา/i.test(String(currentStep || ''))
+            && !record.paymentRequired;
+
+        if (shouldCompleteOvernight) {
+            const finalStepIndex = workflow.findIndex(step => /แจ้งผลกลับผู้ขอ/i.test(step));
+            const targetStepIndex = finalStepIndex >= 0 ? finalStepIndex : workflow.length - 1;
+            record.stepIndex = targetStepIndex;
+            record.status = getWorkflowStatus(record, workflow, targetStepIndex);
+            record.note = record.note || 'อนุมัติและแจ้งผลกลับผู้ขอแล้ว';
+            emailEventType = 'completed';
+        } else {
+            const nextStepIndex = Math.min(record.stepIndex + 1, workflow.length - 1);
+            record.stepIndex = nextStepIndex;
+            record.status = getWorkflowStatus(record, workflow, nextStepIndex);
+            record.note = record.note || 'อนุมัติและส่งต่อไปขั้นถัดไป';
+            emailEventType = getEmailEventTypeForStep(record, workflow[nextStepIndex]);
+            applyPlateRegistryMutation(record, nextStepIndex);
+        }
     } else if (action === 'send-payment') {
         if (!isOvernightWorkflowTicket(record)) return;
         const amountInput = document.getElementById('overnightPaymentAmount');
