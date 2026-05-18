@@ -1,5 +1,3 @@
-const net = require('net');
-const tls = require('tls');
 const crypto = require('crypto');
 
 const jsonHeaders = {
@@ -15,40 +13,6 @@ function response(statusCode, payload) {
     headers: jsonHeaders,
     body: JSON.stringify(payload)
   };
-}
-
-function getDatabaseConfig() {
-  const host = process.env.SUPABASE_DB_HOST || process.env.PGHOST;
-  const port = Number(process.env.SUPABASE_DB_PORT || process.env.PGPORT || 5432);
-  const database = process.env.SUPABASE_DB_NAME || process.env.PGDATABASE || 'postgres';
-  const user = process.env.SUPABASE_DB_USER || process.env.PGUSER;
-  const password = process.env.SUPABASE_DB_PASSWORD || process.env.PGPASSWORD;
-
-  if (host && user && password) {
-    return {
-      host,
-      port,
-      database,
-      user,
-      password,
-      ssl: true
-    };
-  }
-
-  const connectionString = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL || '';
-  if (connectionString) {
-    const url = new URL(connectionString);
-    return {
-      host: url.hostname,
-      port: Number(url.port || 5432),
-      database: decodeURIComponent(url.pathname.replace(/^\//, '') || 'postgres'),
-      user: decodeURIComponent(url.username),
-      password: decodeURIComponent(url.password),
-      ssl: true
-    };
-  }
-
-  throw new Error('Missing Supabase database configuration');
 }
 
 function sqlLiteral(value) {
@@ -179,296 +143,78 @@ function decodeDataRow(payload, fields) {
   return row;
 }
 
-class SocketReader {
-  constructor(socket) {
-    this.socket = socket;
-    this.buffer = Buffer.alloc(0);
-    this.waiters = [];
-    this.closed = false;
-
-    socket.on('data', chunk => {
-      this.buffer = Buffer.concat([this.buffer, chunk]);
-      this.flush();
-    });
-
-    socket.on('error', error => this.failAll(error));
-    socket.on('end', () => this.failAll(new Error('Connection closed by server')));
-  }
-
-  flush() {
-    while (this.waiters.length && this.buffer.length >= this.waiters[0].size) {
-      const waiter = this.waiters.shift();
-      const chunk = this.buffer.subarray(0, waiter.size);
-      this.buffer = this.buffer.subarray(waiter.size);
-      waiter.resolve(chunk);
-    }
-  }
-
-  failAll(error) {
-    if (this.closed) return;
-    this.closed = true;
-    while (this.waiters.length) {
-      this.waiters.shift().reject(error);
-    }
-  }
-
-  read(size) {
-    if (this.buffer.length >= size) {
-      const chunk = this.buffer.subarray(0, size);
-      this.buffer = this.buffer.subarray(size);
-      return Promise.resolve(chunk);
-    }
-
-    return new Promise((resolve, reject) => {
-      this.waiters.push({ size, resolve, reject });
-    });
-  }
-}
-
-class MinimalPgClient {
-  constructor(config) {
-    this.config = config;
-    this.socket = null;
-    this.reader = null;
-  }
-
-  async connect() {
-    const plainSocket = await this.openSocket(this.config.host, this.config.port);
-    plainSocket.write(makeSslRequest());
-
-    const sslResponse = await this.readExact(plainSocket, 1);
-    if (sslResponse.toString('utf8') !== 'S') {
-      throw new Error('Postgres server refused SSL');
-    }
-
-    this.socket = await this.upgradeToTls(plainSocket, this.config.host);
-    this.reader = new SocketReader(this.socket);
-    this.socket.write(makeStartupMessage(this.config));
-    await this.authenticate();
-    return this;
-  }
-
-  async authenticate() {
-    let saslState = null;
-
-    while (true) {
-      const message = await this.readMessage();
-
-      if (message.type === 'R') {
-        const authCode = message.payload.readInt32BE(0);
-
-        if (authCode === 0) {
-          continue;
-        }
-
-        if (authCode === 10) {
-          const mechanisms = [];
-          let offset = 4;
-          while (offset < message.payload.length) {
-            const { value, nextOffset } = readCString(message.payload, offset);
-            offset = nextOffset;
-            if (!value) break;
-            mechanisms.push(value);
-          }
-
-          if (!mechanisms.includes('SCRAM-SHA-256')) {
-            throw new Error('Server does not support SCRAM-SHA-256');
-          }
-
-          const nonce = crypto.randomBytes(18).toString('base64');
-          const initial = makeSaslInitialResponse(this.config.user, nonce);
-          saslState = this.buildScramState(initial.clientFirstBare, nonce);
-          this.socket.write(initial.payload);
-          continue;
-        }
-
-        if (authCode === 11) {
-          if (!saslState) throw new Error('SCRAM state missing');
-          const serverFirstMessage = message.payload.slice(4).toString('utf8');
-          const parsed = this.parseServerFirstMessage(serverFirstMessage);
-          const finalMessage = this.buildScramFinalMessage(saslState, parsed, serverFirstMessage);
-          this.socket.write(makeSaslResponse(finalMessage.clientFinalMessage));
-          saslState.expectedServerSignature = finalMessage.expectedServerSignature;
-          continue;
-        }
-
-        if (authCode === 12) {
-          if (!saslState) throw new Error('SCRAM state missing');
-          const serverFinalMessage = message.payload.slice(4).toString('utf8');
-          const serverSignature = this.parseServerFinalMessage(serverFinalMessage);
-          if (serverSignature && saslState.expectedServerSignature && serverSignature !== saslState.expectedServerSignature) {
-            throw new Error('SCRAM server signature mismatch');
-          }
-          continue;
-        }
-
-        throw new Error(`Unsupported authentication method: ${authCode}`);
-      }
-
-      if (message.type === 'S' || message.type === 'K' || message.type === 'N') {
-        continue;
-      }
-
-      if (message.type === 'Z') {
-        return;
-      }
-
-      if (message.type === 'E') {
-        throw new Error(parseErrorMessage(message.payload));
-      }
-    }
-  }
-
-  buildScramState(clientFirstBare, nonce) {
-    return {
-      clientFirstBare,
-      nonce,
-      password: this.config.password
-    };
-  }
-
-  parseServerFirstMessage(message) {
-    const result = {};
-    for (const part of message.split(',')) {
-      const [key, value] = part.split('=');
-      result[key] = value;
-    }
-    return result;
-  }
-
-  buildScramFinalMessage(state, serverFirst, serverFirstMessage) {
-    const salt = Buffer.from(serverFirst.s || '', 'base64');
-    const iterations = Number(serverFirst.i || 0);
-    const channelBinding = 'biws';
-    const clientFinalWithoutProof = `c=${channelBinding},r=${serverFirst.r}`;
-    const authMessage = `${state.clientFirstBare},${serverFirstMessage},${clientFinalWithoutProof}`;
-    const saltedPassword = crypto.pbkdf2Sync(state.password, salt, iterations, 32, 'sha256');
-    const clientKey = crypto.createHmac('sha256', saltedPassword).update('Client Key').digest();
-    const storedKey = crypto.createHash('sha256').update(clientKey).digest();
-    const clientSignature = crypto.createHmac('sha256', storedKey).update(authMessage).digest();
-    const clientProof = Buffer.alloc(clientKey.length);
-    for (let index = 0; index < clientKey.length; index += 1) {
-      clientProof[index] = clientKey[index] ^ clientSignature[index];
-    }
-    const serverKey = crypto.createHmac('sha256', saltedPassword).update('Server Key').digest();
-    const expectedServerSignature = crypto.createHmac('sha256', serverKey).update(authMessage).digest('base64');
-    return {
-      clientFinalMessage: `${clientFinalWithoutProof},p=${clientProof.toString('base64')}`,
-      expectedServerSignature
-    };
-  }
-
-  parseServerFinalMessage(message) {
-    const match = message.match(/v=([^,]+)/);
-    return match ? match[1] : '';
-  }
-
-  async query(sql) {
-    this.socket.write(makeSimpleQuery(sql));
-    const rows = [];
-    let fields = [];
-    let commandTag = '';
-
-    while (true) {
-      const message = await this.readMessage();
-
-      if (message.type === 'T') {
-        fields = this.parseRowDescription(message.payload);
-        continue;
-      }
-
-      if (message.type === 'D') {
-        rows.push(decodeDataRow(message.payload, fields));
-        continue;
-      }
-
-      if (message.type === 'C') {
-        commandTag = message.payload.subarray(0, message.payload.length - 1).toString('utf8');
-        continue;
-      }
-
-      if (message.type === 'Z') {
-        return {
-          rows,
-          rowCount: rows.length || parseCommandTag(commandTag),
-          commandTag
-        };
-      }
-
-      if (message.type === 'E') {
-        throw new Error(parseErrorMessage(message.payload));
-      }
-    }
-  }
-
-  parseRowDescription(payload) {
-    let offset = 0;
-    const count = payload.readInt16BE(offset);
-    offset += 2;
-    const fields = [];
-
-    for (let index = 0; index < count; index += 1) {
-      const { value, nextOffset } = readCString(payload, offset);
-      offset = nextOffset + 18;
-      fields.push({ name: value });
-    }
-
-    return fields;
-  }
-
-  async close() {
-    if (this.socket) {
-      this.socket.end();
-      this.socket = null;
-    }
-  }
-
-  async readMessage() {
-    const type = await this.reader.read(1);
-    const lengthBuffer = await this.reader.read(4);
-    const length = lengthBuffer.readInt32BE(0);
-    const payload = await this.reader.read(length - 4);
-    return {
-      type: type.toString('utf8'),
-      payload
-    };
-  }
-
-  openSocket(host, port) {
-    return new Promise((resolve, reject) => {
-      const socket = net.connect({ host, port }, () => resolve(socket));
-      socket.once('error', reject);
-    });
-  }
-
-  upgradeToTls(socket, host) {
-    return new Promise((resolve, reject) => {
-      const tlsSocket = tls.connect({
-        socket,
-        servername: host,
-        rejectUnauthorized: false
-      }, () => resolve(tlsSocket));
-      tlsSocket.once('error', reject);
-    });
-  }
-
-  readExact(socket, size) {
-    return new Promise((resolve, reject) => {
-      let buffer = Buffer.alloc(0);
-      const onData = chunk => {
-        buffer = Buffer.concat([buffer, chunk]);
-        if (buffer.length < size) return;
-        socket.off('data', onData);
-        resolve(buffer.subarray(0, size));
-      };
-      socket.on('data', onData);
-      socket.once('error', reject);
-    });
-  }
-}
-
 let schemaReady = false;
 let schemaPromise = null;
+
+function getSupabaseRestConfig() {
+  const supabaseUrl = String(
+    process.env.SUPABASE_URL
+    || process.env.SUPABASE_PROJECT_URL
+    || process.env.SUPABASE_INSTANCE_URL
+    || ''
+  ).trim().replace(/\/$/, '');
+
+  const apiKey = String(
+    process.env.SUPABASE_SECRET_KEY
+    || process.env.SUPABASE_SERVICE_ROLE_KEY
+    || process.env.SUPABASE_DB_SECRET_KEY
+    || process.env.SUPABASE_ANON_KEY
+    || process.env.SUPABASE_PUBLISHABLE_KEY
+    || ''
+  ).trim();
+
+  if (!supabaseUrl || !apiKey) {
+    throw new Error('Missing Supabase REST configuration');
+  }
+
+  return {
+    supabaseUrl,
+    apiKey,
+    restUrl: `${supabaseUrl}/rest/v1`
+  };
+}
+
+function createRestHeaders(apiKey, extra = {}) {
+  return {
+    apikey: apiKey,
+    Authorization: `Bearer ${apiKey}`,
+    ...extra
+  };
+}
+
+async function restRequest(method, path, { apiKey, query = '', body = null, headers = {} }) {
+  const url = new URL(`${path}${query}`, `${getSupabaseRestConfig().restUrl}/`);
+  const response = await fetch(url.toString(), {
+    method,
+    headers: createRestHeaders(apiKey, body ? { 'Content-Type': 'application/json', Prefer: 'return=representation', ...headers } : headers),
+    body: body ? JSON.stringify(body) : undefined
+  });
+
+  const text = await response.text().catch(() => '');
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      data = { raw: text };
+    }
+  }
+
+  if (!response.ok) {
+    const message = data?.message || data?.error || text || `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+function hydrateTickets(rows) {
+  return (Array.isArray(rows) ? rows : []).map(hydrateTicket).sort((a, b) => {
+    const left = new Date(b.updatedAt || b.updated_at || 0).getTime();
+    const right = new Date(a.updatedAt || a.updated_at || 0).getTime();
+    return left - right;
+  });
+}
 
 function normalizeTicket(ticket) {
   if (!ticket || typeof ticket !== 'object' || Array.isArray(ticket)) {
@@ -491,111 +237,7 @@ function hydrateTicket(row) {
 }
 
 async function connectClient() {
-  const client = new MinimalPgClient(getDatabaseConfig());
-  await client.connect();
-  return client;
-}
-
-async function ensureSchema(client) {
-  if (!schemaReady) {
-    if (!schemaPromise) {
-      schemaPromise = (async () => {
-        await client.query(`
-          CREATE TABLE IF NOT EXISTS workflow_tickets (
-            ticket_id text PRIMARY KEY,
-            payload jsonb NOT NULL,
-            created_at timestamptz NOT NULL DEFAULT now(),
-            updated_at timestamptz NOT NULL DEFAULT now()
-          )
-        `);
-
-        await client.query(`
-          CREATE INDEX IF NOT EXISTS workflow_tickets_updated_at_idx
-          ON workflow_tickets (updated_at DESC)
-        `);
-      })();
-    }
-
-    await schemaPromise;
-    schemaReady = true;
-  }
-}
-
-async function getLatestTicketNumber(client, year) {
-  const sql = `
-    SELECT ticket_id
-    FROM workflow_tickets
-    WHERE ticket_id LIKE ${sqlLiteral(`REQ-${year}-%`)}
-    ORDER BY ticket_id DESC
-    LIMIT 1
-  `;
-  const { rows } = await client.query(sql);
-  const lastTicketId = rows[0]?.ticket_id || '';
-  const match = lastTicketId.match(/-(\d{4})$/);
-  return match ? Number(match[1]) + 1 : 1;
-}
-
-async function upsertTicket(client, ticket) {
-  const payload = normalizeTicket(ticket);
-  const year = new Date().getFullYear();
-  const ticketId = payload.ticketId || `REQ-${year}-${String(await getLatestTicketNumber(client, year)).padStart(4, '0')}`;
-  payload.ticketId = ticketId;
-
-  const sql = `
-    INSERT INTO workflow_tickets (ticket_id, payload)
-    VALUES (${sqlLiteral(ticketId)}, ${sqlLiteral(JSON.stringify(payload))}::jsonb)
-    ON CONFLICT (ticket_id)
-    DO UPDATE SET
-      payload = EXCLUDED.payload,
-      updated_at = now()
-    RETURNING ticket_id, payload, created_at, updated_at
-  `;
-  const result = await client.query(sql);
-  return hydrateTicket(result.rows[0]);
-}
-
-async function replaceTickets(client, tickets) {
-  const payloads = Array.isArray(tickets) ? tickets.map(normalizeTicket) : [];
-  const year = new Date().getFullYear();
-  let nextTicketNumber = await getLatestTicketNumber(client, year);
-
-  await client.query('BEGIN');
-  try {
-    await client.query('DELETE FROM workflow_tickets');
-
-    for (const payload of payloads) {
-      const ticketId = payload.ticketId || `REQ-${year}-${String(nextTicketNumber).padStart(4, '0')}`;
-      if (!payload.ticketId) nextTicketNumber += 1;
-      payload.ticketId = ticketId;
-
-      await client.query(`
-        INSERT INTO workflow_tickets (ticket_id, payload)
-        VALUES (${sqlLiteral(ticketId)}, ${sqlLiteral(JSON.stringify(payload))}::jsonb)
-      `);
-    }
-
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  }
-
-  const { rows } = await client.query(`
-    SELECT ticket_id, payload, created_at, updated_at
-    FROM workflow_tickets
-    ORDER BY updated_at DESC, ticket_id DESC
-  `);
-
-  return rows.map(hydrateTicket);
-}
-
-async function listTickets(client) {
-  const { rows } = await client.query(`
-    SELECT ticket_id, payload, created_at, updated_at
-    FROM workflow_tickets
-    ORDER BY updated_at DESC, ticket_id DESC
-  `);
-  return rows.map(hydrateTicket);
+  return getSupabaseRestConfig();
 }
 
 exports.handler = async event => {
@@ -607,29 +249,31 @@ exports.handler = async event => {
 
   try {
     client = await connectClient();
-    await ensureSchema(client);
 
     if (event.httpMethod === 'GET') {
       const ticketId = String(event.queryStringParameters?.ticketId || event.queryStringParameters?.ticket || '').trim();
 
       if (ticketId) {
-        const { rows } = await client.query(`
-          SELECT ticket_id, payload, created_at, updated_at
-          FROM workflow_tickets
-          WHERE ticket_id = ${sqlLiteral(ticketId)}
-          LIMIT 1
-        `);
+        const rows = await restRequest('GET', 'workflow_tickets', {
+          apiKey: client.apiKey,
+          query: `?select=ticket_id,payload,created_at,updated_at&ticket_id=eq.${encodeURIComponent(ticketId)}&limit=1`
+        });
 
-        if (!rows.length) {
+        if (!Array.isArray(rows) || !rows.length) {
           return response(404, { ok: false, error: 'Ticket not found' });
         }
 
         return response(200, { ok: true, ticket: hydrateTicket(rows[0]) });
       }
 
+      const rows = await restRequest('GET', 'workflow_tickets', {
+        apiKey: client.apiKey,
+        query: '?select=ticket_id,payload,created_at,updated_at&order=updated_at.desc,ticket_id.desc'
+      });
+
       return response(200, {
         ok: true,
-        tickets: await listTickets(client)
+        tickets: hydrateTickets(rows)
       });
     }
 
@@ -642,7 +286,17 @@ exports.handler = async event => {
 
     if (event.httpMethod === 'POST') {
       const ticket = normalizeTicket(payload.ticket || payload);
-      const savedTicket = await upsertTicket(client, ticket);
+      const year = new Date().getFullYear();
+      const ticketId = ticket.ticketId || `REQ-${year}-${String(Date.now()).slice(-4)}`;
+      ticket.ticketId = ticketId;
+      const [savedTicket] = await restRequest('POST', 'workflow_tickets', {
+        apiKey: client.apiKey,
+        query: '?on_conflict=ticket_id',
+        body: ticket,
+        headers: {
+          Prefer: 'return=representation,resolution=merge-duplicates'
+        }
+      });
       return response(200, { ok: true, ticket: savedTicket });
     }
 
@@ -652,25 +306,52 @@ exports.handler = async event => {
         return response(400, { ok: false, error: 'Missing ticketId' });
       }
 
-      const { rows } = await client.query(`
-        SELECT ticket_id, payload, created_at, updated_at
-        FROM workflow_tickets
-        WHERE ticket_id = ${sqlLiteral(ticketId)}
-        LIMIT 1
-      `);
+      const existingRows = await restRequest('GET', 'workflow_tickets', {
+        apiKey: client.apiKey,
+        query: `?select=ticket_id,payload,created_at,updated_at&ticket_id=eq.${encodeURIComponent(ticketId)}&limit=1`
+      });
 
-      if (!rows.length) {
+      if (!Array.isArray(existingRows) || !existingRows.length) {
         return response(404, { ok: false, error: 'Ticket not found' });
       }
 
-      const existing = hydrateTicket(rows[0]);
+      const existing = hydrateTicket(existingRows[0]);
       const patch = payload.patch || payload.ticket || {};
-      const savedTicket = await upsertTicket(client, { ...existing, ...patch, ticketId });
+      const nextPayload = normalizeTicket({ ...existing, ...patch, ticketId });
+      const [savedTicket] = await restRequest('POST', 'workflow_tickets', {
+        apiKey: client.apiKey,
+        query: '?on_conflict=ticket_id',
+        body: nextPayload,
+        headers: {
+          Prefer: 'return=representation,resolution=merge-duplicates'
+        }
+      });
       return response(200, { ok: true, ticket: savedTicket });
     }
 
     if (event.httpMethod === 'PUT') {
-      const tickets = await replaceTickets(client, payload.tickets || []);
+      const ticketsPayload = Array.isArray(payload.tickets) ? payload.tickets.map(normalizeTicket) : [];
+      await restRequest('DELETE', 'workflow_tickets', {
+        apiKey: client.apiKey,
+        query: '?ticket_id=not.is.null'
+      });
+
+      const tickets = [];
+      for (const ticket of ticketsPayload) {
+        const year = new Date().getFullYear();
+        if (!ticket.ticketId) {
+          ticket.ticketId = `REQ-${year}-${String(Date.now()).slice(-4)}`;
+        }
+        const [savedTicket] = await restRequest('POST', 'workflow_tickets', {
+          apiKey: client.apiKey,
+          query: '?on_conflict=ticket_id',
+          body: ticket,
+          headers: {
+            Prefer: 'return=representation,resolution=merge-duplicates'
+          }
+        });
+        tickets.push(savedTicket);
+      }
       return response(200, { ok: true, tickets });
     }
 
@@ -682,8 +363,6 @@ exports.handler = async event => {
       error: error.message || 'Failed to process workflow tickets'
     });
   } finally {
-    if (client) {
-      await client.close().catch(() => {});
-    }
+    client = null;
   }
 };

@@ -7,6 +7,7 @@
 
     const config = window.BPUU_WORKFLOW_TEST_CONFIG || {};
     const endpoint = String(config.workflowApiEndpoint || config.workflowApi?.endpoint || DEFAULT_ENDPOINT).trim();
+    const allowLocalFallback = Boolean(config.allowLocalFallback);
 
     const state = {
         cache: [],
@@ -146,13 +147,16 @@
 
             return clone(state.cache);
         } catch (error) {
-            const localTickets = readLocalTickets().filter(ticket => !isSeedTicket(ticket));
-            if (localTickets.length) {
-                return saveLocalTickets(localTickets);
+            if (allowLocalFallback) {
+                const localTickets = readLocalTickets().filter(ticket => !isSeedTicket(ticket));
+                if (localTickets.length) {
+                    return saveLocalTickets(localTickets);
+                }
+                state.loaded = true;
+                state.cache = [];
+                return [];
             }
-            state.loaded = true;
-            state.cache = [];
-            return [];
+            throw error;
         }
     }
 
@@ -174,11 +178,14 @@
             notifyChanged();
             return clone(saved);
         } catch (error) {
-            const existing = readLocalTickets();
-            const nextCache = existing.filter(item => item.ticketId !== payload.ticketId);
-            const saved = normalizeTicket(payload);
-            nextCache.unshift(saved);
-            return saveLocalTickets(nextCache).find(item => item.ticketId === saved.ticketId) || clone(saved);
+            if (allowLocalFallback) {
+                const existing = readLocalTickets();
+                const nextCache = existing.filter(item => item.ticketId !== payload.ticketId);
+                const saved = normalizeTicket(payload);
+                nextCache.unshift(saved);
+                return saveLocalTickets(nextCache).find(item => item.ticketId === saved.ticketId) || clone(saved);
+            }
+            throw error;
         }
     }
 
@@ -200,7 +207,10 @@
             notifyChanged();
             return clone(state.cache);
         } catch (error) {
-            return saveLocalTickets(payload);
+            if (allowLocalFallback) {
+                return saveLocalTickets(payload);
+            }
+            throw error;
         }
     }
 

@@ -9,3 +9,5 @@ create index if not exists workflow_tickets_updated_at_idx
   on public.workflow_tickets (updated_at desc);
 
 comment on table public.workflow_tickets is 'Workflow tickets for BPUU overnight and related service flows';
+
+alter table public.workflow_tickets enable row level security;
