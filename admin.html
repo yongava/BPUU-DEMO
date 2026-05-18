@@ -217,5 +217,88 @@
 <script src="js/workflow-test-config.js?v=20260518-3"></script>
 <script src="js/workflow-api.js?v=20260518-3"></script>
 <script src="js/admin.js?v=20260518-3"></script>
+<script>
+(function () {
+    function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, function (character) {
+            return ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[character];
+        });
+    }
+
+    function isSeedTicket(ticket) {
+        var match = String(ticket && ticket.ticketId || '').match(/^REQ-(\d{4})-(\d{4})$/);
+        return !!match && Number(match[2]) <= 14;
+    }
+
+    function renderFallback(tickets) {
+        var list = document.getElementById('ticketList');
+        if (!list || list.children.length) return;
+
+        var filtered = Array.isArray(tickets) ? tickets.filter(function (ticket) { return !isSeedTicket(ticket); }) : [];
+        var total = filtered.length;
+
+        var statTotal = document.getElementById('statTotal');
+        var statActive = document.getElementById('statActive');
+        var statBlocked = document.getElementById('statBlocked');
+        var statClosed = document.getElementById('statClosed');
+        var resultCount = document.getElementById('resultCount');
+
+        if (statTotal) statTotal.textContent = String(total);
+        if (statActive) statActive.textContent = String(filtered.filter(function (ticket) { return !/ปิดเรื่องแล้ว|ปิดรายการ/.test(String(ticket.status || '')); }).length);
+        if (statBlocked) statBlocked.textContent = '0';
+        if (statClosed) statClosed.textContent = String(filtered.filter(function (ticket) { return /ปิดเรื่องแล้ว|ปิดรายการ/.test(String(ticket.status || '')); }).length);
+        if (resultCount) resultCount.textContent = total + ' รายการ';
+
+        if (!filtered.length) {
+            list.innerHTML = '<div class="detail-empty text-center"><div class="empty-state-icon"><i class="bi bi-search"></i></div><h3 class="h5 fw-bold text-dark mb-2">ไม่พบรายการที่ตรงกับตัวกรอง</h3><p class="mb-0">ไม่มี ticket ในระบบตอนนี้</p></div>';
+            return;
+        }
+
+        list.innerHTML = filtered.map(function (ticket) {
+            return [
+                '<div class="ticket-card" style="border-left:4px solid #0ea5e9;">',
+                '<div class="ticket-id mb-1">', escapeHtml(ticket.ticketId), '</div>',
+                '<div class="ticket-title mb-1">', escapeHtml(ticket.formName || 'คำขอ'), '</div>',
+                '<div class="ticket-meta">', escapeHtml(ticket.requesterType || '-'), ' · ', escapeHtml(ticket.requesterName || '-'), '</div>',
+                '<div class="d-flex flex-wrap gap-2 mt-3">',
+                '<span class="meta-pill"><i class="bi bi-arrow-repeat"></i>', escapeHtml(ticket.status || '-'), '</span>',
+                '<span class="meta-pill"><i class="bi bi-signpost-2-fill"></i>', escapeHtml(ticket.routeSummary || '-'), '</span>',
+                '<span class="meta-pill"><i class="bi bi-clock-fill"></i>', escapeHtml(ticket.updatedAt || ticket.submittedAt || '-'), '</span>',
+                '</div>',
+                '</div>'
+            ].join('');
+        }).join('');
+    }
+
+    function loadTicketsAndRender() {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', window.location.origin + '/api/workflow-tickets', true);
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            if (xhr.status < 200 || xhr.status >= 300) return;
+            try {
+                var data = JSON.parse(xhr.responseText || '{}');
+                renderFallback(Array.isArray(data.tickets) ? data.tickets : []);
+            } catch (error) {
+                // Ignore malformed payloads and leave the page as-is.
+            }
+        };
+        xhr.send();
+    }
+
+    setTimeout(function () {
+        var list = document.getElementById('ticketList');
+        if (list && !list.children.length) {
+            loadTicketsAndRender();
+        }
+    }, 1500);
+})();
+</script>
 </body>
 </html>
