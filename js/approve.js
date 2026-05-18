@@ -24,10 +24,36 @@ const APPROVAL_WORKFLOW_TEMPLATES = {
 let approvalTickets = [];
 let currentTicket = null;
 let approvalLinkContext = { ticketId: '', approvalToken: '' };
+let paidApprovalModalInstance = null;
+let paidApprovalModalBound = false;
 
 setTimeout(() => {
+    initPaidApprovalModal();
     void initApprovalPage();
 }, 0);
+
+function initPaidApprovalModal() {
+    if (paidApprovalModalBound) return;
+
+    const modalEl = document.getElementById('paidApprovalModal');
+    const form = document.getElementById('paidApprovalForm');
+    const qrInput = document.getElementById('paidApprovalQr');
+
+    if (!modalEl || typeof bootstrap === 'undefined') return;
+
+    paidApprovalModalInstance = bootstrap.Modal.getOrCreateInstance
+        ? bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop: 'static', keyboard: false })
+        : new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+
+    form?.addEventListener('submit', event => {
+        event.preventDefault();
+        void submitPaidApprovalFromModal();
+    });
+
+    qrInput?.addEventListener('change', updatePaidApprovalQrLabel);
+    modalEl.addEventListener('hidden.bs.modal', resetPaidApprovalModal);
+    paidApprovalModalBound = true;
+}
 
 async function initApprovalPage() {
     approvalLinkContext = readApprovalLinkContext();
@@ -151,7 +177,7 @@ function renderApprovalPage(message = '', tone = 'success') {
             <div class="approval-empty">
                 <i class="bi bi-search display-5 text-warning"></i>
                 <div>
-                    <h2 class="h4 fw-black text-dark">ไม่พบคำขอที่ต้องอนุมัติ</h2>
+                    <h2 class="h4 fw-bold text-dark">ไม่พบคำขอที่ต้องอนุมัติ</h2>
                     <p class="mb-0">กรุณาตรวจสอบ ticket ใน URL หรือเปิดลิงก์จากอีเมลฉบับล่าสุดอีกครั้ง</p>
                 </div>
             </div>
@@ -161,7 +187,7 @@ function renderApprovalPage(message = '', tone = 'success') {
 
     const workflow = getWorkflowTemplate(currentTicket);
     const currentStep = getCurrentStep(currentTicket);
-    const canApproveWithCost = /^overnight/i.test(currentTicket.workflowKey || '') && /BPUU Manager พิจารณา/i.test(String(currentStep || ''));
+    const canApproveWithCost = currentTicket.workflowKey === 'overnightStaff' && /BPUU พิจารณา/i.test(String(currentStep || ''));
     const approvalState = evaluateApprovalLinkState(currentTicket, currentStep);
     const canTakeAction = Boolean(approvalState.allowed);
     const approvalStateMessage = getApprovalLinkStateMessage(approvalState);
@@ -228,8 +254,14 @@ function renderApprovalPage(message = '', tone = 'success') {
     if (canTakeAction) {
         root.querySelectorAll('[data-approval-action]').forEach(button => {
             button.addEventListener('click', async () => {
+                const action = button.dataset.approvalAction;
+                if (action === 'approve-paid') {
+                    openPaidApprovalModal();
+                    return;
+                }
+
                 root.querySelectorAll('[data-approval-action]').forEach(item => { item.disabled = true; });
-                await handleApprovalAction(button.dataset.approvalAction);
+                await handleApprovalAction(action);
             });
         });
     }
@@ -263,60 +295,98 @@ function renderTimeline(ticket, workflow) {
     }).join('');
 }
 
-async function handleApprovalAction(action) {
-    if (!currentTicket) return;
+async function handleApprovalAction(action, options = {}) {
+    if (!currentTicket) {
+        return { ok: false, message: 'ไม่พบคำขอที่ต้องอนุมัติ' };
+    }
 
     try {
         approvalTickets = await loadApprovalTickets();
         const latestTicket = approvalTickets.find(ticket => ticket.ticketId === currentTicket.ticketId) || null;
         if (!latestTicket) {
             renderApprovalPage('ไม่พบคำขอที่ต้องอนุมัติ', 'error');
-            return;
+            return { ok: false, message: 'ไม่พบคำขอที่ต้องอนุมัติ' };
         }
 
-        currentTicket = latestTicket;
+        const ticketIndex = approvalTickets.findIndex(ticket => ticket.ticketId === latestTicket.ticketId);
+        if (ticketIndex === -1) {
+            return { ok: false, message: 'ไม่พบคำขอที่ต้องอนุมัติ' };
+        }
 
-        const ticketIndex = approvalTickets.findIndex(ticket => ticket.ticketId === currentTicket.ticketId);
-        if (ticketIndex === -1) return;
-
-        const workflow = getWorkflowTemplate(currentTicket);
+        const workflow = getWorkflowTemplate(latestTicket);
         const nowIso = new Date().toISOString();
         let emailEventType = '';
-        const currentStep = getCurrentStep(currentTicket);
-        const approvalState = evaluateApprovalLinkState(currentTicket, currentStep);
+        const currentStep = getCurrentStep(latestTicket);
+        const approvalState = evaluateApprovalLinkState(latestTicket, currentStep);
 
         if (!approvalState.allowed) {
             renderApprovalPage(getApprovalLinkStateMessage(approvalState), 'error');
-            return;
+            return { ok: false, message: getApprovalLinkStateMessage(approvalState) };
         }
+
+        const workingTicket = cloneTicket(latestTicket);
+        const decisionStep = currentStep;
 
         if (action === 'approve' || action === 'approve-paid') {
-            const nextStepIndex = workflow.length
-                ? Math.min((currentTicket.stepIndex || 0) + 1, workflow.length - 1)
-                : currentTicket.stepIndex || 0;
-            currentTicket.stepIndex = nextStepIndex;
-            currentTicket.status = getWorkflowStatus(currentTicket, workflow, nextStepIndex);
-            currentTicket.note = action === 'approve-paid'
-                ? 'อนุมัติแบบมีค่าใช้จ่าย ส่งต่อให้ BPUU Staff แจ้งยอด'
-                : 'อนุมัติผ่านลิงก์อีเมลแล้ว';
-            currentTicket.approvalSource = 'approve-page';
-            currentTicket.approvalUpdatedAt = nowIso;
-            markApprovalLinkUsed(currentTicket, currentStep);
-            currentTicket.paymentRequired = action === 'approve-paid';
-            emailEventType = action === 'approve' ? getEmailEventTypeForStep(workflow[nextStepIndex]) : '';
-            addApprovalDecision(currentTicket, 'approved');
+            if (action === 'approve-paid') {
+                const amount = Number(options.paymentAmount || 0);
+                const qrFile = options.paymentQrFile || null;
+                const paymentStepIndex = workflow.findIndex(step => /รอชำระเงิน/i.test(step));
+
+                if (!amount || amount <= 0) {
+                    throw new Error('กรุณาระบุจำนวนเงินก่อนบันทึกการอนุมัติแบบมีค่าใช้จ่าย');
+                }
+                if (!qrFile) {
+                    throw new Error('กรุณาแนบไฟล์ QR Code ก่อนบันทึกการอนุมัติแบบมีค่าใช้จ่าย');
+                }
+                if (paymentStepIndex === -1) {
+                    throw new Error('ไม่พบขั้นตอนรอชำระเงินใน workflow นี้');
+                }
+
+                workingTicket.paymentAmount = amount;
+                workingTicket.paymentRequired = true;
+                workingTicket.paymentNotificationNote = 'อนุมัติแบบมีค่าใช้จ่ายโดย BPUU Staff ข้าม BPUU Manager';
+                workingTicket.paymentResponseUrl = `${window.location.origin}/payment-response.html?ticket=${encodeURIComponent(workingTicket.ticketId)}`;
+                workingTicket.paymentQrAttachment = {
+                    name: qrFile.name,
+                    type: qrFile.type || 'image/png',
+                    size: qrFile.size || 0,
+                    dataUrl: await readApprovalFileAsDataUrl(qrFile)
+                };
+                workingTicket.stepIndex = paymentStepIndex;
+                workingTicket.status = getWorkflowStatus(workingTicket, workflow, paymentStepIndex);
+                workingTicket.note = 'อนุมัติแบบมีค่าใช้จ่ายโดย BPUU Staff และแจ้งยอดชำระเงินแล้ว';
+                workingTicket.paymentNotificationAt = nowIso;
+                workingTicket.approvalSource = 'approve-page';
+                workingTicket.approvalUpdatedAt = nowIso;
+                markApprovalLinkUsed(workingTicket, currentStep);
+                emailEventType = 'payment-notification';
+                addApprovalDecision(workingTicket, 'approved-with-cost', decisionStep);
+            } else {
+                const nextStepIndex = workflow.length
+                    ? Math.min((latestTicket.stepIndex || 0) + 1, workflow.length - 1)
+                    : latestTicket.stepIndex || 0;
+                workingTicket.stepIndex = nextStepIndex;
+                workingTicket.status = getWorkflowStatus(workingTicket, workflow, nextStepIndex);
+                workingTicket.note = 'อนุมัติผ่านลิงก์อีเมลแล้ว';
+                workingTicket.approvalSource = 'approve-page';
+                workingTicket.approvalUpdatedAt = nowIso;
+                markApprovalLinkUsed(workingTicket, currentStep);
+                emailEventType = getEmailEventTypeForStep(workflow[nextStepIndex]);
+                addApprovalDecision(workingTicket, 'approved', decisionStep);
+            }
         } else if (action === 'reject') {
-            currentTicket.status = 'ไม่ผ่านการอนุมัติ';
-            currentTicket.note = 'ไม่อนุมัติผ่านลิงก์อีเมล';
-            currentTicket.approvalSource = 'approve-page';
-            currentTicket.approvalUpdatedAt = nowIso;
-            markApprovalLinkUsed(currentTicket, currentStep);
+            workingTicket.status = 'ไม่ผ่านการอนุมัติ';
+            workingTicket.note = 'ไม่อนุมัติผ่านลิงก์อีเมล';
+            workingTicket.approvalSource = 'approve-page';
+            workingTicket.approvalUpdatedAt = nowIso;
+            markApprovalLinkUsed(workingTicket, currentStep);
             emailEventType = 'rejected';
-            addApprovalDecision(currentTicket, 'rejected');
+            addApprovalDecision(workingTicket, 'rejected', decisionStep);
         }
 
-        currentTicket.updatedAt = nowIso;
-        currentTicket = await saveApprovalTicketRecord(currentTicket);
+        workingTicket.updatedAt = nowIso;
+        currentTicket = await saveApprovalTicketRecord(workingTicket);
 
         if (emailEventType) {
             await sendWorkflowEmailForTicket(currentTicket, emailEventType);
@@ -324,24 +394,170 @@ async function handleApprovalAction(action) {
         }
 
         const successMessage = action === 'approve-paid'
-            ? 'อนุมัติแบบมีค่าใช้จ่ายและส่งต่อให้ BPUU Staff เรียบร้อยแล้ว'
+            ? 'อนุมัติแบบมีค่าใช้จ่ายและส่ง QR Code เรียบร้อยแล้ว'
             : action === 'approve'
                 ? 'อนุมัติเรียบร้อยแล้ว'
                 : 'บันทึกผลไม่อนุมัติเรียบร้อยแล้ว';
         renderApprovalPage(successMessage);
+        return { ok: true, message: successMessage, ticket: currentTicket };
     } catch (error) {
         console.error('Failed to process approval action.', error);
-        renderApprovalPage('เกิดข้อผิดพลาดระหว่างบันทึกผล กรุณาลองใหม่อีกครั้ง', 'error');
+        const message = error?.message || 'เกิดข้อผิดพลาดระหว่างบันทึกผล กรุณาลองใหม่อีกครั้ง';
+        renderApprovalPage(message, 'error');
+        return { ok: false, message };
     }
 }
 
-function addApprovalDecision(ticket, decision) {
+function addApprovalDecision(ticket, decision, step = getCurrentStep(ticket)) {
     ticket.approvalDecisions = Array.isArray(ticket.approvalDecisions) ? ticket.approvalDecisions : [];
     ticket.approvalDecisions.unshift({
         id: `decision-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         decision,
-        step: getCurrentStep(ticket),
+        step,
         createdAt: new Date().toISOString()
+    });
+}
+
+function cloneTicket(ticket) {
+    return ticket ? JSON.parse(JSON.stringify(ticket)) : null;
+}
+
+function initPaidApprovalModalFields() {
+    const amountInput = document.getElementById('paidApprovalAmount');
+    const qrInput = document.getElementById('paidApprovalQr');
+    const messageBox = document.getElementById('paidApprovalFormMessage');
+
+    if (amountInput) {
+        amountInput.value = currentTicket?.paymentAmount ? String(currentTicket.paymentAmount) : '';
+    }
+
+    if (qrInput) {
+        qrInput.value = '';
+    }
+
+    if (messageBox) {
+        messageBox.innerHTML = '';
+    }
+
+    updatePaidApprovalQrLabel();
+    updatePaidApprovalModalSummary();
+}
+
+function openPaidApprovalModal() {
+    if (!currentTicket) return;
+    initPaidApprovalModal();
+    initPaidApprovalModalFields();
+    paidApprovalModalInstance?.show();
+    document.getElementById('paidApprovalAmount')?.focus();
+}
+
+function updatePaidApprovalModalSummary() {
+    const summaryBox = document.getElementById('paidApprovalSummary');
+    if (!summaryBox || !currentTicket) return;
+
+    summaryBox.innerHTML = `
+        <div class="fw-bold text-dark mb-1">${escapeHtml(currentTicket.ticketId || '-')}</div>
+        <div>${escapeHtml(currentTicket.formName || 'คำขอใช้บริการ')}</div>
+        <div class="small text-muted mt-1">
+            ผู้ขอ: ${escapeHtml(currentTicket.requesterName || '-')} · ขั้นตอน: ${escapeHtml(getCurrentStep(currentTicket))}
+        </div>
+    `;
+}
+
+function resetPaidApprovalModal() {
+    const confirmBtn = document.getElementById('paidApprovalConfirmBtn');
+    const messageBox = document.getElementById('paidApprovalFormMessage');
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = '<i class="bi bi-send-check me-1"></i>อนุมัติและส่ง QR';
+    }
+    if (messageBox) {
+        messageBox.innerHTML = '';
+    }
+}
+
+function updatePaidApprovalQrLabel() {
+    const qrInput = document.getElementById('paidApprovalQr');
+    const qrLabel = document.getElementById('paidApprovalQrLabel');
+    if (!qrInput || !qrLabel) return;
+    const file = qrInput.files?.[0] || null;
+    qrLabel.textContent = file ? `เลือกไฟล์แล้ว: ${file.name}` : 'ยังไม่ได้เลือกไฟล์';
+}
+
+function setPaidApprovalModalMessage(message, tone = 'danger') {
+    const messageBox = document.getElementById('paidApprovalFormMessage');
+    if (!messageBox) return;
+    if (!message) {
+        messageBox.innerHTML = '';
+        return;
+    }
+
+    const alertClass = tone === 'success'
+        ? 'alert-success'
+        : tone === 'warning'
+            ? 'alert-warning'
+            : tone === 'info'
+                ? 'alert-info'
+                : 'alert-danger';
+
+    messageBox.innerHTML = `
+        <div class="alert ${alertClass} py-2 px-3 mb-0 small fw-bold" role="alert">
+            ${escapeHtml(message)}
+        </div>
+    `;
+}
+
+function setPaidApprovalModalBusy(isBusy) {
+    const confirmBtn = document.getElementById('paidApprovalConfirmBtn');
+    if (!confirmBtn) return;
+    confirmBtn.disabled = Boolean(isBusy);
+    confirmBtn.innerHTML = isBusy
+        ? '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>กำลังบันทึก'
+        : '<i class="bi bi-send-check me-1"></i>อนุมัติและส่ง QR';
+}
+
+async function submitPaidApprovalFromModal() {
+    if (!currentTicket) return;
+
+    const amount = Number(document.getElementById('paidApprovalAmount')?.value || 0);
+    const qrFile = document.getElementById('paidApprovalQr')?.files?.[0] || null;
+
+    if (!amount || amount <= 0) {
+        setPaidApprovalModalMessage('กรุณาระบุจำนวนเงินก่อนดำเนินการ', 'danger');
+        return;
+    }
+
+    if (!qrFile) {
+        setPaidApprovalModalMessage('กรุณาแนบไฟล์ QR Code ก่อนดำเนินการ', 'danger');
+        return;
+    }
+
+    setPaidApprovalModalMessage('');
+    setPaidApprovalModalBusy(true);
+
+    try {
+        const result = await handleApprovalAction('approve-paid', {
+            paymentAmount: amount,
+            paymentQrFile: qrFile
+        });
+
+        if (result?.ok) {
+            paidApprovalModalInstance?.hide();
+            return;
+        }
+
+        setPaidApprovalModalMessage(result?.message || 'ไม่สามารถบันทึกการอนุมัติแบบมีค่าใช้จ่ายได้', 'danger');
+    } finally {
+        setPaidApprovalModalBusy(false);
+    }
+}
+
+function readApprovalFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('Failed to read QR file'));
+        reader.readAsDataURL(file);
     });
 }
 
