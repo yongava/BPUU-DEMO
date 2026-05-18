@@ -33,6 +33,41 @@ function getTransporter() {
   });
 }
 
+function normalizeAttachments(rawAttachments) {
+  if (!Array.isArray(rawAttachments)) return [];
+
+  return rawAttachments
+    .map(item => {
+      if (!item || typeof item !== 'object') return null;
+      const filename = String(item.filename || item.name || '').trim();
+      const content = String(item.content || item.dataUrl || '').trim();
+      const contentType = String(item.contentType || item.mimeType || 'application/octet-stream').trim();
+
+      if (!filename || !content) return null;
+
+      let bufferContent = null;
+      let mimeType = contentType;
+
+      if (content.startsWith('data:')) {
+        const match = content.match(/^data:([^;]+);base64,(.+)$/);
+        if (!match) return null;
+        mimeType = match[1];
+        bufferContent = Buffer.from(match[2], 'base64');
+      } else if (item.encoding === 'base64') {
+        bufferContent = Buffer.from(content, 'base64');
+      } else {
+        bufferContent = Buffer.from(content, 'utf8');
+      }
+
+      return {
+        filename,
+        content: bufferContent,
+        contentType: mimeType
+      };
+    })
+    .filter(Boolean);
+}
+
 exports.handler = async event => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: jsonHeaders, body: '' };
@@ -52,6 +87,7 @@ exports.handler = async event => {
   const to = String(payload.to || '').trim();
   const subject = String(payload.subject || '').trim();
   const text = String(payload.text || payload.body || '').trim();
+  const attachments = normalizeAttachments(payload.attachments);
   const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'dev.codegym@gmail.com';
   const fromName = process.env.SMTP_FROM_NAME || 'BPUU Workflow System';
 
@@ -70,6 +106,7 @@ exports.handler = async event => {
       subject,
       text,
       replyTo: fromEmail,
+      attachments,
       headers: {
         'X-BPUU-Ticket-ID': String(payload.ticketId || ''),
         'X-BPUU-Event-Type': String(payload.eventType || ''),

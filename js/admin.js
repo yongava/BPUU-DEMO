@@ -69,8 +69,8 @@ const TYPE_GROUPS = [
 ];
 
 const WORKFLOW_TEMPLATES = {
-    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
     monthlyRegular: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'ส่ง QR Code / แจ้งยอด', 'รอชำระเงิน', 'ออกใบเสร็จ', 'ปิดเรื่อง'],
     monthlySpecial: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'รองอธิการบดีฝ่ายการเงินฯ', 'รองอธิการบดีอาวุโสฝ่ายบริหาร', 'อธิการบดี', 'แจ้งผลกลับผู้ขอ'],
     monthlyBlocked: ['รับคำขอ', 'BPUU ตรวจสอบ', 'ตีกลับแก้ไขเอกสาร', 'รอข้อมูลจากผู้ขอ'],
@@ -373,7 +373,7 @@ const EMAIL_EVENT_LABELS = {
     'more-info': 'ขอข้อมูลเพิ่มเติม'
 };
 
-let ticketData = loadTickets();
+let ticketData = [];
 let stampCollectionData = loadStampCollections();
 let plateRegistryData = loadPlateRegistry();
 const state = {
@@ -394,9 +394,11 @@ const collectionState = {
 
 const dom = {};
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+    void init();
+});
 
-function init() {
+async function init() {
     dom.typeFilters = document.getElementById('typeFilters');
     dom.ticketList = document.getElementById('ticketList');
     dom.detailPanel = document.getElementById('detailPanel');
@@ -424,20 +426,33 @@ function init() {
     dom.registryReloadBtn = document.getElementById('registryReloadBtn');
     dom.registryClearBtn = document.getElementById('registryClearBtn');
 
+    try {
+        ticketData = await loadTickets();
+    } catch (error) {
+        console.error('Failed to load workflow tickets from backend.', error);
+        ticketData = [];
+    }
     populateFilterOptions();
     bindEvents();
     window.addEventListener('storage', handleWorkflowStorageChange);
     window.addEventListener('storage', handlePlateRegistryStorageChange);
     bindWorkflowBroadcast();
-    window.addEventListener('focus', refreshTicketsFromStorage);
-    window.addEventListener('pageshow', refreshTicketsFromStorage);
+    window.addEventListener('focus', () => {
+        void refreshTicketsFromStorage();
+    });
+    window.addEventListener('pageshow', () => {
+        void refreshTicketsFromStorage();
+    });
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) refreshTicketsFromStorage();
+        if (!document.hidden) void refreshTicketsFromStorage();
     });
     state.selectedTicketId = new URLSearchParams(window.location.search).get('ticket') || '';
     state.expandedSummaryTicketId = '';
     collectionState.selectedPaymentId = '';
     renderAll();
+    setInterval(() => {
+        void refreshTicketsFromStorage();
+    }, 3000);
 }
 
 function createTicket(ticket) {
@@ -452,52 +467,9 @@ function getInitialTickets() {
     return [];
 }
 
-function loadTickets() {
-    let storedTickets = [];
-
-    try {
-        const raw = localStorage.getItem(TICKET_STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed) && parsed.length) {
-                storedTickets = parsed.map(item => ({ ...item }));
-            }
-        }
-    } catch (error) {
-        // Try the fallback keys below.
-    }
-
-    if (!storedTickets.length) {
-        for (const legacyKey of LEGACY_TICKET_STORAGE_KEYS) {
-            try {
-                const legacyRaw = localStorage.getItem(legacyKey);
-                if (!legacyRaw) continue;
-                const parsed = JSON.parse(legacyRaw);
-                if (Array.isArray(parsed) && parsed.length) {
-                    storedTickets = parsed.map(item => ({ ...item }));
-                    break;
-                }
-            } catch (legacyError) {
-                // Try the next fallback key.
-            }
-        }
-    }
-
-    return storedTickets.filter(item => !isSeedTicket(item));
-}
-
-function saveTickets() {
-    try {
-        localStorage.setItem(TICKET_STORAGE_KEY, JSON.stringify(ticketData));
-        LEGACY_TICKET_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
-    } catch (error) {
-        // No-op in file mode or restricted storage environments.
-    }
-}
-
-function resetTickets() {
-    ticketData = [];
-    saveTickets();
+async function loadTickets() {
+    const tickets = await window.BPUU_WORKFLOW_API.listTickets({ force: true });
+    return tickets.filter(item => !isSeedTicket(item));
 }
 
 function isSeedTicket(ticket) {
@@ -523,10 +495,8 @@ function bindEvents() {
     });
 
     dom.reloadBtn.addEventListener('click', () => {
-        resetTickets();
-        resetStampCollections();
         resetState();
-        renderAll();
+        void refreshTicketsFromStorage();
     });
 
     dom.resetFiltersBtn.addEventListener('click', () => {
@@ -864,11 +834,123 @@ function renderDetailPanel(filteredTickets) {
     const currentStep = getCurrentStep(selected);
     const progress = getProgress(selected);
     const timeline = buildTimeline(selected, template);
-    const emailControls = `
-        <button type="button" class="btn btn-ci-orange fw-bold" data-ticket-action="email">
-            <i class="bi bi-envelope-paper-fill me-1"></i>ส่งอีเมลขั้นตอนนี้
-        </button>
-    `;
+    const isOvernightTicket = isOvernightWorkflowTicket(selected);
+    const paymentResponseUrl = selected.paymentResponseUrl || `${window.location.origin}/payment-response.html?ticket=${encodeURIComponent(selected.ticketId)}`;
+    const isSpecialPaymentStage = isOvernightTicket && (/BPUU Staff แจ้งยอด/i.test(currentStep) || /ตรวจสลิป/i.test(currentStep) || /รอตรวจสลิป/i.test(String(selected.status || '')));
+    const paymentSection = isOvernightTicket && /BPUU Staff แจ้งยอด/i.test(currentStep)
+        ? `
+            <div class="border rounded-4 p-3 bg-white mt-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                        <div class="fw-bold text-ci-bluegrey">แจ้งยอดชำระเงิน</div>
+                        <div class="small text-muted">แนบ QR Code และระบุยอดเงิน จากนั้นระบบจะส่งอีเมลกลับหาผู้ขอทันที</div>
+                    </div>
+                    <span class="badge rounded-pill bg-light text-dark border fw-bold">BPUU Staff</span>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-bold text-ci-bluegrey" for="overnightPaymentAmount">จำนวนเงิน (บาท)</label>
+                        <input type="number" min="0" step="0.01" class="form-control" id="overnightPaymentAmount" value="${escapeAttribute(selected.paymentAmount || '')}" placeholder="เช่น 120.00">
+                    </div>
+                    <div class="col-12 col-md-8">
+                        <label class="form-label small fw-bold text-ci-bluegrey" for="overnightPaymentQr">ไฟล์ QR Code</label>
+                        <input type="file" class="form-control" id="overnightPaymentQr" accept="image/*,.pdf">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-bold text-ci-bluegrey" for="overnightPaymentNote">ข้อความประกอบอีเมล</label>
+                        <textarea class="form-control" id="overnightPaymentNote" rows="3" placeholder="พิมพ์รายละเอียดหรือหมายเหตุที่ต้องการแจ้งผู้ขอ">${escapeHtml(selected.paymentNotificationNote || selected.note || '')}</textarea>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                    <button type="button" class="btn btn-ci-orange fw-bold" data-ticket-action="send-payment">
+                        <i class="bi bi-send-fill me-1"></i>ส่งอีเมลแจ้งยอด
+                    </button>
+                    <a class="btn btn-outline-secondary fw-bold" href="${escapeAttribute(paymentResponseUrl)}" target="_blank" rel="noopener noreferrer">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>เปิดหน้ารับสลิป
+                    </a>
+                </div>
+            </div>
+        `
+        : '';
+    const slipInfoHtml = selected.paymentSlipInfo ? `
+        <div class="border rounded-4 p-3 bg-white mt-3">
+            <div class="fw-bold text-ci-bluegrey mb-2">ข้อมูลการส่งสลิปจากผู้ขอ</div>
+            <div class="small text-muted mb-2">${selected.paymentSlipSubmittedAt ? `ส่งเมื่อ ${escapeHtml(formatThaiDateTime(selected.paymentSlipSubmittedAt))}` : 'รอข้อมูลจากผู้ขอ'}</div>
+            <div class="row g-2 small">
+                <div class="col-12 col-md-6"><span class="fw-bold">เลขประจำตัวผู้เสียภาษี:</span> ${escapeOrDash(selected.paymentSlipInfo.taxId)}</div>
+                <div class="col-12 col-md-6"><span class="fw-bold">ชื่อ:</span> ${escapeOrDash(selected.paymentSlipInfo.name)}</div>
+                <div class="col-12"><span class="fw-bold">ที่อยู่:</span> ${escapeOrDash(selected.paymentSlipInfo.address)}</div>
+                <div class="col-12 col-md-6"><span class="fw-bold">เบอร์โทร:</span> ${escapeOrDash(selected.paymentSlipInfo.phone)}</div>
+                <div class="col-12 col-md-6"><span class="fw-bold">หมายเหตุ:</span> ${escapeOrDash(selected.paymentSlipInfo.note)}</div>
+            </div>
+            ${selected.paymentSlipAttachment?.dataUrl ? `
+                <div class="mt-3">
+                    <a class="btn btn-outline-primary btn-sm fw-bold" href="${escapeAttribute(selected.paymentSlipAttachment.dataUrl)}" target="_blank" rel="noopener noreferrer">
+                        <i class="bi bi-paperclip me-1"></i>เปิดสลิปที่แนบ
+                    </a>
+                </div>
+            ` : ''}
+        </div>
+    ` : '';
+    const receiptSection = isOvernightTicket && (/ตรวจสลิป/i.test(currentStep) || /รอตรวจสลิป/i.test(String(selected.status || '')))
+        ? `
+            <div class="border rounded-4 p-3 bg-white mt-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                        <div class="fw-bold text-ci-bluegrey">ออกใบเสร็จและปิดงาน</div>
+                        <div class="small text-muted">กรอกเลขที่ใบเสร็จ วันที่ และแนบไฟล์ใบเสร็จเพื่อส่งกลับหาผู้ขอ</div>
+                    </div>
+                    <span class="badge rounded-pill bg-light text-dark border fw-bold">BPUU Receipt</span>
+                </div>
+                ${slipInfoHtml}
+                <div class="row g-3 mt-1">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small fw-bold text-ci-bluegrey" for="overnightReceiptNo">เลขที่ใบเสร็จ</label>
+                        <input type="text" class="form-control" id="overnightReceiptNo" value="${escapeAttribute(selected.receiptNo || '')}" placeholder="เช่น RCP-2026-001">
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small fw-bold text-ci-bluegrey" for="overnightReceiptDate">วันที่ใบเสร็จ</label>
+                        <input type="date" class="form-control" id="overnightReceiptDate" value="${escapeAttribute(selected.receiptDate || '')}">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-bold text-ci-bluegrey" for="overnightReceiptFile">ไฟล์ใบเสร็จ</label>
+                        <input type="file" class="form-control" id="overnightReceiptFile" accept="image/*,.pdf">
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                    <button type="button" class="btn btn-success fw-bold" data-ticket-action="complete-receipt">
+                        <i class="bi bi-receipt-cutoff me-1"></i>ส่งใบเสร็จและปิดงาน
+                    </button>
+                </div>
+            </div>
+        `
+        : '';
+    const hideGenericEmail = isSpecialPaymentStage;
+    const emailControls = hideGenericEmail
+        ? ''
+        : `
+            <button type="button" class="btn btn-ci-orange fw-bold" data-ticket-action="email">
+                <i class="bi bi-envelope-paper-fill me-1"></i>ส่งอีเมลขั้นตอนนี้
+            </button>
+        `;
+    const genericWorkflowButtons = isSpecialPaymentStage
+        ? `
+            <button type="button" class="btn btn-outline-warning fw-bold" data-ticket-action="return">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>ตีกลับแก้ไข
+            </button>
+        `
+        : `
+            ${emailControls}
+            <button type="button" class="btn btn-success fw-bold" data-ticket-action="advance">
+                <i class="bi bi-check2-circle me-1"></i>อนุมัติ / ส่งต่อขั้นถัดไป
+            </button>
+            <button type="button" class="btn btn-outline-warning fw-bold" data-ticket-action="return">
+                <i class="bi bi-arrow-counterclockwise me-1"></i>ตีกลับแก้ไข
+            </button>
+            <button type="button" class="btn btn-outline-dark fw-bold" data-ticket-action="close">
+                <i class="bi bi-check2-all me-1"></i>ปิดเรื่อง
+            </button>
+        `;
     const emailLog = renderEmailEventLog(selected);
 
     dom.detailPanel.innerHTML = `
@@ -895,17 +977,11 @@ function renderDetailPanel(filteredTickets) {
             ${timeline}
         </div>
 
+        ${paymentSection}
+        ${receiptSection}
+
         <div class="d-flex flex-wrap gap-2 mt-3">
-            ${emailControls}
-            <button type="button" class="btn btn-success fw-bold" data-ticket-action="advance">
-                <i class="bi bi-check2-circle me-1"></i>อนุมัติ / ส่งต่อขั้นถัดไป
-            </button>
-            <button type="button" class="btn btn-outline-warning fw-bold" data-ticket-action="return">
-                <i class="bi bi-arrow-counterclockwise me-1"></i>ตีกลับแก้ไข
-            </button>
-            <button type="button" class="btn btn-outline-dark fw-bold" data-ticket-action="close">
-                <i class="bi bi-check2-all me-1"></i>ปิดเรื่อง
-            </button>
+            ${genericWorkflowButtons}
         </div>
 
         ${emailLog}
@@ -951,7 +1027,7 @@ function getWorkflowStepEmail(ticket, step) {
     const normalizedStep = String(step || '').toLowerCase();
 
     if (/รับคำขอ|ส่งต่อไป ibgm|ปิดเรื่อง|ปิดรายการ/i.test(step)) return '';
-    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(normalizedStep)) {
+    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ตรวจสลิป|ออกใบเสร็จ|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(normalizedStep)) {
         return requesterEmail;
     }
     if (/อธิการบดี/i.test(step) && !/รองอธิการบดี/i.test(step)) return roleEmails.president || roleEmails.financeViceRector || approverEmail;
@@ -960,7 +1036,7 @@ function getWorkflowStepEmail(ticket, step) {
     if (/ผู้คุมพื้นที่|ผู้ดูแลพื้นที่/i.test(step)) return roleEmails.areaController || approverEmail;
     if (/หัวหน้างาน|หัวหน้าฝ่าย/i.test(step)) return roleEmails.bpuuHead || approverEmail;
     if (/manager/i.test(step)) return roleEmails.bpuuManager || roleEmails.bpuuStaff || approverEmail;
-    if (/bpuu/i.test(step) || /พิจารณา|ตรวจสอบ|อนุมัติ|รับเรื่อง|แก้ไขปัญหา|อัปเดตฐานข้อมูล|บันทึกบัญชี|ออกใบแจ้งหนี้/i.test(normalizedStep)) {
+    if (/bpuu/i.test(step) || /พิจารณา|ตรวจสอบ|อนุมัติ|รับเรื่อง|แก้ไขปัญหา|อัปเดตฐานข้อมูล|บันทึกบัญชี|ออกใบแจ้งหนี้|ตรวจสลิป|แจ้งยอด|ออกใบเสร็จ/i.test(normalizedStep)) {
         return roleEmails.bpuuStaff || approverEmail;
     }
     return '';
@@ -999,6 +1075,12 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
     }
 
     if (eventType === 'payment-notification') {
+        const paymentResponseUrl = ticket.paymentResponseUrl || `${window.location.origin}/payment-response.html?ticket=${encodeURIComponent(ticket.ticketId)}`;
+        const qrAttachment = ticket.paymentQrAttachment ? [{
+            filename: ticket.paymentQrAttachment.name || 'payment-qr.png',
+            content: ticket.paymentQrAttachment.dataUrl || '',
+            contentType: ticket.paymentQrAttachment.type || 'image/png'
+        }] : [];
         return {
             to: recipient,
             subject: `[Payment Required] แจ้งยอดชำระเงิน ${serviceType} (Ref: ${ticket.ticketId})`,
@@ -1010,14 +1092,16 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
                 `หมายเลขคำขอ: ${ticket.ticketId}`,
                 `สถานะปัจจุบัน: ${ticket.status}`,
                 `ขั้นตอนปัจจุบัน: ${step || '-'}`,
+                `ยอดชำระ: ${formatCurrency(ticket.paymentAmount || 0)}`,
                 `รายละเอียด: ${details}`,
                 '',
-                'กรุณาตรวจสอบรายละเอียดเพิ่มเติมจากระบบ หรือรอเอกสาร/QR Code จากเจ้าหน้าที่',
-                getTicketAdminLink(ticket),
+                'กรุณาชำระเงินตาม QR Code ที่แนบมา และแนบสลิปผ่านลิงก์ด้านล่าง',
+                paymentResponseUrl,
                 '',
                 'ขอแสดงความนับถือ',
                 'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
-            ].join('\n')
+            ].join('\n'),
+            attachments: qrAttachment
         };
     }
 
@@ -1046,21 +1130,28 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
     }
 
     if (eventType === 'completed') {
+        const receiptAttachment = ticket.receiptAttachment ? [{
+            filename: ticket.receiptAttachment.name || 'receipt.pdf',
+            content: ticket.receiptAttachment.dataUrl || '',
+            contentType: ticket.receiptAttachment.type || 'application/pdf'
+        }] : [];
         return {
             to: recipient,
             subject: `[Completed] แจ้งผลการอนุมัติคำขอ ${serviceType} (Ref: ${ticket.ticketId})`,
             body: [
                 `เรียน คุณ ${requesterName}`,
                 '',
-                `กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน ขอแจ้งให้ทราบว่าคำขอใช้บริการของท่าน "${serviceType}" ได้รับการอนุมัติ`,
+                `กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน ขอแจ้งให้ทราบว่าคำขอ "${serviceType}" เสร็จสิ้นเรียบร้อยแล้ว`,
                 '',
                 `หมายเลขคำขอ: ${ticket.ticketId}`,
                 `สถานะปัจจุบัน: ${ticket.status}`,
                 `เหตุผลประกอบการพิจารณา: ${ticket.note || 'อนุมัติและดำเนินการเรียบร้อยแล้ว'}`,
                 '',
+                'แนบใบเสร็จและเอกสารที่เกี่ยวข้องมาในอีเมลฉบับนี้',
                 'ขอแสดงความนับถือ',
                 'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
-            ].join('\n')
+            ].join('\n'),
+            attachments: receiptAttachment
         };
     }
 
@@ -1133,6 +1224,7 @@ async function sendWorkflowEmailViaApi(email, ticket, eventType) {
                 subject: email.subject,
                 text: email.body,
                 body: email.body,
+                attachments: email.attachments || [],
                 ticketId: ticket.ticketId,
                 eventType,
                 workflowKey: ticket.workflowKey,
@@ -1162,6 +1254,23 @@ function addWorkflowEmailEvent(ticket, email, eventType, status, errorMessage = 
         errorMessage,
         createdAt: new Date().toISOString()
     });
+}
+
+function isOvernightWorkflowTicket(ticket) {
+    return /^overnight/i.test(String(ticket?.workflowKey || ''));
+}
+
+function readAdminFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+    });
+}
+
+function escapeOrDash(value) {
+    return escapeHtml(String(value || '-'));
 }
 
 async function sendWorkflowEmailForTicket(ticket, eventType) {
@@ -1450,8 +1559,7 @@ async function handleTicketAction(action, ticketId) {
             await sendWorkflowEmailForTicket(record, emailEventType);
         }
         record.updatedAt = nowIso;
-        ticketData[recordIndex] = record;
-        saveTickets();
+        ticketData[recordIndex] = await window.BPUU_WORKFLOW_API.upsertTicket(record);
         renderAll();
         return;
     }
@@ -1464,6 +1572,77 @@ async function handleTicketAction(action, ticketId) {
         record.note = record.note || 'อนุมัติและส่งต่อไปขั้นถัดไป';
         emailEventType = getEmailEventTypeForStep(record, workflow[nextStepIndex]);
         applyPlateRegistryMutation(record, nextStepIndex);
+    } else if (action === 'send-payment') {
+        if (!isOvernightWorkflowTicket(record)) return;
+        const amountInput = document.getElementById('overnightPaymentAmount');
+        const noteInput = document.getElementById('overnightPaymentNote');
+        const qrInput = document.getElementById('overnightPaymentQr');
+        const amount = Number(amountInput?.value || 0);
+        const note = String(noteInput?.value || '').trim();
+        const qrFile = qrInput?.files?.[0] || null;
+
+        if (!amount || amount <= 0) {
+            alert('กรุณาระบุจำนวนเงินก่อนส่งอีเมลแจ้งยอด');
+            return;
+        }
+        if (!qrFile) {
+            alert('กรุณาแนบไฟล์ QR Code ก่อนส่งอีเมลแจ้งยอด');
+            return;
+        }
+
+        record.paymentAmount = amount;
+        record.paymentRequired = true;
+        record.paymentNotificationNote = note;
+        record.paymentResponseUrl = `${window.location.origin}/payment-response.html?ticket=${encodeURIComponent(record.ticketId)}`;
+        record.paymentQrAttachment = {
+            name: qrFile.name,
+            type: qrFile.type || 'image/png',
+            size: qrFile.size || 0,
+            dataUrl: await readAdminFileAsDataUrl(qrFile)
+        };
+
+        const paymentStepIndex = workflow.findIndex(step => /รอชำระเงิน/i.test(step));
+        record.stepIndex = paymentStepIndex >= 0 ? paymentStepIndex : Math.min(record.stepIndex + 1, workflow.length - 1);
+        record.status = getWorkflowStatus(record, workflow, record.stepIndex);
+        record.note = note || 'แจ้งยอดชำระเงินให้ผู้ขอเรียบร้อยแล้ว';
+        record.paymentNotificationAt = nowIso;
+        emailEventType = 'payment-notification';
+    } else if (action === 'complete-receipt') {
+        if (!isOvernightWorkflowTicket(record)) return;
+        const receiptNoInput = document.getElementById('overnightReceiptNo');
+        const receiptDateInput = document.getElementById('overnightReceiptDate');
+        const receiptFileInput = document.getElementById('overnightReceiptFile');
+        const receiptNo = String(receiptNoInput?.value || '').trim();
+        const receiptDate = String(receiptDateInput?.value || '').trim();
+        const receiptFile = receiptFileInput?.files?.[0] || null;
+
+        if (!receiptNo) {
+            alert('กรุณากรอกเลขที่ใบเสร็จก่อนส่งใบเสร็จ');
+            return;
+        }
+        if (!receiptDate) {
+            alert('กรุณาระบุวันที่ใบเสร็จก่อนส่งใบเสร็จ');
+            return;
+        }
+        if (!receiptFile) {
+            alert('กรุณาแนบไฟล์ใบเสร็จก่อนส่งใบเสร็จ');
+            return;
+        }
+
+        record.receiptNo = receiptNo;
+        record.receiptDate = receiptDate;
+        record.receiptAttachment = {
+            name: receiptFile.name,
+            type: receiptFile.type || 'application/pdf',
+            size: receiptFile.size || 0,
+            dataUrl: await readAdminFileAsDataUrl(receiptFile)
+        };
+        record.receiptIssuedAt = nowIso;
+        record.paymentCompletedAt = nowIso;
+        record.stepIndex = workflow.length - 1;
+        record.status = 'ปิดเรื่องแล้ว';
+        record.note = `ออกใบเสร็จเลขที่ ${receiptNo} วันที่ ${receiptDate}`;
+        emailEventType = 'completed';
     } else if (action === 'return') {
         const blockedStepIndex = findBlockedStepIndex(workflow, record.stepIndex);
         record.stepIndex = blockedStepIndex;
@@ -1483,8 +1662,7 @@ async function handleTicketAction(action, ticketId) {
     }
 
     record.updatedAt = nowIso;
-    ticketData[recordIndex] = record;
-    saveTickets();
+    ticketData[recordIndex] = await window.BPUU_WORKFLOW_API.upsertTicket(record);
     renderAll();
 }
 
@@ -1507,11 +1685,11 @@ function applyPlateRegistryMutation(record, stepIndex, force = false) {
 
 function handleWorkflowStorageChange(event) {
     if (event.key !== TICKET_STORAGE_KEY && event.key !== TICKET_STORAGE_PING_KEY && !LEGACY_TICKET_STORAGE_KEYS.includes(event.key)) return;
-    refreshTicketsFromStorage();
+    void refreshTicketsFromStorage();
 }
 
-function refreshTicketsFromStorage() {
-    ticketData = loadTickets();
+async function refreshTicketsFromStorage() {
+    ticketData = await loadTickets();
     renderAll();
 }
 
@@ -1520,7 +1698,7 @@ function bindWorkflowBroadcast() {
         const channel = new BroadcastChannel('bpuu-workflow-tickets');
         channel.addEventListener('message', (event) => {
             if (event.data?.type !== 'tickets-updated') return;
-            refreshTicketsFromStorage();
+            void refreshTicketsFromStorage();
         });
     } catch (error) {
         // The storage ping still keeps older browsers in sync.
@@ -1559,7 +1737,7 @@ function renderRegistrySection() {
                         <i class="bi bi-database-fill"></i>
                     </div>
                     <h3 class="h5 fw-bold text-dark mb-2">ยังไม่มีทะเบียนรถในระบบ</h3>
-                    <p class="mb-0">เมื่อมี ticket ประเภททะเบียนรถผ่านขั้นตอนอัปเดต Carpark รายการจะถูกเก็บไว้ใน localStorage และแสดงตรงนี้</p>
+                    <p class="mb-0">เมื่อมี ticket ประเภททะเบียนรถผ่านขั้นตอนอัปเดต Carpark รายการจะถูกเก็บไว้ในระบบหลังบ้านและแสดงตรงนี้</p>
                 </div>
             </div>
         `;

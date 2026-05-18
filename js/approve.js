@@ -4,8 +4,8 @@ const APPROVAL_LEGACY_TICKET_STORAGE_KEYS = ['bpuu-admin-tickets'];
 const APPROVAL_CONFIG = window.BPUU_WORKFLOW_TEST_CONFIG || {};
 
 const APPROVAL_WORKFLOW_TEMPLATES = {
-    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
     monthlyRegular: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'ส่ง QR Code / แจ้งยอด', 'รอชำระเงิน', 'ออกใบเสร็จ', 'ปิดเรื่อง'],
     monthlySpecial: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'รองอธิการบดีฝ่ายการเงินฯ', 'รองอธิการบดีอาวุโสฝ่ายบริหาร', 'อธิการบดี', 'แจ้งผลกลับผู้ขอ'],
     monthlyBlocked: ['รับคำขอ', 'BPUU ตรวจสอบ', 'ตีกลับแก้ไขเอกสาร', 'รอข้อมูลจากผู้ขอ'],
@@ -24,67 +24,40 @@ const APPROVAL_WORKFLOW_TEMPLATES = {
 let approvalTickets = [];
 let currentTicket = null;
 
-document.addEventListener('DOMContentLoaded', initApprovalPage);
+document.addEventListener('DOMContentLoaded', () => {
+    void initApprovalPage();
+});
 
-function initApprovalPage() {
-    approvalTickets = loadApprovalTickets();
+async function initApprovalPage() {
+    try {
+        approvalTickets = await loadApprovalTickets();
+    } catch (error) {
+        console.error('Failed to load approval tickets from backend.', error);
+        approvalTickets = [];
+    }
     const ticketId = new URLSearchParams(window.location.search).get('ticket') || '';
     currentTicket = approvalTickets.find(ticket => ticket.ticketId === ticketId) || null;
     renderApprovalPage();
 }
 
-function loadApprovalTickets() {
-    for (const key of [APPROVAL_TICKET_STORAGE_KEY, ...APPROVAL_LEGACY_TICKET_STORAGE_KEYS]) {
-        try {
-            const raw = localStorage.getItem(key);
-            if (!raw) continue;
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) return parsed.map(item => ({ ...item }));
-        } catch (error) {
-            // Try the next key.
-        }
-    }
-    return [];
+async function loadApprovalTickets() {
+    return window.BPUU_WORKFLOW_API.listTickets({ force: true });
 }
 
-function saveApprovalTickets() {
-    localStorage.setItem(APPROVAL_TICKET_STORAGE_KEY, JSON.stringify(approvalTickets));
-    APPROVAL_LEGACY_TICKET_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
-    notifyApprovalTicketsChanged();
+async function saveApprovalTickets(tickets) {
+    return window.BPUU_WORKFLOW_API.replaceTickets(tickets);
 }
 
-function saveApprovalTicketRecord(ticket) {
-    const latestTickets = loadApprovalTickets();
-    const ticketIndex = latestTickets.findIndex(item => item.ticketId === ticket.ticketId);
-
-    if (ticketIndex === -1) {
-        latestTickets.unshift(ticket);
-    } else {
-        latestTickets[ticketIndex] = {
-            ...latestTickets[ticketIndex],
-            ...ticket
-        };
-    }
-
-    approvalTickets = latestTickets;
-    currentTicket = approvalTickets.find(item => item.ticketId === ticket.ticketId) || ticket;
-    saveApprovalTickets();
+async function saveApprovalTicketRecord(ticket) {
+    const savedTicket = await window.BPUU_WORKFLOW_API.upsertTicket(ticket);
+    approvalTickets = approvalTickets.filter(item => item.ticketId !== savedTicket.ticketId);
+    approvalTickets.unshift(savedTicket);
+    currentTicket = savedTicket;
+    return savedTicket;
 }
 
 function notifyApprovalTicketsChanged() {
-    try {
-        localStorage.setItem(APPROVAL_TICKET_STORAGE_PING_KEY, new Date().toISOString());
-    } catch (error) {
-        // Storage may be unavailable, but BroadcastChannel can still notify open tabs.
-    }
-
-    try {
-        const channel = new BroadcastChannel('bpuu-workflow-tickets');
-        channel.postMessage({ type: 'tickets-updated', at: new Date().toISOString() });
-        channel.close();
-    } catch (error) {
-        // Older browsers can rely on the localStorage ping above.
-    }
+    window.BPUU_WORKFLOW_API.notifyChanged();
 }
 
 function renderApprovalPage(message = '', tone = 'success') {
@@ -106,6 +79,7 @@ function renderApprovalPage(message = '', tone = 'success') {
 
     const workflow = getWorkflowTemplate(currentTicket);
     const currentStep = getCurrentStep(currentTicket);
+    const canApproveWithCost = /^overnight/i.test(currentTicket.workflowKey || '') && /BPUU Manager พิจารณา/i.test(String(currentStep || ''));
     const summaryHtml = currentTicket.summaryHtml?.trim()
         ? currentTicket.summaryHtml
         : buildFallbackSummary(currentTicket);
@@ -145,6 +119,11 @@ function renderApprovalPage(message = '', tone = 'success') {
                     <button type="button" class="approval-action-btn approve" data-approval-action="approve">
                         <i class="bi bi-check2-circle me-1"></i>Approve
                     </button>
+                    ${canApproveWithCost ? `
+                    <button type="button" class="approval-action-btn approve-paid" data-approval-action="approve-paid">
+                        <i class="bi bi-cash-coin me-1"></i>อนุมัติ-มีค่าใช้จ่าย
+                    </button>
+                    ` : ''}
                     <button type="button" class="approval-action-btn reject" data-approval-action="reject">
                         <i class="bi bi-x-circle me-1"></i>Reject
                     </button>
@@ -195,39 +174,52 @@ async function handleApprovalAction(action) {
     const ticketIndex = approvalTickets.findIndex(ticket => ticket.ticketId === currentTicket.ticketId);
     if (ticketIndex === -1) return;
 
-    const workflow = getWorkflowTemplate(currentTicket);
-    const nowIso = new Date().toISOString();
-    let emailEventType = '';
+    try {
+        const workflow = getWorkflowTemplate(currentTicket);
+        const nowIso = new Date().toISOString();
+        let emailEventType = '';
 
-    if (action === 'approve') {
-        const nextStepIndex = workflow.length
-            ? Math.min((currentTicket.stepIndex || 0) + 1, workflow.length - 1)
-            : currentTicket.stepIndex || 0;
-        currentTicket.stepIndex = nextStepIndex;
-        currentTicket.status = getWorkflowStatus(currentTicket, workflow, nextStepIndex);
-        currentTicket.note = 'อนุมัติผ่านลิงก์อีเมลแล้ว';
-        currentTicket.approvalSource = 'approve-page';
-        currentTicket.approvalUpdatedAt = nowIso;
-        emailEventType = getEmailEventTypeForStep(workflow[nextStepIndex]);
-        addApprovalDecision(currentTicket, 'approved');
-    } else if (action === 'reject') {
-        currentTicket.status = 'ไม่ผ่านการอนุมัติ';
-        currentTicket.note = 'ไม่อนุมัติผ่านลิงก์อีเมล';
-        currentTicket.approvalSource = 'approve-page';
-        currentTicket.approvalUpdatedAt = nowIso;
-        emailEventType = 'rejected';
-        addApprovalDecision(currentTicket, 'rejected');
+        if (action === 'approve' || action === 'approve-paid') {
+            const nextStepIndex = workflow.length
+                ? Math.min((currentTicket.stepIndex || 0) + 1, workflow.length - 1)
+                : currentTicket.stepIndex || 0;
+            currentTicket.stepIndex = nextStepIndex;
+            currentTicket.status = getWorkflowStatus(currentTicket, workflow, nextStepIndex);
+            currentTicket.note = action === 'approve-paid'
+                ? 'อนุมัติแบบมีค่าใช้จ่าย ส่งต่อให้ BPUU Staff แจ้งยอด'
+                : 'อนุมัติผ่านลิงก์อีเมลแล้ว';
+            currentTicket.approvalSource = 'approve-page';
+            currentTicket.approvalUpdatedAt = nowIso;
+            currentTicket.paymentRequired = action === 'approve-paid';
+            emailEventType = action === 'approve' ? getEmailEventTypeForStep(workflow[nextStepIndex]) : '';
+            addApprovalDecision(currentTicket, 'approved');
+        } else if (action === 'reject') {
+            currentTicket.status = 'ไม่ผ่านการอนุมัติ';
+            currentTicket.note = 'ไม่อนุมัติผ่านลิงก์อีเมล';
+            currentTicket.approvalSource = 'approve-page';
+            currentTicket.approvalUpdatedAt = nowIso;
+            emailEventType = 'rejected';
+            addApprovalDecision(currentTicket, 'rejected');
+        }
+
+        currentTicket.updatedAt = nowIso;
+        currentTicket = await saveApprovalTicketRecord(currentTicket);
+
+        if (emailEventType) {
+            await sendWorkflowEmailForTicket(currentTicket, emailEventType);
+            currentTicket = await saveApprovalTicketRecord(currentTicket);
+        }
+
+        const successMessage = action === 'approve-paid'
+            ? 'อนุมัติแบบมีค่าใช้จ่ายและส่งต่อให้ BPUU Staff เรียบร้อยแล้ว'
+            : action === 'approve'
+                ? 'อนุมัติเรียบร้อยแล้ว'
+                : 'บันทึกผลไม่อนุมัติเรียบร้อยแล้ว';
+        renderApprovalPage(successMessage);
+    } catch (error) {
+        console.error('Failed to process approval action.', error);
+        renderApprovalPage('เกิดข้อผิดพลาดระหว่างบันทึกผล กรุณาลองใหม่อีกครั้ง', 'error');
     }
-
-    currentTicket.updatedAt = nowIso;
-    saveApprovalTicketRecord(currentTicket);
-
-    if (emailEventType) {
-        await sendWorkflowEmailForTicket(currentTicket, emailEventType);
-        saveApprovalTicketRecord(currentTicket);
-    }
-
-    renderApprovalPage(action === 'approve' ? 'อนุมัติเรียบร้อยแล้ว' : 'บันทึกผลไม่อนุมัติเรียบร้อยแล้ว');
 }
 
 function addApprovalDecision(ticket, decision) {
@@ -353,7 +345,7 @@ function getWorkflowStepEmail(ticket, step) {
         || '';
     const normalizedStep = String(step || '').toLowerCase();
 
-    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(normalizedStep)) {
+    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ตรวจสลิป|ออกใบเสร็จ|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(normalizedStep)) {
         return requesterEmail;
     }
     if (/อธิการบดี/i.test(step) && !/รองอธิการบดี/i.test(step)) return roleEmails.president || roleEmails.financeViceRector || approverEmail;
@@ -362,7 +354,7 @@ function getWorkflowStepEmail(ticket, step) {
     if (/ผู้คุมพื้นที่|ผู้ดูแลพื้นที่/i.test(step)) return roleEmails.areaController || approverEmail;
     if (/หัวหน้างาน|หัวหน้าฝ่าย/i.test(step)) return roleEmails.bpuuHead || approverEmail;
     if (/manager/i.test(step)) return roleEmails.bpuuManager || roleEmails.bpuuStaff || approverEmail;
-    if (/bpuu/i.test(step) || /พิจารณา|ตรวจสอบ|อนุมัติ|รับเรื่อง|แก้ไขปัญหา|อัปเดตฐานข้อมูล|บันทึกบัญชี|ออกใบแจ้งหนี้|ตรวจรหัสงบประมาณ|ออกใบเสร็จ/i.test(normalizedStep)) {
+    if (/bpuu/i.test(step) || /พิจารณา|ตรวจสอบ|อนุมัติ|รับเรื่อง|แก้ไขปัญหา|อัปเดตฐานข้อมูล|บันทึกบัญชี|ออกใบแจ้งหนี้|ตรวจรหัสงบประมาณ|ออกใบเสร็จ|ตรวจสลิป|แจ้งยอด/i.test(normalizedStep)) {
         return roleEmails.bpuuStaff || approverEmail;
     }
     return approverEmail || APPROVAL_CONFIG.primaryApprovalEmail || '';
@@ -405,6 +397,7 @@ async function sendWorkflowEmailViaApi(email, ticket, eventType) {
                 subject: email.subject,
                 text: email.body,
                 body: email.body,
+                attachments: email.attachments || [],
                 ticketId: ticket.ticketId,
                 eventType,
                 workflowKey: ticket.workflowKey,

@@ -30,8 +30,8 @@ const JOTFORM_USER_TYPE_VALUES = {
     external: "บุคคลภายนอก"
 };
 const LOCAL_WORKFLOW_TEMPLATES = {
-    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
+    overnightExternal: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
     monthlyRegular: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'ส่ง QR Code / แจ้งยอด', 'รอชำระเงิน', 'ออกใบเสร็จ', 'ปิดเรื่อง'],
     monthlySpecial: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'รองอธิการบดีฝ่ายการเงินฯ', 'รองอธิการบดีอาวุโสฝ่ายบริหาร', 'อธิการบดี', 'แจ้งผลกลับผู้ขอ'],
     monthlyBlocked: ['รับคำขอ', 'BPUU ตรวจสอบ', 'ตีกลับแก้ไขเอกสาร', 'รอข้อมูลจากผู้ขอ'],
@@ -146,7 +146,7 @@ function getEmailRecipientForStep(ticket, step) {
         || '';
     const normalizedStep = String(step || '').toLowerCase();
 
-    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(normalizedStep)) {
+    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ตรวจสลิป|ออกใบเสร็จ|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(normalizedStep)) {
         return requesterEmail;
     }
     if (/อธิการบดี/i.test(step) && !/รองอธิการบดี/i.test(step)) return roleEmails.president || roleEmails.financeViceRector || approverEmail;
@@ -155,7 +155,7 @@ function getEmailRecipientForStep(ticket, step) {
     if (/ผู้คุมพื้นที่|ผู้ดูแลพื้นที่/i.test(step)) return roleEmails.areaController || approverEmail;
     if (/หัวหน้างาน|หัวหน้าฝ่าย/i.test(step)) return roleEmails.bpuuHead || approverEmail;
     if (/manager/i.test(step)) return roleEmails.bpuuManager || roleEmails.bpuuStaff || approverEmail;
-    if (/bpuu/i.test(step) || /พิจารณา|ตรวจสอบ|อนุมัติ|รับเรื่อง|แก้ไขปัญหา|อัปเดตฐานข้อมูล|บันทึกบัญชี|ออกใบแจ้งหนี้|ตรวจรหัสงบประมาณ|ออกใบเสร็จ/i.test(normalizedStep)) {
+    if (/bpuu/i.test(step) || /พิจารณา|ตรวจสอบ|อนุมัติ|รับเรื่อง|แก้ไขปัญหา|อัปเดตฐานข้อมูล|บันทึกบัญชี|ออกใบแจ้งหนี้|ตรวจรหัสงบประมาณ|ออกใบเสร็จ|ตรวจสลิป|แจ้งยอด/i.test(normalizedStep)) {
         return roleEmails.bpuuStaff || approverEmail;
     }
     return '';
@@ -237,6 +237,12 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
     }
 
     if (eventType === 'payment-notification') {
+        const paymentResponseUrl = ticket.paymentResponseUrl || `${window.location.origin}/payment-response.html?ticket=${encodeURIComponent(ticket.ticketId)}`;
+        const qrAttachment = ticket.paymentQrAttachment ? [{
+            filename: ticket.paymentQrAttachment.name || 'payment-qr.png',
+            content: ticket.paymentQrAttachment.dataUrl || '',
+            contentType: ticket.paymentQrAttachment.type || 'image/png'
+        }] : [];
         return {
             to: recipient,
             subject: `[Payment Required] แจ้งยอดชำระเงิน ${serviceType} (Ref: ${ticket.ticketId})`,
@@ -247,19 +253,26 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
                 '',
                 `หมายเลขคำขอ: ${ticket.ticketId}`,
                 `ขั้นตอนปัจจุบัน: ${step || '-'}`,
+                `ยอดชำระ: ${Number(ticket.paymentAmount || 0).toLocaleString('th-TH')} บาท`,
                 `รายละเอียด: ${details}`,
                 '',
-                'กรุณาตรวจสอบรายละเอียดเพิ่มเติมจากระบบ หรือรอเอกสาร/QR Code จากเจ้าหน้าที่',
-                adminLink,
+                'กรุณาชำระเงินตาม QR Code ที่แนบมา และแนบสลิปผ่านลิงก์ด้านล่าง',
+                paymentResponseUrl,
                 '',
                 'ขอแสดงความนับถือ',
                 'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
-            ].join('\n')
+            ].join('\n'),
+            attachments: qrAttachment
         };
     }
 
     if (eventType === 'completed' || eventType === 'more-info') {
         const isMoreInfo = eventType === 'more-info';
+        const receiptAttachment = ticket.receiptAttachment ? [{
+            filename: ticket.receiptAttachment.name || 'receipt.pdf',
+            content: ticket.receiptAttachment.dataUrl || '',
+            contentType: ticket.receiptAttachment.type || 'application/pdf'
+        }] : [];
         return {
             to: recipient,
             subject: `${isMoreInfo ? '[More Info Required]' : '[Completed]'} แจ้งผลคำขอ ${serviceType} (Ref: ${ticket.ticketId})`,
@@ -278,7 +291,8 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
                 '',
                 'ขอแสดงความนับถือ',
                 'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
-            ].join('\n')
+            ].join('\n'),
+            attachments: receiptAttachment
         };
     }
 
@@ -323,6 +337,7 @@ async function sendWorkflowEmailViaApi(email, ticket, eventType) {
                 subject: email.subject,
                 text: email.body,
                 body: email.body,
+                attachments: email.attachments || [],
                 ticketId: ticket.ticketId,
                 eventType,
                 workflowKey: ticket.workflowKey,
@@ -523,7 +538,7 @@ function selectForm(formName) {
     currentSelectedForm = formName;
     
     if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์' && currentLoginType === 'staff') {
-        logPlateRedirectTicket();
+        void logPlateRedirectTicket();
         window.open('https://app.ibgm.cloud/signin', '_blank');
         return; 
     }
@@ -1193,77 +1208,20 @@ function buildJotformSubmissionFields() {
     };
 }
 
-function loadWorkflowTickets() {
-    try {
-        const raw = localStorage.getItem(WORKFLOW_STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) return parsed.map(item => ({ ...item }));
-        }
-    } catch (error) {
-        // Fall through to legacy keys.
-    }
-
-    for (const key of LEGACY_WORKFLOW_STORAGE_KEYS) {
-        try {
-            const raw = localStorage.getItem(key);
-            if (!raw) continue;
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) return parsed.map(item => ({ ...item }));
-        } catch (error) {
-            // Try the next fallback key.
-        }
-    }
-
-    return [];
+async function loadWorkflowTickets() {
+    return window.BPUU_WORKFLOW_API.listTickets();
 }
 
-function saveWorkflowTickets(tickets) {
-    try {
-        localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(tickets));
-        LEGACY_WORKFLOW_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
-    } catch (error) {
-        const lightweightTickets = tickets.map(createLightweightWorkflowTicket);
-        try {
-            localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(lightweightTickets));
-            LEGACY_WORKFLOW_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
-            console.warn('Saved workflow tickets without inline attachment data because browser storage is full.', error);
-        } catch (fallbackError) {
-            console.error('Failed to save workflow tickets to localStorage.', fallbackError);
-        }
-    }
+async function saveWorkflowTickets(tickets) {
+    return window.BPUU_WORKFLOW_API.replaceTickets(tickets);
 }
 
 function notifyWorkflowTicketsChanged() {
-    try {
-        localStorage.setItem(`${WORKFLOW_STORAGE_KEY}-updated-at`, new Date().toISOString());
-    } catch (error) {
-        // Storage may be unavailable, but BroadcastChannel can still notify open tabs.
-    }
-
-    try {
-        const channel = new BroadcastChannel('bpuu-workflow-tickets');
-        channel.postMessage({ type: 'tickets-updated', at: new Date().toISOString() });
-        channel.close();
-    } catch (error) {
-        // Older browsers can rely on the localStorage ping above.
-    }
+    window.BPUU_WORKFLOW_API.notifyChanged();
 }
 
-function saveWorkflowTicketRecord(ticket) {
-    const latestTickets = loadWorkflowTickets();
-    const ticketIndex = latestTickets.findIndex(item => item.ticketId === ticket.ticketId);
-
-    if (ticketIndex === -1) {
-        latestTickets.unshift(ticket);
-    } else {
-        latestTickets[ticketIndex] = {
-            ...latestTickets[ticketIndex],
-            ...ticket
-        };
-    }
-
-    saveWorkflowTickets(latestTickets);
+async function saveWorkflowTicketRecord(ticket) {
+    return window.BPUU_WORKFLOW_API.upsertTicket(ticket);
 }
 
 function createLightweightWorkflowTicket(ticket) {
@@ -1547,13 +1505,11 @@ function getWorkflowSubmissionConfig() {
 function logPlateRedirectTicket() {
     const submittedAt = new Date().toISOString();
     const requester = getRequesterDataForJotform();
-    const tickets = loadWorkflowTickets();
     const requesterDisplayEmail = requester.displayEmail || '';
     const requesterSubmittedEmail = requester.submittedEmail || requester.email || '';
     const plateRequest = getPlateRequestPayload();
 
-    tickets.unshift({
-        ticketId: getNextWorkflowTicketId(tickets),
+    const ticket = {
         typeKey: 'plate',
         requesterType: getRequesterTypeLabel(),
         requesterName: requester.requesterName || getInputValue('reqName') || 'ไม่ระบุชื่อ',
@@ -1582,16 +1538,17 @@ function logPlateRedirectTicket() {
             approverDisplayEmail: '',
             approverSubmittedEmail: ''
         }
-    });
+    };
 
-    saveWorkflowTickets(tickets);
+    saveWorkflowTicketRecord(ticket).catch(error => {
+        console.error('Failed to save plate redirect ticket.', error);
+    });
 }
 
 function buildWorkflowTicketRecord() {
     const requester = getRequesterDataForJotform();
     const config = getWorkflowSubmissionConfig();
     const submittedAt = new Date().toISOString();
-    const tickets = loadWorkflowTickets();
     const summaryHtml = getHtmlValue('summaryContent');
     const summaryText = getTextValue('summaryContent');
     const rawSubmissionFields = buildJotformSubmissionFields();
@@ -1601,7 +1558,6 @@ function buildWorkflowTicketRecord() {
     const requesterSubmittedEmail = requester.submittedEmail || requester.email || '';
 
     return {
-        ticketId: getNextWorkflowTicketId(tickets),
         typeKey: config.typeKey,
         requesterType: getRequesterTypeLabel(),
         requesterName: requester.requesterName || getInputValue('reqName') || getInputValue('extFname') || 'ไม่ระบุชื่อ',
@@ -1637,23 +1593,27 @@ function buildWorkflowTicketRecord() {
 }
 
 async function submitWorkflowLocally() {
-    const tickets = loadWorkflowTickets();
-    const selectedAttachments = await collectSelectedFilePayloads();
-    const ticket = {
-        ...buildWorkflowTicketRecord(),
-        selectedAttachments
-    };
+    try {
+        const selectedAttachments = await collectSelectedFilePayloads();
+        const ticket = {
+            ...buildWorkflowTicketRecord(),
+            selectedAttachments
+        };
 
-    tickets.unshift(ticket);
-    saveWorkflowTickets(tickets);
-    notifyWorkflowTicketsChanged();
-    showSubmitSuccess();
+        const savedTicket = await saveWorkflowTicketRecord(ticket);
+        notifyWorkflowTicketsChanged();
+        showSubmitSuccess();
 
-    sendAndLogWorkflowEmail(ticket, 'new-submission-approval')
-        .finally(() => {
-            saveWorkflowTicketRecord(ticket);
-            notifyWorkflowTicketsChanged();
-        });
+        sendAndLogWorkflowEmail(savedTicket, 'new-submission-approval')
+            .finally(() => {
+                void saveWorkflowTicketRecord(savedTicket).catch(error => {
+                    console.error('Failed to refresh saved workflow ticket.', error);
+                });
+            });
+    } catch (error) {
+        console.error('Failed to submit workflow ticket.', error);
+        alert('บันทึกคำขอไม่สำเร็จ กรุณาลองอีกครั้ง หรือเช็กการเชื่อมต่อกับระบบหลังบ้าน');
+    }
 }
 
 function appendSelectedFiles(form) {

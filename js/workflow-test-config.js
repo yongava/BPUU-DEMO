@@ -1,6 +1,7 @@
 window.BPUU_WORKFLOW_TEST_CONFIG = {
     systemEmail: 'dev.codegym@gmail.com',
     primaryApprovalEmail: 'dev.codegym@gmail.com',
+    workflowApiEndpoint: '/api/workflow-tickets',
     requesterEmails: {
         staff: 'n.chotthanin@gmail.com',
         student: 'n.chotthanin@gmail.com',
