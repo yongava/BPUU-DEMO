@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "check": "node --check js/app.js && node --check js/admin.js && node --check js/approve.js && node --check netlify/functions/send-email.js"
+    "check": "node --check js/app.js && node --check js/admin.js && node --check js/approve.js && node --check netlify/functions/send-email.js && node --check netlify/functions/workflow-tickets.js"
   },
   "dependencies": {
-    "nodemailer": "^6.9.16"
+    "nodemailer": "^6.9.16",
+    "pg": "^8.20.0"
   }
 }

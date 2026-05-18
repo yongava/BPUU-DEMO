@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const { Pool } = require('pg');
 
 const jsonHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,207 +15,6 @@ function response(statusCode, payload) {
   };
 }
 
-function sqlLiteral(value) {
-  return `'${String(value ?? '').replace(/'/g, "''")}'`;
-}
-
-function readCString(buffer, offset) {
-  let end = offset;
-  while (end < buffer.length && buffer[end] !== 0) end += 1;
-  return {
-    value: buffer.slice(offset, end).toString('utf8'),
-    nextOffset: end + 1
-  };
-}
-
-function readInt32(buffer, offset) {
-  return buffer.readInt32BE(offset);
-}
-
-function readUInt32(buffer, offset) {
-  return buffer.readUInt32BE(offset);
-}
-
-function writeInt32(value) {
-  const buffer = Buffer.alloc(4);
-  buffer.writeInt32BE(value, 0);
-  return buffer;
-}
-
-function writeInt16(value) {
-  const buffer = Buffer.alloc(2);
-  buffer.writeInt16BE(value, 0);
-  return buffer;
-}
-
-function concatMessage(typeByte, payloadBuffers) {
-  const payload = Buffer.concat(payloadBuffers);
-  return Buffer.concat([
-    Buffer.from(typeByte),
-    writeInt32(payload.length + 4),
-    payload
-  ]);
-}
-
-function makeStartupMessage(config) {
-  const params = [
-    ['user', config.user],
-    ['database', config.database],
-    ['client_encoding', 'UTF8']
-  ];
-
-  const parts = [writeInt32(196608)];
-  for (const [key, value] of params) {
-    parts.push(Buffer.from(`${key}\0${value}\0`, 'utf8'));
-  }
-  parts.push(Buffer.from([0]));
-
-  const body = Buffer.concat(parts);
-  return Buffer.concat([writeInt32(body.length + 4), body]);
-}
-
-function makeSslRequest() {
-  return Buffer.concat([writeInt32(8), writeInt32(80877103)]);
-}
-
-function makeSimpleQuery(sql) {
-  return concatMessage('Q', [Buffer.from(`${sql}\0`, 'utf8')]);
-}
-
-function makeSaslInitialResponse(username, nonce) {
-  const clientFirstBare = `n=${username},r=${nonce}`;
-  const initialMessage = `n,,${clientFirstBare}`;
-  const payload = Buffer.concat([
-    Buffer.from('SCRAM-SHA-256\0', 'utf8'),
-    writeInt32(Buffer.byteLength(initialMessage, 'utf8')),
-    Buffer.from(initialMessage, 'utf8')
-  ]);
-  return {
-    clientFirstBare,
-    initialMessage,
-    payload: concatMessage('p', [payload])
-  };
-}
-
-function makeSaslResponse(responseText) {
-  return concatMessage('p', [Buffer.from(responseText, 'utf8')]);
-}
-
-function parseErrorMessage(payload) {
-  const fields = {};
-  let offset = 0;
-  while (offset < payload.length) {
-    const code = String.fromCharCode(payload[offset]);
-    offset += 1;
-    if (code === '\0') break;
-    const { value, nextOffset } = readCString(payload, offset);
-    fields[code] = value;
-    offset = nextOffset;
-  }
-  return fields.M || fields.S || fields.C || 'Unknown database error';
-}
-
-function parseCommandTag(tag) {
-  const value = String(tag || '');
-  const match = value.match(/(\d+)$/);
-  return match ? Number(match[1]) : 0;
-}
-
-function decodeDataRow(payload, fields) {
-  let offset = 0;
-  const columnCount = payload.readInt16BE(offset);
-  offset += 2;
-  const row = {};
-
-  for (let index = 0; index < columnCount; index += 1) {
-    const length = payload.readInt32BE(offset);
-    offset += 4;
-    const fieldName = fields[index]?.name || `column_${index + 1}`;
-    if (length === -1) {
-      row[fieldName] = null;
-      continue;
-    }
-
-    row[fieldName] = payload.slice(offset, offset + length).toString('utf8');
-    offset += length;
-  }
-
-  return row;
-}
-
-let schemaReady = false;
-let schemaPromise = null;
-
-function getSupabaseRestConfig() {
-  const supabaseUrl = String(
-    process.env.SUPABASE_URL
-    || process.env.SUPABASE_PROJECT_URL
-    || process.env.SUPABASE_INSTANCE_URL
-    || ''
-  ).trim().replace(/\/$/, '');
-
-  const apiKey = String(
-    process.env.SUPABASE_SECRET_KEY
-    || process.env.SUPABASE_SERVICE_ROLE_KEY
-    || process.env.SUPABASE_DB_SECRET_KEY
-    || process.env.SUPABASE_ANON_KEY
-    || process.env.SUPABASE_PUBLISHABLE_KEY
-    || ''
-  ).trim();
-
-  if (!supabaseUrl || !apiKey) {
-    throw new Error('Missing Supabase REST configuration');
-  }
-
-  return {
-    supabaseUrl,
-    apiKey,
-    restUrl: `${supabaseUrl}/rest/v1`
-  };
-}
-
-function createRestHeaders(apiKey, extra = {}) {
-  return {
-    apikey: apiKey,
-    Authorization: `Bearer ${apiKey}`,
-    ...extra
-  };
-}
-
-async function restRequest(method, path, { apiKey, query = '', body = null, headers = {} }) {
-  const url = new URL(`${path}${query}`, `${getSupabaseRestConfig().restUrl}/`);
-  const response = await fetch(url.toString(), {
-    method,
-    headers: createRestHeaders(apiKey, body ? { 'Content-Type': 'application/json', Prefer: 'return=representation', ...headers } : headers),
-    body: body ? JSON.stringify(body) : undefined
-  });
-
-  const text = await response.text().catch(() => '');
-  let data = null;
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch (error) {
-      data = { raw: text };
-    }
-  }
-
-  if (!response.ok) {
-    const message = data?.message || data?.error || text || `HTTP ${response.status}`;
-    throw new Error(message);
-  }
-
-  return data;
-}
-
-function hydrateTickets(rows) {
-  return (Array.isArray(rows) ? rows : []).map(hydrateTicket).sort((a, b) => {
-    const left = new Date(b.updatedAt || b.updated_at || 0).getTime();
-    const right = new Date(a.updatedAt || a.updated_at || 0).getTime();
-    return left - right;
-  });
-}
-
 function normalizeTicket(ticket) {
   if (!ticket || typeof ticket !== 'object' || Array.isArray(ticket)) {
     throw new Error('Invalid ticket payload');
@@ -227,7 +26,7 @@ function normalizeTicket(ticket) {
 }
 
 function hydrateTicket(row) {
-  const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
+  const payload = row?.payload && typeof row.payload === 'object' ? row.payload : {};
   return {
     ...payload,
     ticketId: row.ticket_id,
@@ -236,8 +35,151 @@ function hydrateTicket(row) {
   };
 }
 
-async function connectClient() {
-  return getSupabaseRestConfig();
+function hydrateTickets(rows) {
+  return (Array.isArray(rows) ? rows : []).map(hydrateTicket).sort((left, right) => {
+    const leftTime = new Date(left.updatedAt || left.updated_at || 0).getTime();
+    const rightTime = new Date(right.updatedAt || right.updated_at || 0).getTime();
+    return leftTime - rightTime;
+  });
+}
+
+function getDatabaseConfig() {
+  const connectionString = String(
+    process.env.SUPABASE_DATABASE_URL
+    || process.env.SUPABASE_DB_URL
+    || process.env.DATABASE_URL
+    || process.env.POSTGRES_URL
+    || ''
+  ).trim();
+
+  if (connectionString) {
+    return {
+      connectionString,
+      ssl: { rejectUnauthorized: false },
+      allowExitOnIdle: true,
+      max: 1
+    };
+  }
+
+  const host = String(process.env.SUPABASE_DB_HOST || process.env.PGHOST || '').trim();
+  const port = Number(process.env.SUPABASE_DB_PORT || process.env.PGPORT || 5432);
+  const database = String(process.env.SUPABASE_DB_NAME || process.env.PGDATABASE || 'postgres').trim();
+  const user = String(process.env.SUPABASE_DB_USER || process.env.PGUSER || '').trim();
+  const password = String(
+    process.env.SUPABASE_DB_PASSWORD
+    || process.env.PGPASSWORD
+    || process.env.SUPABASE_DB_SECRET
+    || ''
+  );
+
+  if (!host || !user || !password) {
+    throw new Error('Missing database configuration');
+  }
+
+  return {
+    host,
+    port,
+    database,
+    user,
+    password,
+    ssl: { rejectUnauthorized: false },
+    allowExitOnIdle: true,
+    max: 1
+  };
+}
+
+let pool = null;
+let schemaPromise = null;
+
+function getPool() {
+  if (!pool) {
+    pool = new Pool(getDatabaseConfig());
+  }
+  return pool;
+}
+
+async function ensureSchema(client) {
+  if (!schemaPromise) {
+    schemaPromise = (async () => {
+      await client.query(`
+        create table if not exists public.workflow_tickets (
+          ticket_id text primary key,
+          payload jsonb not null,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        )
+      `);
+
+      await client.query(`
+        create index if not exists workflow_tickets_updated_at_idx
+          on public.workflow_tickets (updated_at desc)
+      `);
+
+      await client.query(`
+        alter table public.workflow_tickets enable row level security
+      `).catch(() => {});
+    })().catch(error => {
+      schemaPromise = null;
+      throw error;
+    });
+  }
+
+  return schemaPromise;
+}
+
+async function withClient(run) {
+  const client = await getPool().connect();
+  try {
+    await ensureSchema(client);
+    return await run(client);
+  } finally {
+    client.release();
+  }
+}
+
+async function saveTicket(client, ticket) {
+  const payload = normalizeTicket(ticket);
+  const ticketId = payload.ticketId || `REQ-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+  payload.ticketId = ticketId;
+
+  const { rows } = await client.query(
+    `
+      insert into public.workflow_tickets (ticket_id, payload, created_at, updated_at)
+      values (
+        $1,
+        $2::jsonb,
+        coalesce((select created_at from public.workflow_tickets where ticket_id = $1), now()),
+        now()
+      )
+      on conflict (ticket_id) do update
+        set payload = excluded.payload,
+            updated_at = now()
+      returning ticket_id, payload, created_at, updated_at
+    `,
+    [ticketId, JSON.stringify(payload)]
+  );
+
+  return hydrateTicket(rows[0]);
+}
+
+async function replaceAllTickets(client, tickets) {
+  const normalized = Array.isArray(tickets) ? tickets.map(normalizeTicket) : [];
+
+  await client.query('begin');
+  try {
+    await client.query('delete from public.workflow_tickets');
+
+    const saved = [];
+    for (const ticket of normalized) {
+      saved.push(await saveTicket(client, ticket));
+    }
+
+    await client.query('commit');
+    return saved;
+  } catch (error) {
+    await client.query('rollback').catch(() => {});
+    throw error;
+  }
 }
 
 exports.handler = async event => {
@@ -245,35 +187,41 @@ exports.handler = async event => {
     return { statusCode: 204, headers: jsonHeaders, body: '' };
   }
 
-  let client;
-
   try {
-    client = await connectClient();
-
     if (event.httpMethod === 'GET') {
-      const ticketId = String(event.queryStringParameters?.ticketId || event.queryStringParameters?.ticket || '').trim();
+      return await withClient(async client => {
+        const ticketId = String(event.queryStringParameters?.ticketId || event.queryStringParameters?.ticket || '').trim();
 
-      if (ticketId) {
-        const rows = await restRequest('GET', 'workflow_tickets', {
-          apiKey: client.apiKey,
-          query: `?select=ticket_id,payload,created_at,updated_at&ticket_id=eq.${encodeURIComponent(ticketId)}&limit=1`
-        });
+        if (ticketId) {
+          const { rows } = await client.query(
+            `
+              select ticket_id, payload, created_at, updated_at
+              from public.workflow_tickets
+              where ticket_id = $1
+              limit 1
+            `,
+            [ticketId]
+          );
 
-        if (!Array.isArray(rows) || !rows.length) {
-          return response(404, { ok: false, error: 'Ticket not found' });
+          if (!rows.length) {
+            return response(404, { ok: false, error: 'Ticket not found' });
+          }
+
+          return response(200, { ok: true, ticket: hydrateTicket(rows[0]) });
         }
 
-        return response(200, { ok: true, ticket: hydrateTicket(rows[0]) });
-      }
+        const { rows } = await client.query(
+          `
+            select ticket_id, payload, created_at, updated_at
+            from public.workflow_tickets
+            order by updated_at desc, ticket_id desc
+          `
+        );
 
-      const rows = await restRequest('GET', 'workflow_tickets', {
-        apiKey: client.apiKey,
-        query: '?select=ticket_id,payload,created_at,updated_at&order=updated_at.desc,ticket_id.desc'
-      });
-
-      return response(200, {
-        ok: true,
-        tickets: hydrateTickets(rows)
+        return response(200, {
+          ok: true,
+          tickets: hydrateTickets(rows)
+        });
       });
     }
 
@@ -285,74 +233,52 @@ exports.handler = async event => {
     }
 
     if (event.httpMethod === 'POST') {
-      const ticket = normalizeTicket(payload.ticket || payload);
-      const year = new Date().getFullYear();
-      const ticketId = ticket.ticketId || `REQ-${year}-${String(Date.now()).slice(-4)}`;
-      ticket.ticketId = ticketId;
-      const [savedTicket] = await restRequest('POST', 'workflow_tickets', {
-        apiKey: client.apiKey,
-        query: '?on_conflict=ticket_id',
-        body: ticket,
-        headers: {
-          Prefer: 'return=representation,resolution=merge-duplicates'
-        }
+      return await withClient(async client => {
+        const ticket = normalizeTicket(payload.ticket || payload);
+        const savedTicket = await saveTicket(client, ticket);
+        return response(200, { ok: true, ticket: savedTicket });
       });
-      return response(200, { ok: true, ticket: savedTicket });
     }
 
     if (event.httpMethod === 'PATCH') {
-      const ticketId = String(payload.ticketId || payload.ticket?.ticketId || '').trim();
-      if (!ticketId) {
-        return response(400, { ok: false, error: 'Missing ticketId' });
-      }
-
-      const existingRows = await restRequest('GET', 'workflow_tickets', {
-        apiKey: client.apiKey,
-        query: `?select=ticket_id,payload,created_at,updated_at&ticket_id=eq.${encodeURIComponent(ticketId)}&limit=1`
-      });
-
-      if (!Array.isArray(existingRows) || !existingRows.length) {
-        return response(404, { ok: false, error: 'Ticket not found' });
-      }
-
-      const existing = hydrateTicket(existingRows[0]);
-      const patch = payload.patch || payload.ticket || {};
-      const nextPayload = normalizeTicket({ ...existing, ...patch, ticketId });
-      const [savedTicket] = await restRequest('POST', 'workflow_tickets', {
-        apiKey: client.apiKey,
-        query: '?on_conflict=ticket_id',
-        body: nextPayload,
-        headers: {
-          Prefer: 'return=representation,resolution=merge-duplicates'
+      return await withClient(async client => {
+        const ticketId = String(payload.ticketId || payload.ticket?.ticketId || '').trim();
+        if (!ticketId) {
+          return response(400, { ok: false, error: 'Missing ticketId' });
         }
+
+        const { rows } = await client.query(
+          `
+            select ticket_id, payload, created_at, updated_at
+            from public.workflow_tickets
+            where ticket_id = $1
+            limit 1
+          `,
+          [ticketId]
+        );
+
+        if (!rows.length) {
+          return response(404, { ok: false, error: 'Ticket not found' });
+        }
+
+        const existing = hydrateTicket(rows[0]);
+        const patch = payload.patch || payload.ticket || {};
+        const savedTicket = await saveTicket(client, {
+          ...existing,
+          ...patch,
+          ticketId
+        });
+
+        return response(200, { ok: true, ticket: savedTicket });
       });
-      return response(200, { ok: true, ticket: savedTicket });
     }
 
     if (event.httpMethod === 'PUT') {
-      const ticketsPayload = Array.isArray(payload.tickets) ? payload.tickets.map(normalizeTicket) : [];
-      await restRequest('DELETE', 'workflow_tickets', {
-        apiKey: client.apiKey,
-        query: '?ticket_id=not.is.null'
+      return await withClient(async client => {
+        const ticketsPayload = Array.isArray(payload.tickets) ? payload.tickets : [];
+        const savedTickets = await replaceAllTickets(client, ticketsPayload);
+        return response(200, { ok: true, tickets: savedTickets });
       });
-
-      const tickets = [];
-      for (const ticket of ticketsPayload) {
-        const year = new Date().getFullYear();
-        if (!ticket.ticketId) {
-          ticket.ticketId = `REQ-${year}-${String(Date.now()).slice(-4)}`;
-        }
-        const [savedTicket] = await restRequest('POST', 'workflow_tickets', {
-          apiKey: client.apiKey,
-          query: '?on_conflict=ticket_id',
-          body: ticket,
-          headers: {
-            Prefer: 'return=representation,resolution=merge-duplicates'
-          }
-        });
-        tickets.push(savedTicket);
-      }
-      return response(200, { ok: true, tickets });
     }
 
     return response(405, { ok: false, error: 'Method not allowed' });
@@ -362,7 +288,5 @@ exports.handler = async event => {
       ok: false,
       error: error.message || 'Failed to process workflow tickets'
     });
-  } finally {
-    client = null;
   }
 };
