@@ -380,7 +380,6 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
     const requesterName = ticket.requesterName || ticket.requester?.requesterName || '-';
     const serviceType = ticket.formName || 'คำขอใช้บริการ';
     const details = ticket.summaryText || ticket.note || '-';
-    const link = getApprovalLink(ticket);
     const recipient = eventType === 'approval-request' || eventType === 'payment-notification'
         ? getWorkflowStepEmail(ticket, step)
         : getRequesterEmail(ticket);
@@ -426,6 +425,7 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
         };
     }
 
+    const link = getApprovalLink(ticket);
     return {
         to: recipient,
         subject: `[Action Required] อนุมัติคำขอใช้บริการ ${serviceType} - คุณ ${requesterName}`,

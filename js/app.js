@@ -190,7 +190,6 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
     const serviceType = ticket.formName || 'คำขอใช้บริการ';
     const details = ticket.summaryText || ticket.note || '-';
     const submittedAt = formatThaiDateTime(ticket.submittedAt || new Date().toISOString());
-    const adminLink = getWorkflowAdminLink(ticket);
 
     if (eventType === 'received') {
         return {
@@ -216,6 +215,7 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
     }
 
     if (eventType === 'new-submission-approval') {
+        const adminLink = getWorkflowAdminLink(ticket);
         return {
             to: recipient,
             subject: `[Action Required] มีคำขอใหม่รออนุมัติ ${serviceType} (Ref: ${ticket.ticketId})`,
@@ -294,7 +294,7 @@ function buildWorkflowEmail(ticket, eventType = 'approval-request') {
                 `ขั้นตอนปัจจุบัน: ${step || '-'}`,
                 `รายละเอียด: ${details}`,
                 '',
-                adminLink,
+                window.location.origin,
                 '',
                 'ขอแสดงความนับถือ',
                 'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
