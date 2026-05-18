@@ -1,7 +1,8 @@
 window.BPUU_WORKFLOW_TEST_CONFIG = {
     systemEmail: 'dev.codegym@gmail.com',
     primaryApprovalEmail: 'dev.codegym@gmail.com',
-    workflowApiEndpoint: '/api/workflow-tickets',
+    workflowApiEndpoint: `${window.location.origin}/api/workflow-tickets`,
+    allowLocalFallback: true,
     requesterEmails: {
         staff: 'n.chotthanin@gmail.com',
         student: 'n.chotthanin@gmail.com',
@@ -17,7 +18,7 @@ window.BPUU_WORKFLOW_TEST_CONFIG = {
         areaController: 'yeongstorage@gmail.com'
     },
     emailTransport: {
-        endpoint: '/api/send-email',
+        endpoint: `${window.location.origin}/api/send-email`,
         mode: 'api'
     }
 };
