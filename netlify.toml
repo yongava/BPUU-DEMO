@@ -1,6 +1,12 @@
 [functions]
   directory = "netlify/functions"
 
+[build]
+  command = "npm run check"
+
+[build.environment]
+  NODE_VERSION = "20"
+
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
