@@ -56,6 +56,25 @@
         });
     }
 
+    function saveLocalTickets(tickets) {
+        const payload = Array.isArray(tickets) ? tickets.map(item => normalizeTicket(item)) : [];
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+            LEGACY_KEYS.forEach(key => {
+                try {
+                    localStorage.removeItem(key);
+                } catch (error) {
+                    // Ignore storage errors.
+                }
+            });
+        } catch (error) {
+            // LocalStorage may be unavailable in restricted environments.
+        }
+        replaceCache(payload);
+        notifyChanged();
+        return clone(state.cache);
+    }
+
     function notifyChanged() {
         try {
             localStorage.setItem(PING_KEY, new Date().toISOString());
@@ -112,19 +131,29 @@
             return clone(state.cache);
         }
 
-        const data = await requestJson('GET');
-        const remoteTickets = Array.isArray(data?.tickets) ? data.tickets.map(item => normalizeTicket(item)) : [];
-        replaceCache(remoteTickets);
+        try {
+            const data = await requestJson('GET');
+            const remoteTickets = Array.isArray(data?.tickets) ? data.tickets.map(item => normalizeTicket(item)) : [];
+            replaceCache(remoteTickets);
 
-        if (allowImport && !remoteTickets.length) {
+            if (allowImport && !remoteTickets.length) {
+                const localTickets = readLocalTickets().filter(ticket => !isSeedTicket(ticket));
+                if (localTickets.length) {
+                    const imported = await replaceTickets(localTickets);
+                    return imported;
+                }
+            }
+
+            return clone(state.cache);
+        } catch (error) {
             const localTickets = readLocalTickets().filter(ticket => !isSeedTicket(ticket));
             if (localTickets.length) {
-                const imported = await replaceTickets(localTickets);
-                return imported;
+                return saveLocalTickets(localTickets);
             }
+            state.loaded = true;
+            state.cache = [];
+            return [];
         }
-
-        return clone(state.cache);
     }
 
     async function getTicket(ticketId) {
@@ -136,13 +165,21 @@
 
     async function upsertTicket(ticket) {
         const payload = normalizeTicket(ticket);
-        const data = await requestJson('POST', { ticket: payload });
-        const saved = normalizeTicket(data?.ticket || payload);
-        const nextCache = state.cache.filter(item => item.ticketId !== saved.ticketId);
-        nextCache.unshift(saved);
-        replaceCache(nextCache);
-        notifyChanged();
-        return clone(saved);
+        try {
+            const data = await requestJson('POST', { ticket: payload });
+            const saved = normalizeTicket(data?.ticket || payload);
+            const nextCache = state.cache.filter(item => item.ticketId !== saved.ticketId);
+            nextCache.unshift(saved);
+            replaceCache(nextCache);
+            notifyChanged();
+            return clone(saved);
+        } catch (error) {
+            const existing = readLocalTickets();
+            const nextCache = existing.filter(item => item.ticketId !== payload.ticketId);
+            const saved = normalizeTicket(payload);
+            nextCache.unshift(saved);
+            return saveLocalTickets(nextCache).find(item => item.ticketId === saved.ticketId) || clone(saved);
+        }
     }
 
     async function patchTicket(ticketId, patch) {
@@ -155,12 +192,16 @@
 
     async function replaceTickets(tickets) {
         const payload = Array.isArray(tickets) ? tickets.map(item => normalizeTicket(item)) : [];
-        const data = await requestJson('PUT', { tickets: payload });
-        const savedTickets = Array.isArray(data?.tickets) ? data.tickets.map(item => normalizeTicket(item)) : payload;
-        replaceCache(savedTickets);
-        clearLocalTickets();
-        notifyChanged();
-        return clone(state.cache);
+        try {
+            const data = await requestJson('PUT', { tickets: payload });
+            const savedTickets = Array.isArray(data?.tickets) ? data.tickets.map(item => normalizeTicket(item)) : payload;
+            replaceCache(savedTickets);
+            clearLocalTickets();
+            notifyChanged();
+            return clone(state.cache);
+        } catch (error) {
+            return saveLocalTickets(payload);
+        }
     }
 
     window.BPUU_WORKFLOW_API = {
