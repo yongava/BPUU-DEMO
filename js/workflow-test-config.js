@@ -1,8 +1,6 @@
 window.BPUU_WORKFLOW_TEST_CONFIG = {
-    systemEmail: 'dev.codegym@gmail.com',
-    primaryApprovalEmail: 'dev.codegym@gmail.com',
-    workflowApiEndpoint: `${window.location.origin}/api/workflow-tickets`,
-    allowLocalFallback: true,
+    // อีเมลทดสอบ override ค่าที่ส่งเข้า JotForm (q20 อีเมลผู้ขอ / q30 อีเมลผู้อนุมัติ)
+    // ปล่อยเป็นค่าว่าง หรือลบ key เพื่อใช้อีเมลจริงจากฐานข้อมูล
     requesterEmails: {
         staff: 'n.chotthanin@gmail.com',
         student: 'n.chotthanin@gmail.com',
@@ -13,12 +11,6 @@ window.BPUU_WORKFLOW_TEST_CONFIG = {
         bpuuStaff: 'bpuu.dev1@kmutt.ac.th',
         bpuuManager: 'bpuu.dev2@kmutt.ac.th',
         financeViceRector: 'yeongstorage@gmail.com',
-        seniorViceRector: 'yeongstorage@gmail.com',
-        president: 'yeongstorage@gmail.com',
         areaController: 'yeongstorage@gmail.com'
-    },
-    emailTransport: {
-        endpoint: `${window.location.origin}/api/send-email`,
-        mode: 'api'
     }
 };

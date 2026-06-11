@@ -3,9 +3,6 @@ const STUDENT_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRzYO0
 const CONTRACT_DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRzYO0Kyv2yxDlo40zJ06bkb3Vh70X_HZj5gowDC_wHjCF2LxoaCu4CFLkBzd6j2Q4Do_3-ntiipx3-/pub?gid=1831450496&single=true&output=csv";
 const JOTFORM_FORM_ID = "261200763585052";
 const JOTFORM_SUBMIT_URL = `https://submit.jotform.com/submit/${JOTFORM_FORM_ID}`;
-const WORKFLOW_STORAGE_KEY = 'bpuu-workflow-tickets';
-const LEGACY_WORKFLOW_STORAGE_KEYS = ['bpuu-admin-tickets'];
-const WORKFLOW_BASE_SEQUENCE = 14;
 const WORKFLOW_TEST_CONFIG = window.BPUU_WORKFLOW_TEST_CONFIG || {};
 
 let currentSelectedForm = "";
@@ -29,24 +26,6 @@ const JOTFORM_USER_TYPE_VALUES = {
     student: "นักศึกษา",
     external: "บุคคลภายนอก"
 };
-const LOCAL_WORKFLOW_TEMPLATES = {
-    overnightStaff: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU Staff พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    overnightExternal: ['รับคำขอ', 'BPUU Staff พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Staff แจ้งยอด', 'รอชำระเงิน', 'ตรวจสลิป', 'ออกใบเสร็จ', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    monthlyRegular: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'ส่ง QR Code / แจ้งยอด', 'รอชำระเงิน', 'ออกใบเสร็จ', 'ปิดเรื่อง'],
-    monthlySpecial: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'รองอธิการบดีฝ่ายการเงินฯ', 'รองอธิการบดีอาวุโสฝ่ายบริหาร', 'อธิการบดี', 'แจ้งผลกลับผู้ขอ'],
-    monthlyBlocked: ['รับคำขอ', 'BPUU ตรวจสอบ', 'ตีกลับแก้ไขเอกสาร', 'รอข้อมูลจากผู้ขอ'],
-    stampUnit: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU ตรวจสอบ', 'BPUU Manager Approve', 'ส่งคู่มือและรหัสตราประทับ', 'ปิดเรื่อง'],
-    stampProject: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Approve', 'รองอธิการบดีฝ่ายการเงิน Approve', 'ส่งคู่มือและรหัสตราประทับ', 'ปิดเรื่อง'],
-    plateRedirect: ['รับคำขอ', 'ส่งต่อไป IBGM', 'รอดำเนินการในระบบภายนอก'],
-    plateStudent: ['รับคำขอ', 'ตรวจสอบข้อมูล', 'อัปเดตฐานข้อมูล Carpark', 'แจ้งผลผู้ยื่นคำขอ', 'ปิดเรื่อง'],
-    tempInternal: ['รับคำขอ', 'หัวหน้างานอนุมัติ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'รองอธิการบดีฝ่ายการเงิน Approve', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    tempExternal: ['รับคำขอ', 'BPUU ตรวจสอบ', 'BPUU Manager Sign', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    contractVendor: ['รับคำขอ', 'BPUU พิจารณา', 'BPUU Manager พิจารณา', 'BPUU Manager อนุมัติ', 'ผู้ดูแลพื้นที่ตรวจสอบวัน', 'แจ้งผลกลับผู้ขอ', 'ปิดเรื่อง'],
-    issueInternal: ['รับเรื่อง', 'แนะนำช่องทาง Modlink', 'BPUU รับเรื่อง', 'แก้ไขปัญหา', 'สรุปผล', 'ปิดเรื่อง'],
-    issueExternal: ['รับเรื่อง', 'BPUU รับเรื่อง', 'แก้ไขปัญหา', 'สรุปผล', 'ปิดเรื่อง'],
-    invoiceFollowup: ['ตรวจบันทึกจอดฟรี', 'รอหน่วยงานตอบกลับ', 'ออกใบแจ้งหนี้ D365', 'ตรวจรหัสงบประมาณ', 'บันทึกบัญชีรับ-จ่าย', 'ส่ง Voucher', 'ปิดเรื่อง']
-};
-
 function uniqueNonEmpty(values) {
     return [...new Set(values.map(value => (value || '').trim()).filter(Boolean))];
 }
@@ -121,282 +100,6 @@ function resolveApproverEmail(name, position, fallback = '') {
     }
 
     return roleKey ? getTestEmailOverride('roleEmails', roleKey, fallback) : (fallback || '');
-}
-
-function getLocalWorkflowStep(ticket) {
-    const steps = LOCAL_WORKFLOW_TEMPLATES[ticket.workflowKey] || [];
-    return steps[Math.max(0, Math.min(ticket.stepIndex || 0, steps.length - 1))] || '';
-}
-
-function getWorkflowAdminLink(ticket) {
-    const tools = window.BPUU_APPROVAL_LINKS || {};
-    if (typeof tools.buildApprovalLinkUrl === 'function') {
-        return tools.buildApprovalLinkUrl(ticket, getLocalWorkflowStep(ticket), window.location.href);
-    }
-
-    const url = new URL('approve.html', window.location.href);
-    url.searchParams.set('ticket', ticket.ticketId);
-    return url.toString();
-}
-
-function getEmailRecipientForStep(ticket, step) {
-    const roleEmails = WORKFLOW_TEST_CONFIG.roleEmails || {};
-    const requesterEmail = ticket.requesterEmail
-        || ticket.emailDetails?.requesterSubmittedEmail
-        || ticket.requester?.submittedEmail
-        || ticket.requester?.email
-        || '';
-    const approverEmail = ticket.approverEmail
-        || ticket.emailDetails?.approverSubmittedEmail
-        || '';
-    const normalizedStep = String(step || '').toLowerCase();
-
-    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ|ส่ง qr code|แจ้งยอด|รอชำระเงิน|ตรวจสลิป|ออกใบเสร็จ|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(normalizedStep)) {
-        return requesterEmail;
-    }
-    if (/อธิการบดี/i.test(step) && !/รองอธิการบดี/i.test(step)) return roleEmails.president || roleEmails.financeViceRector || approverEmail;
-    if (/รองอธิการบดีอาวุโส/i.test(step)) return roleEmails.seniorViceRector || roleEmails.financeViceRector || approverEmail;
-    if (/รองอธิการบดีฝ่ายการเงิน|การเงิน/i.test(step)) return roleEmails.financeViceRector || approverEmail;
-    if (/ผู้คุมพื้นที่|ผู้ดูแลพื้นที่/i.test(step)) return roleEmails.areaController || approverEmail;
-    if (/หัวหน้างาน|หัวหน้าฝ่าย/i.test(step)) return roleEmails.bpuuHead || approverEmail;
-    if (/manager/i.test(step)) return roleEmails.bpuuManager || roleEmails.bpuuStaff || approverEmail;
-    if (/bpuu/i.test(step) || /พิจารณา|ตรวจสอบ|อนุมัติ|รับเรื่อง|แก้ไขปัญหา|อัปเดตฐานข้อมูล|บันทึกบัญชี|ออกใบแจ้งหนี้|ตรวจรหัสงบประมาณ|ออกใบเสร็จ|ตรวจสลิป|แจ้งยอด/i.test(normalizedStep)) {
-        return roleEmails.bpuuStaff || approverEmail;
-    }
-    return '';
-}
-
-function getEmailEventTypeForStep(step) {
-    const value = String(step || '').toLowerCase();
-    if (/ปิดเรื่อง|ปิดรายการ|รับคำขอ|รับเรื่อง|ส่งต่อไป ibgm/i.test(value)) return '';
-    if (/ตีกลับ|แก้ไขเอกสาร|รอข้อมูลจากผู้ขอ|รอหน่วยงานตอบกลับ/i.test(value)) return 'more-info';
-    if (/ส่ง qr code|แจ้งยอด|รอชำระเงิน/i.test(value)) return 'payment-notification';
-    if (/แจ้งผลกลับผู้ขอ|แจ้งผลผู้ยื่นคำขอ|ส่งคู่มือ|สรุปผล|ส่ง voucher|แนะนำช่องทาง/i.test(value)) return 'completed';
-    return 'approval-request';
-}
-
-function buildWorkflowEmail(ticket, eventType = 'approval-request') {
-    const step = getLocalWorkflowStep(ticket);
-    const primaryApprovalEmail = WORKFLOW_TEST_CONFIG.primaryApprovalEmail
-        || WORKFLOW_TEST_CONFIG.roleEmails?.bpuuHead
-        || WORKFLOW_TEST_CONFIG.roleEmails?.bpuuStaff
-        || '';
-    const recipient = eventType === 'received'
-        ? ticket.requesterEmail
-        : eventType === 'new-submission-approval'
-            ? primaryApprovalEmail
-            : getEmailRecipientForStep(ticket, step);
-    const requesterName = ticket.requesterName || ticket.requester?.requesterName || '-';
-    const serviceType = ticket.formName || 'คำขอใช้บริการ';
-    const details = ticket.summaryText || ticket.note || '-';
-    const submittedAt = formatThaiDateTime(ticket.submittedAt || new Date().toISOString());
-
-    if (eventType === 'received') {
-        return {
-            to: recipient,
-            subject: `[Received] ระบบได้รับคำขอ ${serviceType} (Ref: ${ticket.ticketId})`,
-            body: [
-                `เรียน คุณ ${requesterName}`,
-                '',
-                `ระบบกระบวนงานการให้บริการของกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU) ได้รับคำขอใช้บริการ "${serviceType}" ของท่านเรียบร้อยแล้ว`,
-                '',
-                'รายละเอียดคำขอ:',
-                `- หมายเลขคำขอ (Ticket No.): ${ticket.ticketId}`,
-                `- วันที่ส่งเรื่อง: ${submittedAt}`,
-                '- สถานะปัจจุบัน: รอการตรวจสอบ (Pending Review)',
-                '',
-                'เจ้าหน้าที่จะดำเนินการตรวจสอบข้อมูลและแจ้งผลการพิจารณาให้ท่านทราบผ่านทางอีเมลนี้',
-                '',
-                'ขอแสดงความนับถือ',
-                'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)',
-                'มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี'
-            ].join('\n')
-        };
-    }
-
-    if (eventType === 'new-submission-approval') {
-        const adminLink = getWorkflowAdminLink(ticket);
-        return {
-            to: recipient,
-            subject: `[Action Required] มีคำขอใหม่รออนุมัติ ${serviceType} (Ref: ${ticket.ticketId})`,
-            body: [
-                'เรียน ผู้อนุมัติ',
-                '',
-                'ระบบ BPUU ได้รับคำขอใหม่และต้องการให้ท่านตรวจสอบ/อนุมัติผ่านหน้าเว็บ',
-                '',
-                'ข้อมูลคำขอ:',
-                `- หมายเลขคำขอ: ${ticket.ticketId}`,
-                `- ผู้ขอ: ${requesterName}`,
-                `- ประเภทบริการ: ${serviceType}`,
-                `- ขั้นตอนปัจจุบัน: ${step || '-'}`,
-                `- วันที่ส่งเรื่อง: ${submittedAt}`,
-                `- รายละเอียด: ${details}`,
-                '',
-                'กรุณาเปิดรายการนี้ในระบบ:',
-                adminLink,
-                '',
-                'หมายเหตุ: ลิงก์นี้ใช้อนุมัติหรือไม่อนุมัติได้เพียงครั้งเดียวเท่านั้น',
-                '',
-                'ขอแสดงความนับถือ',
-                'BPUU Workflow System'
-            ].join('\n')
-        };
-    }
-
-    if (eventType === 'payment-notification') {
-        const paymentResponseUrl = ticket.paymentResponseUrl || `${window.location.origin}/payment-response.html?ticket=${encodeURIComponent(ticket.ticketId)}`;
-        const qrAttachment = ticket.paymentQrAttachment ? [{
-            filename: ticket.paymentQrAttachment.name || 'payment-qr.png',
-            content: ticket.paymentQrAttachment.dataUrl || '',
-            contentType: ticket.paymentQrAttachment.type || 'image/png'
-        }] : [];
-        return {
-            to: recipient,
-            subject: `[Payment Required] แจ้งยอดชำระเงิน ${serviceType} (Ref: ${ticket.ticketId})`,
-            body: [
-                `เรียน คุณ ${requesterName}`,
-                '',
-                `กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน ขอแจ้งขั้นตอนชำระเงินสำหรับคำขอ "${serviceType}"`,
-                '',
-                `หมายเลขคำขอ: ${ticket.ticketId}`,
-                `ขั้นตอนปัจจุบัน: ${step || '-'}`,
-                `ยอดชำระ: ${Number(ticket.paymentAmount || 0).toLocaleString('th-TH')} บาท`,
-                `รายละเอียด: ${details}`,
-                '',
-                'กรุณาชำระเงินตาม QR Code ที่แนบมา และแนบสลิปผ่านลิงก์ด้านล่าง',
-                paymentResponseUrl,
-                '',
-                'ขอแสดงความนับถือ',
-                'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
-            ].join('\n'),
-            attachments: qrAttachment
-        };
-    }
-
-    if (eventType === 'completed' || eventType === 'more-info') {
-        const isMoreInfo = eventType === 'more-info';
-        const receiptAttachment = ticket.receiptAttachment ? [{
-            filename: ticket.receiptAttachment.name || 'receipt.pdf',
-            content: ticket.receiptAttachment.dataUrl || '',
-            contentType: ticket.receiptAttachment.type || 'application/pdf'
-        }] : [];
-        return {
-            to: recipient,
-            subject: `${isMoreInfo ? '[More Info Required]' : '[Completed]'} แจ้งผลคำขอ ${serviceType} (Ref: ${ticket.ticketId})`,
-            body: [
-                `เรียน คุณ ${requesterName}`,
-                '',
-                isMoreInfo
-                    ? `กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน ขอข้อมูลหรือเอกสารเพิ่มเติมสำหรับคำขอ "${serviceType}"`
-                    : `กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน ขอแจ้งความคืบหน้าของคำขอ "${serviceType}"`,
-                '',
-                `หมายเลขคำขอ: ${ticket.ticketId}`,
-                `ขั้นตอนปัจจุบัน: ${step || '-'}`,
-                `รายละเอียด: ${details}`,
-                '',
-                window.location.origin,
-                '',
-                'ขอแสดงความนับถือ',
-                'กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
-            ].join('\n'),
-            attachments: receiptAttachment
-        };
-    }
-
-    const overnightApprovalNote = ticket.workflowKey === 'overnightStaff' && /BPUU Staff พิจารณา/i.test(step || '')
-        ? 'หมายเหตุ: ถ้าเป็นกรณีมีค่าใช้จ่าย ให้เลือก "อนุมัติ-มีค่าใช้จ่าย" เพื่อระบุยอดเงินและแนบ QR Code ระบบจะส่งต่อให้ผู้ขอชำระเงินทันที'
-        : ticket.workflowKey === 'overnightStaff' && /BPUU Manager พิจารณา/i.test(step || '')
-            ? 'หมายเหตุ: กรณีปกติให้กด Approve เพื่อแจ้งผลกลับผู้ขอและปิดงาน'
-            : '';
-
-    return {
-        to: recipient,
-        subject: `[Action Required] อนุมัติคำขอใช้บริการ ${serviceType} - คุณ ${requesterName}`,
-        body: [
-            'เรียน ผู้อนุมัติ',
-            '',
-            'มีรายการคำขอใหม่รอการอนุมัติจากท่าน กรุณาตรวจสอบรายละเอียดดังนี้:',
-            '',
-            'ข้อมูลคำขอ:',
-            `- ผู้ขอ: ${requesterName}`,
-            `- ประเภทบริการ: ${serviceType}`,
-            `- ขั้นตอนปัจจุบัน: ${step || '-'}`,
-            `- รายละเอียด: ${details}`,
-            '',
-            ...(overnightApprovalNote ? [overnightApprovalNote, ''] : []),
-            'กรุณาเลือกผลการพิจารณาในระบบ:',
-            adminLink,
-            '',
-            'หมายเหตุ: ลิงก์นี้ใช้อนุมัติหรือไม่อนุมัติได้เพียงครั้งเดียวเท่านั้น'
-        ].join('\n')
-    };
-}
-
-function getEmailTransportEndpoint() {
-    return String(WORKFLOW_TEST_CONFIG.emailTransport?.endpoint || '/api/send-email').trim();
-}
-
-async function sendWorkflowEmailViaApi(email, ticket, eventType) {
-    if (!email?.to) return { ok: false, status: 'skipped', error: 'Missing recipient email' };
-    const endpoint = getEmailTransportEndpoint();
-    if (!endpoint) return { ok: false, status: 'skipped', error: 'Missing email API endpoint' };
-
-    try {
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                from: WORKFLOW_TEST_CONFIG.systemEmail || '',
-                to: email.to,
-                subject: email.subject,
-                text: email.body,
-                body: email.body,
-                attachments: email.attachments || [],
-                ticketId: ticket.ticketId,
-                eventType,
-                workflowKey: ticket.workflowKey,
-                step: getLocalWorkflowStep(ticket)
-            })
-        });
-
-        if (!response.ok) {
-            const message = await response.text().catch(() => '');
-            return { ok: false, status: 'failed', error: message || `HTTP ${response.status}` };
-        }
-
-        return { ok: true, status: 'sent' };
-    } catch (error) {
-        return { ok: false, status: 'failed', error: error?.message || 'Email API request failed' };
-    }
-}
-
-function addWorkflowEmailEvent(ticket, email, eventType, status, errorMessage = '') {
-    ticket.emailEvents = Array.isArray(ticket.emailEvents) ? ticket.emailEvents : [];
-    ticket.emailEvents.unshift({
-        id: `email-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        eventType,
-        to: email?.to || '',
-        subject: email?.subject || '',
-        status,
-        errorMessage,
-        createdAt: new Date().toISOString()
-    });
-}
-
-async function sendAndLogWorkflowEmail(ticket, eventType) {
-    const email = buildWorkflowEmail(ticket, eventType);
-    const result = await sendWorkflowEmailViaApi(email, ticket, eventType);
-    addWorkflowEmailEvent(ticket, email, eventType, result.status, result.error || '');
-    return result.ok;
-}
-
-function formatThaiDateTime(value) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '-';
-    return new Intl.DateTimeFormat('th-TH', {
-        dateStyle: 'medium',
-        timeStyle: 'short'
-    }).format(date);
 }
 
 function shouldHideExternalType(formName) {
@@ -552,9 +255,10 @@ function selectForm(formName) {
     currentSelectedForm = formName;
     
     if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์' && currentLoginType === 'staff') {
-        void logPlateRedirectTicket();
+        fillInternalData(formName);
+        submitToJotform({ q32_summary: 'บุคลากรถูกส่งต่อไปดำเนินการในระบบ IBGM (https://app.ibgm.cloud/)' });
         window.open('https://app.ibgm.cloud/signin', '_blank');
-        return; 
+        return;
     }
     
     if (formName === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') {
@@ -635,8 +339,11 @@ function setApprover(id, name, pos, email) {
 }
 
 function renderDynamicForm(formName, targetContainerId) {
+    // ล้างทั้งสอง container เสมอ — id ในเทมเพลตซ้ำกันข้ามมุมมอง (เช่น consentCheck)
+    // ถ้าปล่อยค้าง getElementById จะหยิบค่าของผู้ใช้คนก่อนไปใส่ summary/consent
+    document.getElementById('dynamicFormSection').innerHTML = "";
+    document.getElementById('dynamicExternalFormSection').innerHTML = "";
     const container = document.getElementById(targetContainerId);
-    container.innerHTML = ""; 
     let formHTML = "";
 
     switch (formName) {
@@ -1104,16 +811,6 @@ function getTextValue(id) {
     return (document.getElementById(id)?.innerText || '').trim();
 }
 
-function getHtmlValue(id) {
-    return (document.getElementById(id)?.innerHTML || '').trim();
-}
-
-function getSelectedOptionText(id) {
-    const el = document.getElementById(id);
-    if (!el || el.selectedIndex < 0) return '';
-    return (el.options[el.selectedIndex]?.text || '').trim();
-}
-
 function getExternalTypeForJotform() {
     if (currentLoginType !== 'external' || shouldHideExternalType(currentSelectedForm)) return '';
     if (document.getElementById('extType1')?.checked) return 'ผู้ปกครอง';
@@ -1222,414 +919,6 @@ function buildJotformSubmissionFields() {
     };
 }
 
-async function loadWorkflowTickets() {
-    return window.BPUU_WORKFLOW_API.listTickets();
-}
-
-async function saveWorkflowTickets(tickets) {
-    return window.BPUU_WORKFLOW_API.replaceTickets(tickets);
-}
-
-function notifyWorkflowTicketsChanged() {
-    window.BPUU_WORKFLOW_API.notifyChanged();
-}
-
-async function saveWorkflowTicketRecord(ticket) {
-    return window.BPUU_WORKFLOW_API.upsertTicket(ticket);
-}
-
-function createLightweightWorkflowTicket(ticket) {
-    const lightweight = { ...ticket };
-    if (Array.isArray(lightweight.selectedAttachments)) {
-        lightweight.selectedAttachments = lightweight.selectedAttachments.map(file => ({
-            name: file.name || 'ไฟล์แนบ',
-            type: file.type || '',
-            size: file.size || 0,
-            dataUrl: ''
-        }));
-    }
-    return lightweight;
-}
-
-function getNextWorkflowTicketId(tickets) {
-    const currentYear = new Date().getFullYear();
-    let maxSequence = WORKFLOW_BASE_SEQUENCE;
-
-    tickets.forEach(ticket => {
-        const match = String(ticket.ticketId || '').match(/^REQ-(\d{4})-(\d{4})$/);
-        if (!match) return;
-        if (Number(match[1]) !== currentYear) return;
-        maxSequence = Math.max(maxSequence, Number(match[2]));
-    });
-
-    return `REQ-${currentYear}-${String(maxSequence + 1).padStart(4, '0')}`;
-}
-
-function getRequesterTypeLabel() {
-    return JOTFORM_USER_TYPE_VALUES[currentLoginType] || '';
-}
-
-function getSelectedPlateAction() {
-    return document.querySelector('input[name="plateAction"]:checked')?.value || 'เพิ่ม';
-}
-
-function getPlateRequestPayload() {
-    const action = getSelectedPlateAction();
-    const count = Math.min(5, Math.max(1, Number(document.getElementById('plateActionCount')?.value || 1)));
-
-    if (action === 'แก้ไข') {
-        const items = [];
-        for (let i = 1; i <= count; i++) {
-            items.push({
-                index: i,
-                oldPlate: document.getElementById(`plateOld${i}`)?.value || '',
-                newPlate: document.getElementById(`plateNew${i}`)?.value || ''
-            });
-        }
-
-        return {
-            plateAction: action,
-            plateCount: count,
-            plateItems: items,
-            plateRequest: {
-                action,
-                count,
-                items
-            }
-        };
-    }
-
-    const items = [];
-    for (let i = 1; i <= count; i++) {
-        items.push({
-            index: i,
-            plate: document.getElementById(`plate${i}`)?.value || ''
-        });
-    }
-
-    return {
-        plateAction: action,
-        plateCount: count,
-        plateItems: items,
-        plateRequest: {
-            action,
-            count,
-            items
-        }
-    };
-}
-
-function getSelectedStampRequestFor() {
-    return document.querySelector('input[name="stampRequestFor"]:checked')?.value || 'โครงการ';
-}
-
-function collectSelectedFileNames() {
-    return [...document.querySelectorAll('.view-section.active input[type="file"]')]
-        .flatMap(input => [...(input.files || [])].map(file => file.name));
-}
-
-function collectSelectedFilePayloads() {
-    const fileInputs = [...document.querySelectorAll('.view-section.active input[type="file"]')]
-        .filter(input => input.files && input.files.length > 0);
-
-    const filePromises = fileInputs.flatMap(input => [...input.files].map(file => readFileAsDataUrl(file).then(dataUrl => ({
-        name: file.name,
-        type: file.type || '',
-        size: file.size || 0,
-        dataUrl
-    }))));
-
-    return Promise.all(filePromises);
-}
-
-function readFileAsDataUrl(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
-        reader.readAsDataURL(file);
-    });
-}
-
-function getWorkflowSubmissionConfig() {
-    if (currentSelectedForm === 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)') {
-        if (currentLoginType === 'staff') {
-            return {
-                typeKey: 'overnight',
-                workflowKey: 'overnightStaff',
-                status: 'รอหัวหน้างานอนุมัติ',
-                stepIndex: 1,
-                assignee: 'หัวหน้างาน',
-                priority: 'สูง',
-                routeSummary: 'หัวหน้างาน → BPUU',
-                contextLabel: 'หน่วยงาน',
-                contextValue: getInputValue('reqDeptCode') || getInputValue('extCompany') || '-',
-                note: 'รอหัวหน้างานอนุมัติก่อนเข้าสู่ BPUU'
-            };
-        }
-
-        return {
-            typeKey: 'overnight',
-            workflowKey: 'overnightExternal',
-            status: 'รอ BPUU Staff พิจารณา',
-            stepIndex: 1,
-            assignee: 'BPUU Staff',
-            priority: 'กลาง',
-            routeSummary: 'BPUU Staff ตรวจสอบโดยตรง',
-            contextLabel: 'องค์กร',
-            contextValue: getInputValue('extCompany') || '-',
-            note: 'ส่งเข้าพิจารณาโดย BPUU Staff โดยตรง'
-        };
-    }
-
-    if (currentSelectedForm === 'แบบฟอร์มขอจอดรถรายเดือน') {
-        const requesterForOther = currentLoginType === 'staff' && document.getElementById('monthlyForOther')?.checked;
-        const monthlyOwner = requesterForOther
-            ? `${getInputValue('monthlyOtherName')} (${getInputValue('monthlyOtherEmail') || '-'})`.trim()
-            : 'ตนเอง';
-
-        return {
-            typeKey: 'monthly',
-            workflowKey: 'monthlyRegular',
-            status: 'รอ BPUU ตรวจสอบ',
-            stepIndex: 1,
-            assignee: 'BPUU Staff',
-            priority: 'สูง',
-            routeSummary: 'BPUU → ผู้ขอ',
-            contextLabel: 'ผู้ใช้บริการจริง',
-            contextValue: monthlyOwner || 'ตนเอง',
-            note: requesterForOther ? 'ขอให้ผู้อื่น' : 'ขอให้ตนเอง'
-        };
-    }
-
-    if (currentSelectedForm === 'แบบฟอร์มขอใช้ตราประทับ') {
-        const stampFor = getSelectedStampRequestFor();
-        const isUnit = stampFor === 'หน่วยงาน';
-
-        return {
-            typeKey: 'stamp',
-            workflowKey: isUnit ? 'stampUnit' : 'stampProject',
-            status: isUnit ? 'รอหัวหน้างานอนุมัติ' : 'รอ BPUU ตรวจสอบ',
-            stepIndex: 1,
-            assignee: isUnit ? 'หัวหน้างาน' : 'BPUU Staff',
-            priority: 'สูง',
-            routeSummary: isUnit ? 'หัวหน้างาน → BPUU' : 'BPUU → ฝ่ายการเงิน',
-            contextLabel: 'ขอในนาม',
-            contextValue: stampFor,
-            note: `ขอใช้ตราประทับในนาม${stampFor}`
-        };
-    }
-
-    if (currentSelectedForm === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์') {
-        const plateAction = getSelectedPlateAction();
-        const plateRequest = getPlateRequestPayload();
-
-        if (currentLoginType === 'staff') {
-            return {
-                typeKey: 'plate',
-                workflowKey: 'plateRedirect',
-                status: 'ส่งต่อไป IBGM',
-                stepIndex: 1,
-                assignee: 'ระบบ IBGM',
-                priority: 'กลาง',
-                routeSummary: 'redirect ไป IBGM',
-                contextLabel: 'ประเภทคำขอ',
-                contextValue: plateAction,
-                note: 'บุคลากรถูกส่งต่อไป IBGM',
-                ...plateRequest
-            };
-        }
-
-        return {
-            typeKey: 'plate',
-            workflowKey: 'plateStudent',
-            status: 'รอ BPUU ตรวจสอบ',
-            stepIndex: 1,
-            assignee: 'BPUU Staff',
-            priority: 'กลาง',
-            routeSummary: 'BPUU → Carpark',
-            contextLabel: 'คณะ / สาขา',
-            contextValue: getInputValue('reqFaculty') || '-',
-            note: `คำขอทะเบียนของนักศึกษา (${plateAction})`,
-            ...plateRequest
-        };
-    }
-
-    if (currentSelectedForm === 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว') {
-        const requesterIsStaff = currentLoginType === 'staff';
-        return {
-            typeKey: 'temporary',
-            workflowKey: requesterIsStaff ? 'tempInternal' : 'tempExternal',
-            status: requesterIsStaff ? 'รอหัวหน้างานอนุมัติ' : 'รอ BPUU ตรวจสอบ',
-            stepIndex: 1,
-            assignee: requesterIsStaff ? 'หัวหน้างาน' : 'BPUU Staff',
-            priority: 'สูง',
-            routeSummary: requesterIsStaff ? 'หัวหน้างาน → BPUU → การเงิน' : 'BPUU → ผู้ขอ',
-            contextLabel: requesterIsStaff ? 'หน่วยงาน' : 'องค์กร',
-            contextValue: requesterIsStaff ? (getInputValue('reqDeptCode') || '-') : (getInputValue('extCompany') || '-'),
-            note: getInputValue('in_area_event') || 'คำขอใช้พื้นที่ชั่วคราว'
-        };
-    }
-
-    if (currentSelectedForm === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') {
-        return {
-            typeKey: 'contract',
-            workflowKey: 'contractVendor',
-            status: 'รอ BPUU พิจารณา',
-            stepIndex: 1,
-            assignee: 'BPUU Staff',
-            priority: 'กลาง',
-            routeSummary: 'BPUU → ผู้ดูแลพื้นที่',
-            contextLabel: 'บริษัท',
-            contextValue: getInputValue('contractCompany') || getInputValue('extCompany') || '-',
-            note: 'คำขอเข้าพื้นที่คู่สัญญา'
-        };
-    }
-
-    if (currentSelectedForm === 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ') {
-        const internalIssue = currentLoginType === 'staff' || currentLoginType === 'student';
-        return {
-            typeKey: 'issue',
-            workflowKey: internalIssue ? 'issueInternal' : 'issueExternal',
-            status: internalIssue ? 'ส่งต่อไป Modlink' : 'รับเรื่อง',
-            stepIndex: 1,
-            assignee: internalIssue ? 'Modlink / BPUU' : 'BPUU Staff',
-            priority: 'กลาง',
-            routeSummary: internalIssue ? 'Modlink → BPUU' : 'BPUU รับเรื่อง',
-            contextLabel: 'กลุ่มปัญหา',
-            contextValue: getSelectedOptionText('issueCategory') || '-',
-            note: getInputValue('issueDetail') || 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ'
-        };
-    }
-
-    return {
-        typeKey: 'issue',
-        workflowKey: 'issueExternal',
-        status: 'รับเรื่อง',
-        stepIndex: 1,
-        assignee: 'BPUU Staff',
-        priority: 'กลาง',
-        routeSummary: 'BPUU รับเรื่อง',
-        contextLabel: 'รายละเอียด',
-        contextValue: '-',
-        note: 'คำขอไม่อยู่ในหมวดที่กำหนด'
-    };
-}
-
-function logPlateRedirectTicket() {
-    const submittedAt = new Date().toISOString();
-    const requester = getRequesterDataForJotform();
-    const requesterDisplayEmail = requester.displayEmail || '';
-    const requesterSubmittedEmail = requester.submittedEmail || requester.email || '';
-    const plateRequest = getPlateRequestPayload();
-
-    const ticket = {
-        typeKey: 'plate',
-        requesterType: getRequesterTypeLabel(),
-        requesterName: requester.requesterName || getInputValue('reqName') || 'ไม่ระบุชื่อ',
-        contextLabel: 'ปลายทาง',
-        contextValue: 'IBGM',
-        formName: 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์',
-        status: 'ส่งต่อไป IBGM',
-        workflowKey: 'plateRedirect',
-        stepIndex: 1,
-        submittedAt,
-        updatedAt: submittedAt,
-        assignee: 'ระบบ IBGM',
-        priority: 'กลาง',
-        routeSummary: 'redirect ไป IBGM',
-        note: 'บุคลากรถูกส่งต่อไป IBGM',
-        submissionMode: 'redirect',
-        requester,
-        requesterEmail: requesterSubmittedEmail,
-        approverEmail: '',
-        approverDisplayEmail: '',
-        approverSubmittedEmail: '',
-        ...plateRequest,
-        emailDetails: {
-            requesterDisplayEmail,
-            requesterSubmittedEmail,
-            approverDisplayEmail: '',
-            approverSubmittedEmail: ''
-        }
-    };
-
-    saveWorkflowTicketRecord(ticket).catch(error => {
-        console.error('Failed to save plate redirect ticket.', error);
-    });
-}
-
-function buildWorkflowTicketRecord() {
-    const requester = getRequesterDataForJotform();
-    const config = getWorkflowSubmissionConfig();
-    const submittedAt = new Date().toISOString();
-    const summaryHtml = getHtmlValue('summaryContent');
-    const summaryText = getTextValue('summaryContent');
-    const rawSubmissionFields = buildJotformSubmissionFields();
-    const approverDisplayEmail = getTextValue('appEmail');
-    const approverSubmittedEmail = resolveApproverEmail(getInputValue('appName'), getInputValue('appPosition'), approverDisplayEmail);
-    const requesterDisplayEmail = requester.displayEmail || '';
-    const requesterSubmittedEmail = requester.submittedEmail || requester.email || '';
-
-    return {
-        typeKey: config.typeKey,
-        requesterType: getRequesterTypeLabel(),
-        requesterName: requester.requesterName || getInputValue('reqName') || getInputValue('extFname') || 'ไม่ระบุชื่อ',
-        contextLabel: config.contextLabel,
-        contextValue: config.contextValue,
-        formName: currentSelectedForm,
-        status: config.status,
-        workflowKey: config.workflowKey,
-        stepIndex: config.stepIndex,
-        submittedAt,
-        updatedAt: submittedAt,
-        assignee: config.assignee,
-        priority: config.priority,
-        routeSummary: config.routeSummary,
-        note: config.note,
-        submissionMode: 'local-storage',
-        summaryHtml,
-        summaryText,
-        selectedFiles: collectSelectedFileNames(),
-        requester,
-        requesterEmail: requesterSubmittedEmail,
-        approverEmail: approverSubmittedEmail,
-        approverDisplayEmail,
-        approverSubmittedEmail,
-        emailDetails: {
-            requesterDisplayEmail,
-            requesterSubmittedEmail,
-            approverDisplayEmail,
-            approverSubmittedEmail
-        },
-        submissionFields: rawSubmissionFields
-    };
-}
-
-async function submitWorkflowLocally() {
-    try {
-        const selectedAttachments = await collectSelectedFilePayloads();
-        const ticket = {
-            ...buildWorkflowTicketRecord(),
-            selectedAttachments
-        };
-
-        const savedTicket = await saveWorkflowTicketRecord(ticket);
-        notifyWorkflowTicketsChanged();
-        showSubmitSuccess();
-
-        sendAndLogWorkflowEmail(savedTicket, 'new-submission-approval')
-            .finally(() => {
-                void saveWorkflowTicketRecord(savedTicket).catch(error => {
-                    console.error('Failed to refresh saved workflow ticket.', error);
-                });
-            });
-    } catch (error) {
-        console.error('Failed to submit workflow ticket.', error);
-        alert('บันทึกคำขอไม่สำเร็จ กรุณาลองอีกครั้ง หรือเช็กการเชื่อมต่อกับระบบหลังบ้าน');
-    }
-}
-
 function appendSelectedFiles(form) {
     const fileInputs = [...document.querySelectorAll('.view-section.active input[type="file"]')]
         .filter(input => input.files && input.files.length > 0);
@@ -1661,7 +950,11 @@ function showSubmitSuccess() {
     }, 2000);
 }
 
-function submitToJotform() {
+function submitToJotform(fieldOverrides = {}) {
+    if (!navigator.onLine) {
+        alert('ไม่สามารถส่งคำขอได้เนื่องจากไม่ได้เชื่อมต่ออินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง');
+        return;
+    }
     document.getElementById('jotformSubmitFrame')?.remove();
     document.getElementById('jotformDirectSubmitForm')?.remove();
 
@@ -1687,7 +980,7 @@ function submitToJotform() {
     appendHiddenField(form, 'eventObserver', '1');
     appendHiddenField(form, 'website', '');
 
-    Object.entries(buildJotformSubmissionFields()).forEach(([name, value]) => {
+    Object.entries({ ...buildJotformSubmissionFields(), ...fieldOverrides }).forEach(([name, value]) => {
         appendHiddenField(form, name, value);
     });
     appendSelectedFiles(form);
@@ -1706,7 +999,7 @@ function submitToJotform() {
 
 async function confirmSubmitForm() {
     summaryModalInstance.hide();
-    await submitWorkflowLocally();
+    submitToJotform();
 }
 
 // =========================================================
