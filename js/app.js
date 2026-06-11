@@ -588,7 +588,7 @@ function renderDynamicForm(formName, targetContainerId) {
                     
                     <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">แนบรายละเอียดกิจกรรม <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
                     <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">แนบไฟล์เพิ่มเติม <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
-                    <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">ข้อความเสนอพิจารณา</label><textarea class="form-control border-light shadow-sm" rows="3" placeholder="ระบุรายละเอียดเพิ่มเติม..."></textarea></div>
+                    <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">ข้อความเสนอพิจารณา</label><textarea class="form-control border-light shadow-sm" rows="3" id="areaProposalNote" placeholder="ระบุรายละเอียดเพิ่มเติม..."></textarea></div>
                     <div class="col-12 mt-4">
                         <div class="form-check">
                             <input class="form-check-input border-ci-bluegrey" type="checkbox" id="consentCheck">
@@ -611,7 +611,7 @@ function renderDynamicForm(formName, targetContainerId) {
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">3. พื้นที่การศึกษา <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="contractCampus" onchange="onCampusChange()" disabled><option value="" selected disabled>-- เลือกพื้นที่การศึกษา --</option></select></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">4. อาคาร <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="contractBuilding" disabled><option value="" selected disabled>-- เลือกอาคาร --</option></select></div>
 
-                    <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">ข้อความเสนอพิจารณา</label><textarea class="form-control border-light shadow-sm" rows="3" placeholder="ระบุรายละเอียด หรือเหตุผลการเข้าพื้นที่..."></textarea></div>
+                    <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">ข้อความเสนอพิจารณา</label><textarea class="form-control border-light shadow-sm" rows="3" id="contractProposalNote" placeholder="ระบุรายละเอียด หรือเหตุผลการเข้าพื้นที่..."></textarea></div>
                     
                     <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">เอกสารแนบ <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
                     <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">แนบไฟล์แจ้งปัญหาการใช้บริการ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
@@ -775,14 +775,17 @@ function showSummaryModal() {
         addRow('วัตถุประสงค์', objs.join(', '));
         let locs = []; if(document.getElementById('loc1')?.checked) locs.push('อาคารจอดรถ 1 (S2)'); if(document.getElementById('loc2')?.checked) locs.push('โรงอาหาร (S14)'); if(document.getElementById('loc3')?.checked) locs.push(document.getElementById('locOtherText')?.value || 'อื่นๆ');
         addRow('สถานที่', locs.join(', '));
+        addRow('ข้อความเสนอพิจารณา', document.getElementById('areaProposalNote')?.value);
     }
     else if (currentSelectedForm === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') {
         addRow('ทะเบียนรถ', document.getElementById('in_contract_plate')?.value);
         addRow('วันที่เข้าพื้นที่', document.getElementById('in_contract_date')?.value);
         addRow('เวลา', (document.getElementById('in_contract_time_start')?.value || '') + " - " + (document.getElementById('in_contract_time_end')?.value || ''));
         addRow('บริษัท', document.getElementById('contractCompany')?.value);
+        addRow('ประเภทธุรกิจ', document.getElementById('contractBusinessType')?.value);
         addRow('พื้นที่การศึกษา', document.getElementById('contractCampus')?.value);
         addRow('อาคาร', document.getElementById('contractBuilding')?.value);
+        addRow('ข้อความเสนอพิจารณา', document.getElementById('contractProposalNote')?.value);
     }
     else if (currentSelectedForm === 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ') {
         let sel = document.getElementById('issueCategory');
@@ -893,6 +896,150 @@ function getRequesterDataForJotform() {
     };
 }
 
+// แปลงค่า <input type="date"> (YYYY-MM-DD) เป็น sub-field ของ JotForm datetime
+function dateFieldParts(qkey, isoDate) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((isoDate || '').trim());
+    if (!m) return {};
+    return { [`${qkey}[year]`]: m[1], [`${qkey}[month]`]: m[2], [`${qkey}[day]`]: m[3] };
+}
+
+// แปลงวันที่รูปแบบ DD/MM/YYYY (เช่น parkingEndDate ที่คำนวณอัตโนมัติ)
+function dateFieldPartsFromDMY(qkey, dmyDate) {
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((dmyDate || '').trim());
+    if (!m) return {};
+    return { [`${qkey}[year]`]: m[3], [`${qkey}[month]`]: m[2].padStart(2, '0'), [`${qkey}[day]`]: m[1].padStart(2, '0') };
+}
+
+// รายละเอียดคำขอรายฟอร์ม → ฟิลด์โครงสร้าง q35–q66 (ค่า array = ส่งซ้ำหลายค่า เช่น checkbox)
+function buildRequestDetailFields() {
+    const f = {};
+
+    if (currentLoginType === 'external' && document.getElementById('extType3')?.checked) {
+        f.q35_externalTypeOther = getInputValue('extTypeOther');
+    }
+
+    switch (currentSelectedForm) {
+        case 'แบบฟอร์มขอจอดรถรายเดือน': {
+            f.q41_vehiclePlate = getInputValue('in_monthly_plate');
+            Object.assign(f, dateFieldParts('q36_startDate', getInputValue('parkingStartDate')));
+            Object.assign(f, dateFieldPartsFromDMY('q37_endDate', getInputValue('parkingEndDate')));
+            if (currentLoginType === 'staff') {
+                const isOther = document.getElementById('monthlyForOther')?.checked;
+                f.q47_monthlyForWho = isOther ? 'ผู้อื่น' : 'ตนเอง';
+                if (isOther) {
+                    f.q48_actualUserName = getInputValue('monthlyOtherName');
+                    f.q49_actualUserPhone = getInputValue('monthlyOtherPhone');
+                    f.q50_actualUserEmail = getInputValue('monthlyOtherEmail');
+                }
+            }
+            break;
+        }
+        case 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)': {
+            f.q41_vehiclePlate = getInputValue('in_overnight_plate');
+            Object.assign(f, dateFieldParts('q36_startDate', getInputValue('overnightStartDate')));
+            Object.assign(f, dateFieldParts('q37_endDate', getInputValue('overnightEndDate')));
+            f.q40_totalDays = getInputValue('overnightTotalDays');
+            const reasonSel = document.getElementById('overnightReason');
+            f.q44_requestReason = reasonSel && reasonSel.value ? reasonSel.options[reasonSel.selectedIndex].text : '';
+            f.q45_requestDetail = getInputValue('in_overnight_detail');
+            if (document.getElementById('overnightMultipleCars')?.checked) {
+                const carCount = Number(document.getElementById('overnightCarCount')?.value || 0);
+                f.q43_vehicleCount = carCount ? String(carCount) : '';
+                const carLines = [];
+                for (let i = 1; i <= carCount; i++) {
+                    const line = `${getInputValue('overnightCarFirstName' + i)} ${getInputValue('overnightCarLastName' + i)} ${getInputValue('overnightCarPlate' + i)}`.trim();
+                    if (line) carLines.push(`คันที่ ${i}: ${line}`);
+                }
+                f.q42_vehicleList = carLines.join('\n');
+            } else {
+                f.q43_vehicleCount = '1';
+            }
+            break;
+        }
+        case 'แบบฟอร์มขอใช้ตราประทับ': {
+            f.q51_stampRequestFor = document.getElementById('stampForUnit')?.checked ? 'หน่วยงาน' : (document.getElementById('stampForProject') ? 'โครงการ' : '');
+            f.q52_stampProjectName = getInputValue('stampProjectUnitName');
+            f.q53_stampUserType = document.getElementById('in_stamp_type')?.value || '';
+            if (f.q53_stampUserType === 'อื่นๆ') {
+                f.q54_stampUserTypeOther = getInputValue('in_stamp_other');
+            }
+            Object.assign(f, dateFieldParts('q36_startDate', getInputValue('stampStartDate')));
+            Object.assign(f, dateFieldParts('q37_endDate', getInputValue('stampEndDate')));
+            f.q40_totalDays = getInputValue('stampTotalDays');
+            break;
+        }
+        case 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์': {
+            // path บุคลากร→IBGM ไม่ render ฟอร์มนี้ — ไม่มี element ก็ไม่ส่งฟิลด์
+            if (!document.getElementById('plateActionCount')) break;
+            const action = document.querySelector('input[name="plateAction"]:checked')?.value || '';
+            const plateCount = Math.min(5, Math.max(1, Number(document.getElementById('plateActionCount')?.value || 1)));
+            f.q55_plateAction = action;
+            f.q43_vehicleCount = String(plateCount);
+            const plateLines = [];
+            for (let i = 1; i <= plateCount; i++) {
+                if (action === 'แก้ไข') {
+                    const oldPlate = getInputValue('plateOld' + i);
+                    const newPlate = getInputValue('plateNew' + i);
+                    if (oldPlate || newPlate) plateLines.push(`คันที่ ${i}: เดิม ${oldPlate || '-'} → ใหม่ ${newPlate || '-'}`);
+                } else {
+                    const plate = getInputValue('plate' + i);
+                    if (plate) plateLines.push(`คันที่ ${i}: ${plate}`);
+                }
+            }
+            f.q42_vehicleList = plateLines.join('\n');
+            if (plateLines.length === 1 && action !== 'แก้ไข') {
+                f.q41_vehiclePlate = getInputValue('plate1');
+            }
+            break;
+        }
+        case 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว': {
+            f.q56_eventName = getInputValue('in_area_event');
+            f.q41_vehiclePlate = getInputValue('in_area_plate');
+            Object.assign(f, dateFieldParts('q36_startDate', getInputValue('areaStartDate')));
+            Object.assign(f, dateFieldParts('q37_endDate', getInputValue('areaEndDate')));
+            f.q38_startTime = getInputValue('areaStartTime');
+            f.q39_endTime = getInputValue('areaEndTime');
+            const objs = [];
+            if (document.getElementById('obj1')?.checked) objs.push('ประชาสัมพันธ์');
+            if (document.getElementById('obj2')?.checked) objs.push('แจกผลิตภัณฑ์');
+            if (document.getElementById('obj3')?.checked) {
+                objs.push('อื่นๆ');
+                f.q58_eventObjectiveOther = getInputValue('objOtherText');
+            }
+            if (objs.length) f['q57_eventObjectives[]'] = objs;
+            const locs = [];
+            if (document.getElementById('loc1')?.checked) locs.push('อาคารจอดรถ 1 (S2)');
+            if (document.getElementById('loc2')?.checked) locs.push('โรงอาหาร (S14)');
+            if (document.getElementById('loc3')?.checked) {
+                locs.push('อื่นๆ');
+                f.q60_eventLocationOther = getInputValue('locOtherText');
+            }
+            if (locs.length) f['q59_eventLocations[]'] = locs;
+            f.q46_considerationNote = getInputValue('areaProposalNote');
+            break;
+        }
+        case 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา': {
+            f.q41_vehiclePlate = getInputValue('in_contract_plate');
+            Object.assign(f, dateFieldParts('q36_startDate', getInputValue('in_contract_date')));
+            f.q38_startTime = getInputValue('in_contract_time_start');
+            f.q39_endTime = getInputValue('in_contract_time_end');
+            f.q61_contractCompany = getInputValue('contractCompany');
+            f.q62_contractBusinessType = getInputValue('contractBusinessType');
+            f.q63_contractCampus = getInputValue('contractCampus');
+            f.q64_contractBuilding = getInputValue('contractBuilding');
+            f.q46_considerationNote = getInputValue('contractProposalNote');
+            break;
+        }
+        case 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ': {
+            f.q65_issueCategory = document.getElementById('issueCategory')?.value || '';
+            f.q66_issueDetail = getInputValue('issueDetail');
+            break;
+        }
+    }
+
+    return f;
+}
+
 function buildJotformSubmissionFields() {
     const requester = getRequesterDataForJotform();
     const approverEmail = getTextValue('appEmail');
@@ -915,7 +1062,8 @@ function buildJotformSubmissionFields() {
         q29_input29: getInputValue('appPosition'),
         q30_input30: resolveApproverEmail(getInputValue('appName'), getInputValue('appPosition'), approverEmail),
         q31_input31: 'ใช่',
-        q32_summary: summaryText
+        q32_summary: summaryText,
+        ...buildRequestDetailFields()
     };
 }
 
@@ -981,7 +1129,11 @@ function submitToJotform(fieldOverrides = {}) {
     appendHiddenField(form, 'website', '');
 
     Object.entries({ ...buildJotformSubmissionFields(), ...fieldOverrides }).forEach(([name, value]) => {
-        appendHiddenField(form, name, value);
+        if (Array.isArray(value)) {
+            value.forEach(item => appendHiddenField(form, name, item));
+        } else {
+            appendHiddenField(form, name, value);
+        }
     });
     appendSelectedFiles(form);
 

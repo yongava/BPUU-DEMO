@@ -1,0 +1,223 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1812 652" font-family="-apple-system, 'Segoe UI', 'Noto Sans Thai', sans-serif">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#888780"/></marker></defs>
+<rect x="0" y="0" width="1812" height="652" fill="#FFFFFF"/>
+<text x="24" y="34" font-size="20" font-weight="600" fill="#2C2C2A">BPUU × JotForm — พิมพ์เขียว workflow รวมทุกประเภทคำขอ (รุ่นย่อ v1, 11 มิ.ย. 2026)</text>
+<text x="24" y="56" font-size="13" fill="#5F5E5A">ฟอร์มกลาง: Request Form (261200763585052) · เงื่อนไขแตกสายใช้ฟิลด์ q15 (ประเภทคำขอ) และ q16 (ประเภทผู้ใช้) · Deny ทุกกล่องอนุมัติ → กล่องแจ้งปฏิเสธท้ายสายของตัวเอง</text>
+<rect x="796.0" y="76" width="220" height="40" rx="5" fill="#F1EFE8" stroke="#888780" stroke-width="1.4"/>
+<text x="906.0" y="92.0" text-anchor="middle" font-size="12" font-weight="600" fill="#444441">Start: Request Form</text>
+<text x="906.0" y="109.0" text-anchor="middle" font-size="9.5" fill="#888780">submission จากหน้าเว็บ BPUU</text>
+<line x1="906.0" y1="116" x2="906.0" y2="132" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="776.0" y="134" width="260" height="40" rx="5" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1.4"/>
+<text x="906.0" y="150.0" text-anchor="middle" font-size="12" font-weight="600" fill="#2C2C2A">Branch 1: ประเภทคำขอ (q15)</text>
+<text x="906.0" y="167.0" text-anchor="middle" font-size="9.5" fill="#5F5E5A">แตก 7 สาย</text>
+<line x1="768.84" y1="174" x2="144.0" y2="190" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="24" y="196" width="240" height="416" rx="8" fill="#FAFAF7" stroke="#D3D1C7"/>
+<text x="144.0" y="220" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">1. จอดรถค้างคืน</text>
+<text x="144.0" y="238" text-anchor="middle" font-size="10" fill="#888780">q15 = "แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ…"</text>
+<text x="144.0" y="258" text-anchor="middle" font-size="10.5" fill="#534AB7">Branch 2: ผู้ขอ (q16)</text>
+<text x="86.0" y="270" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">บุคลากร</text>
+<rect x="32.0" y="278" width="108.0" height="44" rx="5" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.4"/>
+<text x="86.0" y="296.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#26215C">หัวหน้างานอนุมัติ</text>
+<text x="86.0" y="313.0" text-anchor="middle" font-size="8.0" fill="#534AB7">อีเมลจากฟิลด์ q30</text>
+<line x1="86.0" y1="322" x2="86.0" y2="336" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="32.0" y="338" width="108.0" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="86.0" y="356.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#04342C">BPUU Staff พิจารณา</text>
+<text x="86.0" y="373.0" text-anchor="middle" font-size="8.0" fill="#0F6E56">dev.codegym@gmail.com</text>
+<line x1="86.0" y1="382" x2="86.0" y2="396" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="32.0" y="398" width="108.0" height="44" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.4"/>
+<text x="86.0" y="416.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#042C53">BPUU Manager อนุมัติ</text>
+<text x="86.0" y="433.0" text-anchor="middle" font-size="8.0" fill="#185FA5">n.chotthanin@gmail.com</text>
+<line x1="86.0" y1="442" x2="86.0" y2="456" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="32.0" y="458" width="108.0" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="86.0" y="476.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404">แจ้งผลอนุมัติ</text>
+<text x="86.0" y="493.0" text-anchor="middle" font-size="8.0" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<text x="202.0" y="270" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">นักศึกษา + ภายนอก</text>
+<rect x="148.0" y="278" width="108.0" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="202.0" y="296.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#04342C">BPUU Staff พิจารณา</text>
+<text x="202.0" y="313.0" text-anchor="middle" font-size="8.0" fill="#0F6E56">dev.codegym@gmail.com</text>
+<line x1="202.0" y1="322" x2="202.0" y2="336" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="148.0" y="338" width="108.0" height="44" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.4"/>
+<text x="202.0" y="356.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#042C53">BPUU Manager อนุมัติ</text>
+<text x="202.0" y="373.0" text-anchor="middle" font-size="8.0" fill="#185FA5">n.chotthanin@gmail.com</text>
+<line x1="202.0" y1="382" x2="202.0" y2="396" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="148.0" y="398" width="108.0" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="202.0" y="416.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404">แจ้งผลอนุมัติ</text>
+<text x="202.0" y="433.0" text-anchor="middle" font-size="8.0" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<rect x="40" y="522" width="208" height="32" rx="5" fill="#FCEBEB" stroke="#A32D2D" stroke-width="1.4"/>
+<text x="144.0" y="542.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313">Deny จุดใดก็ตาม → แจ้งปฏิเสธ (q20)</text>
+<rect x="40" y="564" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="144.0" y="580.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">+ แจ้งยอด/QR → สลิป → ใบเสร็จ</text>
+<line x1="814.56" y1="174" x2="398.0" y2="190" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="278" y="196" width="240" height="416" rx="8" fill="#FAFAF7" stroke="#D3D1C7"/>
+<text x="398.0" y="220" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">2. จอดรถรายเดือน</text>
+<text x="398.0" y="238" text-anchor="middle" font-size="10" fill="#888780">q15 = "แบบฟอร์มขอจอดรถรายเดือน"</text>
+<rect x="294" y="260" width="208" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="398.0" y="278.0" text-anchor="middle" font-size="12" font-weight="600" fill="#04342C">BPUU Staff พิจารณา</text>
+<text x="398.0" y="295.0" text-anchor="middle" font-size="9.5" fill="#0F6E56">dev.codegym@gmail.com</text>
+<line x1="398.0" y1="304" x2="398.0" y2="318" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="294" y="320" width="208" height="44" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.4"/>
+<text x="398.0" y="338.0" text-anchor="middle" font-size="12" font-weight="600" fill="#042C53">BPUU Manager อนุมัติ</text>
+<text x="398.0" y="355.0" text-anchor="middle" font-size="9.5" fill="#185FA5">n.chotthanin@gmail.com</text>
+<line x1="398.0" y1="364" x2="398.0" y2="378" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="294" y="380" width="208" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="398.0" y="398.0" text-anchor="middle" font-size="12" font-weight="600" fill="#173404">แจ้งผลอนุมัติ</text>
+<text x="398.0" y="415.0" text-anchor="middle" font-size="9.5" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<rect x="294" y="444" width="208" height="32" rx="5" fill="#FCEBEB" stroke="#A32D2D" stroke-width="1.4"/>
+<text x="398.0" y="464.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313">Deny จุดใดก็ตาม → แจ้งปฏิเสธ (q20)</text>
+<rect x="294" y="486" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="398.0" y="502.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">+ QR/ชำระเงิน/ใบเสร็จ</text>
+<rect x="294" y="514" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="398.0" y="530.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">+ กรณีพิเศษ: สายรองอธิการบดี-อธิการบดี</text>
+<line x1="860.28" y1="174" x2="652.0" y2="190" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="532" y="196" width="240" height="416" rx="8" fill="#FAFAF7" stroke="#D3D1C7"/>
+<text x="652.0" y="220" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">3. ตราประทับ</text>
+<text x="652.0" y="238" text-anchor="middle" font-size="10" fill="#888780">q15 = "แบบฟอร์มขอใช้ตราประทับ"</text>
+<text x="652.0" y="258" text-anchor="middle" font-size="10.5" fill="#534AB7">Branch 2: ผู้ขอ (q16)</text>
+<text x="594.0" y="270" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">บุคลากร</text>
+<rect x="540.0" y="278" width="108.0" height="44" rx="5" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.4"/>
+<text x="594.0" y="296.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#26215C">หัวหน้างานอนุมัติ</text>
+<text x="594.0" y="313.0" text-anchor="middle" font-size="8.0" fill="#534AB7">อีเมลจากฟิลด์ q30</text>
+<line x1="594.0" y1="322" x2="594.0" y2="336" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="540.0" y="338" width="108.0" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="594.0" y="356.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#04342C">BPUU Staff พิจารณา</text>
+<text x="594.0" y="373.0" text-anchor="middle" font-size="8.0" fill="#0F6E56">dev.codegym@gmail.com</text>
+<line x1="594.0" y1="382" x2="594.0" y2="396" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="540.0" y="398" width="108.0" height="44" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.4"/>
+<text x="594.0" y="416.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#042C53">BPUU Manager อนุมัติ</text>
+<text x="594.0" y="433.0" text-anchor="middle" font-size="8.0" fill="#185FA5">n.chotthanin@gmail.com</text>
+<line x1="594.0" y1="442" x2="594.0" y2="456" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="540.0" y="458" width="108.0" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="594.0" y="476.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404">แจ้งผลอนุมัติ</text>
+<text x="594.0" y="493.0" text-anchor="middle" font-size="8.0" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<text x="710.0" y="270" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">นักศึกษา</text>
+<rect x="656.0" y="278" width="108.0" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="710.0" y="296.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#04342C">BPUU Staff พิจารณา</text>
+<text x="710.0" y="313.0" text-anchor="middle" font-size="8.0" fill="#0F6E56">dev.codegym@gmail.com</text>
+<line x1="710.0" y1="322" x2="710.0" y2="336" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="656.0" y="338" width="108.0" height="44" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.4"/>
+<text x="710.0" y="356.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#042C53">BPUU Manager อนุมัติ</text>
+<text x="710.0" y="373.0" text-anchor="middle" font-size="8.0" fill="#185FA5">n.chotthanin@gmail.com</text>
+<line x1="710.0" y1="382" x2="710.0" y2="396" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="656.0" y="398" width="108.0" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="710.0" y="416.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404">แจ้งผลอนุมัติ</text>
+<text x="710.0" y="433.0" text-anchor="middle" font-size="8.0" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<rect x="548" y="522" width="208" height="32" rx="5" fill="#FCEBEB" stroke="#A32D2D" stroke-width="1.4"/>
+<text x="652.0" y="542.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313">Deny จุดใดก็ตาม → แจ้งปฏิเสธ (q20)</text>
+<rect x="548" y="564" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="652.0" y="580.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">+ field 'ขอในนาม' ในฟอร์ม</text>
+<rect x="548" y="592" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="652.0" y="608.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">+ ในนามโครงการ: ข้ามหัวหน้า, เพิ่มรองฯ การเงิน</text>
+<rect x="548" y="620" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="652.0" y="636.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">+ ใบแจ้งหนี้ D365 หลังใช้งาน</text>
+<line x1="906.0" y1="174" x2="906.0" y2="190" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="786" y="196" width="240" height="416" rx="8" fill="#FAFAF7" stroke="#D3D1C7"/>
+<text x="906.0" y="220" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">4. ทะเบียนรถ</text>
+<text x="906.0" y="238" text-anchor="middle" font-size="10" fill="#888780">q15 = "แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบีย…"</text>
+<text x="906.0" y="258" text-anchor="middle" font-size="10.5" fill="#534AB7">Branch 2: ผู้ขอ (q16)</text>
+<text x="848.0" y="270" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">บุคลากร (ไป IBGM)</text>
+<rect x="794.0" y="278" width="108.0" height="44" rx="5" fill="#F1EFE8" stroke="#888780" stroke-width="1.4"/>
+<text x="848.0" y="296.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">บันทึกรับทราบ</text>
+<text x="848.0" y="313.0" text-anchor="middle" font-size="8.0" fill="#888780">แจ้ง BPUU Staff (FYI)</text>
+<line x1="848.0" y1="322" x2="848.0" y2="336" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="794.0" y="338" width="108.0" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="848.0" y="356.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404">จบ — ดำเนินการต่อใน IBGM</text>
+<text x="848.0" y="373.0" text-anchor="middle" font-size="8.0" fill="#3B6D11">ไม่มีการอนุมัติ</text>
+<text x="964.0" y="270" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">นักศึกษา</text>
+<rect x="910.0" y="278" width="108.0" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="964.0" y="296.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#04342C">BPUU Staff ตรวจสอบ</text>
+<text x="964.0" y="313.0" text-anchor="middle" font-size="8.0" fill="#0F6E56">อัปเดตฐาน Carpark</text>
+<line x1="964.0" y1="322" x2="964.0" y2="336" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="910.0" y="338" width="108.0" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="964.0" y="356.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404">แจ้งผลอนุมัติ</text>
+<text x="964.0" y="373.0" text-anchor="middle" font-size="8.0" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<rect x="802" y="402" width="208" height="32" rx="5" fill="#FCEBEB" stroke="#A32D2D" stroke-width="1.4"/>
+<text x="906.0" y="422.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313">Deny จุดใดก็ตาม → แจ้งปฏิเสธ (q20)</text>
+<line x1="951.72" y1="174" x2="1160.0" y2="190" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1040" y="196" width="240" height="416" rx="8" fill="#FAFAF7" stroke="#D3D1C7"/>
+<text x="1160.0" y="220" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">5. พื้นที่ชั่วคราว</text>
+<text x="1160.0" y="238" text-anchor="middle" font-size="10" fill="#888780">q15 = "แบบฟอร์มขอใช้พื้นที่ชั่วคราว"</text>
+<text x="1160.0" y="258" text-anchor="middle" font-size="10.5" fill="#534AB7">Branch 2: ผู้ขอ (q16)</text>
+<text x="1102.0" y="270" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">บุคลากร</text>
+<rect x="1048.0" y="278" width="108.0" height="44" rx="5" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.4"/>
+<text x="1102.0" y="296.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#26215C">หัวหน้างานอนุมัติ</text>
+<text x="1102.0" y="313.0" text-anchor="middle" font-size="8.0" fill="#534AB7">อีเมลจากฟิลด์ q30</text>
+<line x1="1102.0" y1="322" x2="1102.0" y2="336" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1048.0" y="338" width="108.0" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="1102.0" y="356.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#04342C">BPUU Staff พิจารณา</text>
+<text x="1102.0" y="373.0" text-anchor="middle" font-size="8.0" fill="#0F6E56">dev.codegym@gmail.com</text>
+<line x1="1102.0" y1="382" x2="1102.0" y2="396" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1048.0" y="398" width="108.0" height="44" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.4"/>
+<text x="1102.0" y="416.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#042C53">BPUU Manager อนุมัติ</text>
+<text x="1102.0" y="433.0" text-anchor="middle" font-size="8.0" fill="#185FA5">n.chotthanin@gmail.com</text>
+<line x1="1102.0" y1="442" x2="1102.0" y2="456" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1048.0" y="458" width="108.0" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="1102.0" y="476.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404">แจ้งผลอนุมัติ</text>
+<text x="1102.0" y="493.0" text-anchor="middle" font-size="8.0" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<text x="1218.0" y="270" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">นักศึกษา + ภายนอก</text>
+<rect x="1164.0" y="278" width="108.0" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="1218.0" y="296.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#04342C">BPUU Staff พิจารณา</text>
+<text x="1218.0" y="313.0" text-anchor="middle" font-size="8.0" fill="#0F6E56">dev.codegym@gmail.com</text>
+<line x1="1218.0" y1="322" x2="1218.0" y2="336" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1164.0" y="338" width="108.0" height="44" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.4"/>
+<text x="1218.0" y="356.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#042C53">BPUU Manager อนุมัติ</text>
+<text x="1218.0" y="373.0" text-anchor="middle" font-size="8.0" fill="#185FA5">n.chotthanin@gmail.com</text>
+<line x1="1218.0" y1="382" x2="1218.0" y2="396" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1164.0" y="398" width="108.0" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="1218.0" y="416.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#173404">แจ้งผลอนุมัติ</text>
+<text x="1218.0" y="433.0" text-anchor="middle" font-size="8.0" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<rect x="1056" y="522" width="208" height="32" rx="5" fill="#FCEBEB" stroke="#A32D2D" stroke-width="1.4"/>
+<text x="1160.0" y="542.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313">Deny จุดใดก็ตาม → แจ้งปฏิเสธ (q20)</text>
+<rect x="1056" y="564" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="1160.0" y="580.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">+ รองอธิการบดีการเงิน (สายบุคลากร)</text>
+<rect x="1056" y="592" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="1160.0" y="608.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">+ QR/ชำระเงิน/ใบเสร็จ (กรณีมีค่าใช้จ่าย)</text>
+<line x1="997.44" y1="174" x2="1414.0" y2="190" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1294" y="196" width="240" height="416" rx="8" fill="#FAFAF7" stroke="#D3D1C7"/>
+<text x="1414.0" y="220" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">6. เข้าพื้นที่คู่สัญญา</text>
+<text x="1414.0" y="238" text-anchor="middle" font-size="10" fill="#888780">q15 = "แบบฟอร์มขอเข้าพื้นที่คู่สัญญา"</text>
+<rect x="1310" y="260" width="208" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="1414.0" y="278.0" text-anchor="middle" font-size="12" font-weight="600" fill="#04342C">BPUU Staff พิจารณา</text>
+<text x="1414.0" y="295.0" text-anchor="middle" font-size="9.5" fill="#0F6E56">dev.codegym@gmail.com</text>
+<line x1="1414.0" y1="304" x2="1414.0" y2="318" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1310" y="320" width="208" height="44" rx="5" fill="#E6F1FB" stroke="#185FA5" stroke-width="1.4"/>
+<text x="1414.0" y="338.0" text-anchor="middle" font-size="12" font-weight="600" fill="#042C53">BPUU Manager อนุมัติ</text>
+<text x="1414.0" y="355.0" text-anchor="middle" font-size="9.5" fill="#185FA5">n.chotthanin@gmail.com</text>
+<line x1="1414.0" y1="364" x2="1414.0" y2="378" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1310" y="380" width="208" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="1414.0" y="398.0" text-anchor="middle" font-size="12" font-weight="600" fill="#173404">แจ้งผลอนุมัติ</text>
+<text x="1414.0" y="415.0" text-anchor="middle" font-size="9.5" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<rect x="1310" y="444" width="208" height="32" rx="5" fill="#FCEBEB" stroke="#A32D2D" stroke-width="1.4"/>
+<text x="1414.0" y="464.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313">Deny จุดใดก็ตาม → แจ้งปฏิเสธ (q20)</text>
+<rect x="1310" y="486" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="1414.0" y="502.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">+ ผู้ดูแลพื้นที่ตรวจสอบวันที่</text>
+<rect x="1310" y="514" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="1414.0" y="530.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">เฉพาะบุคคลภายนอก (Vendor)</text>
+<line x1="1043.16" y1="174" x2="1668.0" y2="190" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1548" y="196" width="240" height="416" rx="8" fill="#FAFAF7" stroke="#D3D1C7"/>
+<text x="1668.0" y="220" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">7. แจ้งปัญหา</text>
+<text x="1668.0" y="238" text-anchor="middle" font-size="10" fill="#888780">q15 = "แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ"</text>
+<text x="1668.0" y="252" text-anchor="middle" font-size="10.5" font-weight="600" fill="#444441">ทุกประเภทผู้ขอ</text>
+<rect x="1564" y="260" width="208" height="44" rx="5" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1.4"/>
+<text x="1668.0" y="278.0" text-anchor="middle" font-size="12" font-weight="600" fill="#04342C">BPUU Staff รับเรื่อง</text>
+<text x="1668.0" y="295.0" text-anchor="middle" font-size="9.5" fill="#0F6E56">แก้ไขปัญหา</text>
+<line x1="1668.0" y1="304" x2="1668.0" y2="318" stroke="#888780" stroke-width="1.3" marker-end="url(#ar)"/>
+<rect x="1564" y="320" width="208" height="44" rx="5" fill="#EAF3DE" stroke="#3B6D11" stroke-width="1.4"/>
+<text x="1668.0" y="338.0" text-anchor="middle" font-size="12" font-weight="600" fill="#173404">แจ้งสรุปผล</text>
+<text x="1668.0" y="355.0" text-anchor="middle" font-size="9.5" fill="#3B6D11">อีเมลผู้ขอ q20</text>
+<rect x="1564" y="384" width="208" height="32" rx="5" fill="#FCEBEB" stroke="#A32D2D" stroke-width="1.4"/>
+<text x="1668.0" y="404.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#501313">Deny จุดใดก็ตาม → แจ้งปฏิเสธ (q20)</text>
+<rect x="1564" y="426" width="208" height="24" rx="5" fill="#FAEEDA" stroke="#854F0B" stroke-width="1.4" stroke-dasharray="5 4"/>
+<text x="1668.0" y="442.0" text-anchor="middle" font-size="10" font-weight="600" fill="#412402">ไม่มีขั้น Manager</text>
+<rect x="24" y="614" width="14" height="14" rx="3" fill="#EEEDFE" stroke="#534AB7"/>
+<text x="44" y="626" font-size="12" fill="#444441">หัวหน้างาน (อีเมล dynamic จาก q30)</text>
+<rect x="294.8" y="614" width="14" height="14" rx="3" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="314.8" y="626" font-size="12" fill="#444441">BPUU Staff</text>
+<rect x="392.8" y="614" width="14" height="14" rx="3" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="412.8" y="626" font-size="12" fill="#444441">BPUU Manager</text>
+<rect x="505.20000000000005" y="614" width="14" height="14" rx="3" fill="#EAF3DE" stroke="#3B6D11"/>
+<text x="525.2" y="626" font-size="12" fill="#444441">แจ้งผล/จบ</text>
+<rect x="596.0" y="614" width="14" height="14" rx="3" fill="#FCEBEB" stroke="#A32D2D"/>
+<text x="616.0" y="626" font-size="12" fill="#444441">ปฏิเสธ</text>
+<rect x="665.2" y="614" width="14" height="14" rx="3" fill="#FAEEDA" stroke="#854F0B"/>
+<text x="685.2" y="626" font-size="12" fill="#444441">Phase 2 (ยังไม่สร้าง)</text>
+</svg>
