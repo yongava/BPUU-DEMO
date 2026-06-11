@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BPUU Admin — ติดตามคำขอ</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-ci-bluegrey mb-3 shadow-sm">
+    <div class="container-fluid px-4 py-1 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <span class="navbar-brand mb-0 h1"><i class="bi bi-clipboard-data me-2"></i>BPUU Admin — ติดตามคำขอ</span>
+        <div class="d-flex gap-2">
+            <a class="btn btn-light btn-sm fw-bold" target="_blank" id="tablesLink"><i class="bi bi-table me-1"></i>เปิด JotForm Tables</a>
+            <a class="btn btn-light btn-sm fw-bold" target="_blank" id="inboxLink"><i class="bi bi-inbox me-1"></i>เปิด Inbox อนุมัติ</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container-fluid px-4 pb-5">
+
+    <div class="alert alert-warning small py-2 mb-3">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+        <strong>โหมดเดโม่:</strong> หน้านี้ฝัง API key ไว้ในตัวเว็บ ใครเข้าถึงหน้านี้ได้ = อ่าน/แก้ข้อมูลทุกคำขอได้ — ก่อนใช้งานจริงต้องย้าย key ไปฝั่งเซิร์ฟเวอร์ (proxy) และ revoke key ชุดนี้
+    </div>
+
+    <div id="statusChips" class="d-flex flex-wrap gap-2 mb-3"></div>
+
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item"><button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#tabRequests">คำขอทั้งหมด</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#tabSlips">สลิปชำระเงิน</button></li>
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="tabRequests">
+            <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+                <select id="filterType" class="form-select form-select-sm" style="max-width: 320px;">
+                    <option value="">ทุกประเภทคำขอ</option>
+                </select>
+                <select id="filterStatus" class="form-select form-select-sm" style="max-width: 220px;">
+                    <option value="">ทุกสถานะ</option>
+                </select>
+                <input id="searchBox" class="form-control form-control-sm" style="max-width: 240px;" placeholder="ค้นหา ชื่อ / เลขอ้างอิง">
+                <button class="btn btn-sm btn-ci-orange fw-bold" onclick="loadRequests()"><i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช</button>
+                <span id="loadInfo" class="small text-ci-bluegrey"></span>
+            </div>
+            <div class="table-responsive bg-white rounded shadow-sm">
+                <table class="table table-hover align-middle small mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>วันที่</th><th>เลขอ้างอิง</th><th>ประเภทคำขอ</th><th>ผู้ขอ</th><th class="text-end">ยอด (บาท)</th><th style="min-width: 230px;">สถานะดำเนินการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requestRows"><tr><td colspan="6" class="text-center text-muted py-4">กำลังโหลด...</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="tabSlips">
+            <div class="d-flex gap-2 mb-3 align-items-center">
+                <button class="btn btn-sm btn-ci-orange fw-bold" onclick="loadSlips()"><i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช</button>
+                <span class="small text-ci-bluegrey">สลิปที่ส่งเข้ามาจากฟอร์มชำระเงิน — กดเปิดดูรูปแล้วไปกดยืนยันใน Inbox ของฟอร์มสลิป</span>
+            </div>
+            <div class="table-responsive bg-white rounded shadow-sm">
+                <table class="table table-hover align-middle small mb-0">
+                    <thead class="table-light">
+                        <tr><th>วันที่ส่ง</th><th>เลขอ้างอิงคำขอ</th><th class="text-end">ยอดที่โอน</th><th>ผู้โอน</th><th>อีเมล</th><th>วันที่โอน</th><th>สลิป</th></tr>
+                    </thead>
+                    <tbody id="slipRows"><tr><td colspan="7" class="text-center text-muted py-4">กด รีเฟรช เพื่อโหลด</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1080;"><div id="toast" class="toast align-items-center text-white bg-success border-0"><div class="d-flex"><div class="toast-body fw-bold" id="toastBody"></div></div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ⚠️ DEMO ONLY: คีย์นี้มองเห็นได้จาก view-source — ก่อน production ต้องย้ายไป proxy แล้ว revoke
+const API_KEY = 'f2859b70cdc0b435d6959163054a72f0';
+const MAIN_FORM_ID = '261200763585052';
+const SLIP_FORM_ID = '261612807326455';
+const API = 'https://api.jotform.com';
+const STATUS_QID = '68';
+const STATUS_OPTIONS = ['รอพิจารณา', 'แจ้งยอดแล้ว-รอสลิป', 'ชำระแล้ว-รอใบเสร็จ', 'เสร็จสิ้น', 'ไม่อนุมัติ/ยกเลิก'];
+const STATUS_COLORS = { 'รอพิจารณา': 'secondary', 'แจ้งยอดแล้ว-รอสลิป': 'warning', 'ชำระแล้ว-รอใบเสร็จ': 'info', 'เสร็จสิ้น': 'success', 'ไม่อนุมัติ/ยกเลิก': 'danger' };
+
+document.getElementById('tablesLink').href = `https://www.jotform.com/tables/${MAIN_FORM_ID}`;
+document.getElementById('inboxLink').href = `https://www.jotform.com/inbox/${MAIN_FORM_ID}`;
+
+let allRequests = [];
+
+function ans(sub, qid) {
+    const a = sub.answers && sub.answers[qid] && sub.answers[qid].answer;
+    if (a == null) return '';
+    if (typeof a === 'object') return a.datetime || a.prettyFormat || JSON.stringify(a);
+    return String(a);
+}
+
+async function loadRequests() {
+    document.getElementById('loadInfo').textContent = 'กำลังโหลด...';
+    try {
+        const r = await fetch(`${API}/form/${MAIN_FORM_ID}/submissions?apiKey=${API_KEY}&limit=200&orderby=created_at`).then(x => x.json());
+        allRequests = (r.content || []).filter(s => s.status !== 'DELETED');
+        renderRequests();
+        document.getElementById('loadInfo').textContent = `ทั้งหมด ${allRequests.length} รายการ`;
+    } catch (e) {
+        document.getElementById('requestRows').innerHTML = `<tr><td colspan="6" class="text-danger text-center py-4">โหลดไม่สำเร็จ: ${e.message}</td></tr>`;
+        document.getElementById('loadInfo').textContent = '';
+    }
+}
+
+function renderRequests() {
+    const fType = document.getElementById('filterType').value;
+    const fStatus = document.getElementById('filterStatus').value;
+    const q = document.getElementById('searchBox').value.trim().toLowerCase();
+    const rows = allRequests.filter(s => {
+        const type = ans(s, '15'), status = ans(s, '68') || 'รอพิจารณา';
+        const hay = `${s.id} ${ans(s, '19')} ${ans(s, '20')}`.toLowerCase();
+        return (!fType || type === fType) && (!fStatus || status === fStatus) && (!q || hay.includes(q));
+    });
+    const chipCounts = {};
+    allRequests.forEach(s => { const st = ans(s, '68') || 'รอพิจารณา'; chipCounts[st] = (chipCounts[st] || 0) + 1; });
+    document.getElementById('statusChips').innerHTML = STATUS_OPTIONS
+        .map(st => `<span class="badge rounded-pill text-bg-${STATUS_COLORS[st]} py-2 px-3">${st} : ${chipCounts[st] || 0}</span>`).join('');
+
+    document.getElementById('requestRows').innerHTML = rows.length ? rows.map(s => {
+        const status = ans(s, '68') || 'รอพิจารณา';
+        const fee = ans(s, '67');
+        const opts = STATUS_OPTIONS.map(o => `<option ${o === status ? 'selected' : ''}>${o}</option>`).join('');
+        return `<tr>
+            <td class="text-nowrap">${(s.created_at || '').slice(0, 16)}</td>
+            <td><code>${s.id}</code></td>
+            <td style="max-width: 260px;">${ans(s, '15')}</td>
+            <td>${ans(s, '19') || '—'}<div class="text-muted">${ans(s, '16')}</div></td>
+            <td class="text-end fw-bold">${fee ? Number(fee).toLocaleString('th-TH') : '—'}</td>
+            <td><div class="d-flex gap-1">
+                <select class="form-select form-select-sm" id="st-${s.id}">${opts}</select>
+                <button class="btn btn-sm btn-ci-orange fw-bold" onclick="saveStatus('${s.id}')">บันทึก</button>
+            </div></td>
+        </tr>`;
+    }).join('') : '<tr><td colspan="6" class="text-center text-muted py-4">ไม่พบรายการตามเงื่อนไข</td></tr>';
+}
+
+async function saveStatus(sid) {
+    const value = document.getElementById(`st-${sid}`).value;
+    const btn = document.querySelector(`#st-${sid} + button`);
+    btn.disabled = true;
+    try {
+        const body = new URLSearchParams();
+        body.set(`submission[${STATUS_QID}]`, value);
+        const r = await fetch(`${API}/submission/${sid}?apiKey=${API_KEY}`, { method: 'POST', body }).then(x => x.json()).catch(() => null);
+        const verify = await fetch(`${API}/submission/${sid}?apiKey=${API_KEY}`).then(x => x.json());
+        const saved = verify.content && verify.content.answers && verify.content.answers[STATUS_QID] && verify.content.answers[STATUS_QID].answer === value;
+        showToast(saved ? `บันทึกสถานะ "${value}" แล้ว` : 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง', saved);
+        if (saved) { const item = allRequests.find(s => s.id === sid); if (item) { item.answers[STATUS_QID] = item.answers[STATUS_QID] || {}; item.answers[STATUS_QID].answer = value; } renderRequests(); }
+    } catch (e) {
+        showToast('บันทึกไม่สำเร็จ: ' + e.message, false);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function loadSlips() {
+    document.getElementById('slipRows').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">กำลังโหลด...</td></tr>';
+    try {
+        const r = await fetch(`${API}/form/${SLIP_FORM_ID}/submissions?apiKey=${API_KEY}&limit=200&orderby=created_at`).then(x => x.json());
+        const subs = (r.content || []).filter(s => s.status !== 'DELETED');
+        document.getElementById('slipRows').innerHTML = subs.length ? subs.map(s => {
+            let files = s.answers && s.answers['7'] && s.answers['7'].answer;
+            if (typeof files === 'string') files = [files];
+            const links = (files || []).map((u, i) => `<a href="${u}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-receipt"></i> เปิดสลิป ${i + 1}</a>`).join(' ');
+            return `<tr>
+                <td class="text-nowrap">${(s.created_at || '').slice(0, 16)}</td>
+                <td><code>${ans(s, '2')}</code></td>
+                <td class="text-end fw-bold">${ans(s, '3') ? Number(ans(s, '3')).toLocaleString('th-TH') : '—'}</td>
+                <td>${ans(s, '4')}</td>
+                <td>${ans(s, '5')}</td>
+                <td class="text-nowrap">${ans(s, '6').slice(0, 10)}</td>
+                <td>${links || '—'}</td>
+            </tr>`;
+        }).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">ยังไม่มีสลิปส่งเข้ามา</td></tr>';
+    } catch (e) {
+        document.getElementById('slipRows').innerHTML = `<tr><td colspan="7" class="text-danger text-center py-4">โหลดไม่สำเร็จ: ${e.message}</td></tr>`;
+    }
+}
+
+function showToast(msg, ok) {
+    const t = document.getElementById('toast');
+    t.classList.toggle('bg-success', ok !== false);
+    t.classList.toggle('bg-danger', ok === false);
+    document.getElementById('toastBody').textContent = msg;
+    bootstrap.Toast.getOrCreateInstance(t, { delay: 2500 }).show();
+}
+
+const TYPE_OPTIONS = ['แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)', 'แบบฟอร์มขอจอดรถรายเดือน', 'แบบฟอร์มขอใช้ตราประทับ', 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์', 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว', 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา', 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ'];
+document.getElementById('filterType').innerHTML += TYPE_OPTIONS.map(t => `<option>${t}</option>`).join('');
+document.getElementById('filterStatus').innerHTML += STATUS_OPTIONS.map(t => `<option>${t}</option>`).join('');
+['filterType', 'filterStatus'].forEach(id => document.getElementById(id).addEventListener('change', renderRequests));
+document.getElementById('searchBox').addEventListener('input', renderRequests);
+
+loadRequests();
+</script>
+</body>
+</html>

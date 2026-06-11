@@ -49,3 +49,25 @@
 - เส้นใหม่จะมีป้ายเทา **"Select Branch"** — คลิกป้าย (บางจังหวะต้องคลิก 2 ครั้ง) แล้วเลือกสาขา/Approve/Deny ระบบ save อัตโนมัติทันที
 - มุมขวาบนไม่มีแบนเนอร์แดง **"1 Problem"** = ทุกเส้นผูกสาขาครบแล้ว
 - ปุ่มซ้ายล่าง (ใต้ปุ่มซูม) = fit view ดูทั้งกราฟ
+
+## D. วงชำระเงิน (อัปเดต 11 มิ.ย. 2026 — ของฝั่งเว็บสร้างเสร็จแล้ว เหลือต่อ workflow)
+
+ของที่มีแล้ว: ฟิลด์ `q67 estimatedFee` (ยอดประเมิน คำนวณอัตโนมัติ 400×คัน×คืน ตอน submit ค้างคืน), `q68 opStatus` (สถานะดำเนินการ),
+**ฟอร์มสลิป `261612807326455`** (refId/paidAmount/payerName/payerEmail/paidAt/slipFile), หน้า `payment.html?ref=&amount=` (QR placeholder — วางรูปจริงที่ `assets/payment-qr.png` แล้วใช้เองอัตโนมัติ), หน้า `admin.html` (ดู+เปลี่ยนสถานะ)
+
+### D1. สร้าง workflow ของฟอร์มสลิป
+1. myworkflows → Create Workflow → Start from form → เลือก "BPUU — แนบสลิปชำระเงิน"
+2. Approval "BPUU Staff ตรวจสลิป" → approver `dev.codegym@gmail.com`
+3. เส้น **Approve** → Email ถึงฟิลด์ *อีเมลสำหรับรับใบเสร็จ* เรื่อง `ยืนยันรับชำระค่าบริการ` → ใน email element เปิดแนบ **PDF ของ submission** เป็นหลักฐานรับชำระ
+4. เส้น **Deny** → Email ถึงฟิลด์เดียวกัน เรื่อง `สลิปไม่ถูกต้อง กรุณาส่งใหม่` ใส่ลิงก์ `https://form.jotform.com/261612807326455?refId={refId}` (วนส่งใหม่ได้ไม่จำกัด)
+
+### D2. ปรับสายค้างคืนใน workflow หลัก
+1. สายค้างคืนต้องใช้กล่อง Staff/Manager **แยกของตัวเอง** (ห้ามแชร์กับสายอื่น เพราะ Deny ของสายนี้ = เรียกเก็บเงิน ไม่ใช่ปฏิเสธ)
+2. ใน settings ของกล่องอนุมัติ เปลี่ยนข้อความปุ่ม: Approve → `อนุมัติ (ยกเว้นค่าบริการ)`, Deny → `ไม่เข้าเงื่อนไข (เรียกเก็บค่าบริการ)`
+3. เส้น Deny (ทั้ง Staff และ Manager ของสายนี้) → Email "แจ้งยอดชำระ" ถึง *อีเมลผู้ยื่นคำขอ* เนื้อหา:
+   `ยอดค่าบริการ {estimatedFee} บาท · ชำระและแนบสลิปที่ SITE_URL/payment.html?ref={id}&amount={estimatedFee}`
+   ({id} = Submission ID placeholder ของ JotForm, SITE_URL = โดเมนจริงตอน deploy)
+4. staff กดส่งอีเมลแจ้งยอดแล้ว → เข้า `admin.html` เปลี่ยนสถานะรายการนั้นเป็น `แจ้งยอดแล้ว-รอสลิป` (และอัปเดตเป็นขั้นถัดไปเมื่อสลิปผ่าน/ออกใบเสร็จ)
+
+### หมายเหตุ security (โหมดเดโม่)
+`admin.html` ฝัง API key ไว้ฝั่งหน้าเว็บ — ใช้ได้เฉพาะช่วงข้อมูลทดสอบ ก่อน production: ย้าย key ไป proxy (Apps Script/Netlify Function) แล้ว **revoke key ที่ jotform.com/myaccount/api**
