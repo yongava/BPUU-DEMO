@@ -184,7 +184,25 @@ function goHome() {
 function logout() {
     currentLoginType = "";
     globalUserData = null;
+    clearRequesterAndApproverState();
     switchView('initialUserTypeView');
+}
+
+// ล้างข้อมูลผู้ขอ/ผู้อนุมัติค้างจาก session ก่อนหน้า — กันข้อมูลคนเก่าติดไปกับ submission ถัดไป
+function clearRequesterAndApproverState() {
+    clearValidationMarks();
+    ['appName', 'appPosition', 'reqEmpId', 'reqName', 'reqEmail', 'reqPhone', 'reqDeptCode', 'reqPosition',
+     'reqInternalPhone', 'reqStatus', 'reqFaculty', 'reqMajor',
+     'extFname', 'extLname', 'extCompany', 'extPhone', 'extEmail', 'extTypeOther'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    const appEmail = document.getElementById('appEmail');
+    if (appEmail) appEmail.innerText = '';
+    ['extType1', 'extType2', 'extType3'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = false;
+    });
 }
 
 function setExternalUser() {
@@ -341,6 +359,7 @@ function setApprover(id, name, pos, email) {
 function renderDynamicForm(formName, targetContainerId) {
     // ล้างทั้งสอง container เสมอ — id ในเทมเพลตซ้ำกันข้ามมุมมอง (เช่น consentCheck)
     // ถ้าปล่อยค้าง getElementById จะหยิบค่าของผู้ใช้คนก่อนไปใส่ summary/consent
+    clearValidationMarks();
     document.getElementById('dynamicFormSection').innerHTML = "";
     document.getElementById('dynamicExternalFormSection').innerHTML = "";
     const container = document.getElementById(targetContainerId);
@@ -640,25 +659,232 @@ function renderDynamicForm(formName, targetContainerId) {
                     <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">เลือกกลุ่มของปัญหาที่แจ้ง <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="issueCategory"><option value="" selected disabled>-- กรุณาเลือกสถานที่/กลุ่มปัญหา --</option><option value="ตลาดนัด">ตลาดนัด</option><option value="โรงอาหาร">โรงอาหาร</option><option value="อาคารจอดรถ">อาคารจอดรถ</option><option value="อื่นๆ">อื่นๆ</option></select></div>
                     <div class="col-md-12 mt-3"><label class="form-label text-ci-bluegrey fw-bold small">รายละเอียดปัญหาที่พบ <span class="req-star">*</span></label><textarea class="form-control border-light shadow-sm" id="issueDetail" rows="4"></textarea></div>
                     <div class="col-md-12 mt-3"><label class="form-label text-ci-bluegrey fw-bold small">แนบรูปภาพ หรือ เอกสารเพิ่มเติม <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="file" class="form-control border-light shadow-sm" accept="image/*,.pdf,.mp4"></div>
-                    <input type="hidden" id="consentCheck" value="checked"> 
+                    <div class="col-12 mt-4">
+                        <div class="form-check">
+                            <input class="form-check-input border-ci-bluegrey" type="checkbox" id="consentCheck">
+                            <label class="form-check-label fw-bold text-dark" for="consentCheck">รับทราบและตกลงให้ความยินยอม (Consent)</label>
+                        </div>
+                    </div>
                 </div>`;
             break;
     }
     container.innerHTML = formHTML;
+    // กันเลือกวันที่ย้อนหลังตั้งแต่ตัวปฏิทิน (ตรวจซ้ำอีกชั้นใน validateCurrentForm)
+    container.querySelectorAll('input[type="date"]').forEach(input => { input.min = getLocalTodayISO(); });
     if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์') {
         window.renderPlateActionFields();
     }
 }
 
 // =========================================================
+// Validation ฝั่งเว็บ — ตรวจทุกฟิลด์ก่อนเปิดหน้าสรุป
+// =========================================================
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function getLocalTodayISO() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function clearValidationMarks() {
+    document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    document.querySelectorAll('.bpuu-error-msg').forEach(el => el.remove());
+}
+
+function getDynamicFormContainer() {
+    const inner = document.getElementById('dynamicFormSection');
+    return inner && inner.innerHTML.trim() ? inner : document.getElementById('dynamicExternalFormSection');
+}
+
+function validateCurrentForm() {
+    clearValidationMarks();
+    const errors = [];
+    const byId = id => document.getElementById(id);
+    const val = id => (byId(id)?.value || '').trim();
+    const fail = (target, msg) => {
+        const el = typeof target === 'string' ? byId(target) : target;
+        if (el) errors.push({ el, msg });
+    };
+    const need = (id, label) => { if (byId(id) && !val(id)) fail(id, `กรุณากรอก${label}`); };
+    const needPick = (id, label) => { if (byId(id) && !val(id)) fail(id, `กรุณาเลือก${label}`); };
+    const needEmail = (id, label, required) => {
+        if (!byId(id)) return;
+        const v = val(id);
+        if (!v) { if (required) fail(id, `กรุณากรอก${label}`); return; }
+        if (!EMAIL_PATTERN.test(v)) fail(id, `รูปแบบ${label}ไม่ถูกต้อง`);
+    };
+    const needPhone = (id, label, required) => {
+        if (!byId(id)) return;
+        const digits = val(id).replace(/\D/g, '');
+        if (!digits) { if (required) fail(id, `กรุณากรอก${label}`); return; }
+        if (!/^0\d{8,9}$/.test(digits)) fail(id, `${label}ต้องเป็นเบอร์โทรไทย 9-10 หลัก ขึ้นต้นด้วย 0`);
+    };
+    const needFile = (input, label) => {
+        if (input && (!input.files || input.files.length === 0)) fail(input, `กรุณาแนบ${label}`);
+    };
+    const needFutureDate = (id, label) => {
+        const v = val(id);
+        if (v && v < getLocalTodayISO()) fail(id, `${label}ต้องไม่เป็นวันที่ย้อนหลัง`);
+    };
+    const needDateOrder = (startId, endId) => {
+        const s = val(startId), e = val(endId);
+        if (s && e && e < s) fail(endId, 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น');
+    };
+    const needTimeOrder = (dateStartId, dateEndId, timeStartId, timeEndId) => {
+        const sameDay = !dateEndId || (val(dateStartId) && val(dateStartId) === val(dateEndId));
+        if (sameDay && val(timeStartId) && val(timeEndId) && val(timeEndId) <= val(timeStartId)) {
+            fail(timeEndId, 'เวลาสิ้นสุดต้องหลังเวลาเริ่มต้น');
+        }
+    };
+
+    // ---------- ข้อมูลผู้ติดต่อ ----------
+    if (currentLoginType === 'external') {
+        need('extFname', 'ชื่อ');
+        need('extLname', 'นามสกุล');
+        need('extCompany', 'หน่วยงาน/บริษัท');
+        needPhone('extPhone', 'เบอร์โทรศัพท์', true);
+        needEmail('extEmail', 'อีเมล', true);
+        const typeSection = byId('divExtType');
+        if (typeSection && typeSection.style.display !== 'none') {
+            const picked = byId('extType1')?.checked || byId('extType2')?.checked || byId('extType3')?.checked;
+            if (!picked) fail(typeSection, 'กรุณาเลือกประเภทผู้ขอ');
+            if (byId('extType3')?.checked && !val('extTypeOther')) fail('extTypeOther', 'กรุณาระบุประเภทผู้ขอ');
+        }
+    } else if (currentLoginType) {
+        needPhone('reqPhone', 'เบอร์โทรติดต่อ', true);
+        needEmail('reqEmail', 'อีเมล', true);
+    }
+
+    // ---------- รายละเอียดคำขอรายฟอร์ม ----------
+    const dyn = getDynamicFormContainer();
+    const files = dyn ? [...dyn.querySelectorAll('input[type="file"]')] : [];
+
+    switch (currentSelectedForm) {
+        case 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)': {
+            need('in_overnight_plate', 'ข้อมูลรถ');
+            if (byId('overnightMultipleCars')?.checked) {
+                const carCount = Number(val('overnightCarCount') || 0);
+                for (let i = 1; i <= carCount; i++) {
+                    need(`overnightCarFirstName${i}`, `ชื่อ (คันที่ ${i})`);
+                    need(`overnightCarLastName${i}`, `สกุล (คันที่ ${i})`);
+                    need(`overnightCarPlate${i}`, `ทะเบียนรถ (คันที่ ${i})`);
+                }
+            }
+            need('overnightStartDate', 'วันที่เริ่มต้น');
+            need('overnightEndDate', 'วันที่สิ้นสุด');
+            needFutureDate('overnightStartDate', 'วันที่เริ่มต้น');
+            needDateOrder('overnightStartDate', 'overnightEndDate');
+            needPick('overnightReason', 'เหตุผลการขอจอด');
+            if (val('overnightReason')) {
+                need('in_overnight_detail', 'รายละเอียดเพิ่มเติม');
+                const fileDiv = byId('divReasonFile');
+                if (fileDiv && fileDiv.style.display !== 'none') {
+                    needFile(fileDiv.querySelector('input[type="file"]'), 'เอกสารประกอบการพิจารณา');
+                }
+            }
+            break;
+        }
+        case 'แบบฟอร์มขอจอดรถรายเดือน': {
+            if (byId('monthlyForOther')?.checked) {
+                need('monthlyOtherName', 'ชื่อ-สกุล ผู้ใช้บริการจริง');
+                needPhone('monthlyOtherPhone', 'เบอร์โทรผู้ใช้บริการจริง', true);
+                needEmail('monthlyOtherEmail', 'อีเมลผู้ใช้บริการจริง', true);
+            }
+            need('in_monthly_plate', 'ข้อมูลรถ');
+            need('parkingStartDate', 'วันที่เริ่มต้น');
+            needFutureDate('parkingStartDate', 'วันที่เริ่มต้น');
+            needFile(byId('monthlyContractFile'), 'สัญญาจ้าง');
+            break;
+        }
+        case 'แบบฟอร์มขอใช้ตราประทับ': {
+            need('stampProjectUnitName', 'ชื่อโครงการ/หน่วยงาน');
+            needPick('in_stamp_type', 'ประเภทผู้ใช้ตราประทับ');
+            if (val('in_stamp_type') === 'อื่นๆ') need('in_stamp_other', 'ประเภทผู้ใช้ตราประทับ');
+            need('stampStartDate', 'วันที่เริ่มต้น');
+            need('stampEndDate', 'วันที่สิ้นสุด');
+            needFutureDate('stampStartDate', 'วันที่เริ่มต้น');
+            needDateOrder('stampStartDate', 'stampEndDate');
+            needFile(files[0], 'รายละเอียดเอกสาร');
+            break;
+        }
+        case 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์': {
+            if (!byId('plateActionCount')) break;
+            const action = document.querySelector('input[name="plateAction"]:checked')?.value || '';
+            const plateCount = Math.min(5, Math.max(1, Number(val('plateActionCount') || 1)));
+            for (let i = 1; i <= plateCount; i++) {
+                if (action === 'แก้ไข') {
+                    need(`plateOld${i}`, `ทะเบียนเดิม (คันที่ ${i})`);
+                    need(`plateNew${i}`, `ทะเบียนใหม่ (คันที่ ${i})`);
+                } else {
+                    need(`plate${i}`, `ทะเบียนรถ (คันที่ ${i})`);
+                }
+            }
+            break;
+        }
+        case 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว': {
+            need('in_area_event', 'ชื่อกิจกรรม');
+            need('areaStartDate', 'วันที่เริ่มต้น');
+            need('areaEndDate', 'วันที่สิ้นสุด');
+            need('areaStartTime', 'เวลาเริ่มต้น');
+            need('areaEndTime', 'เวลาสิ้นสุด');
+            needFutureDate('areaStartDate', 'วันที่เริ่มต้น');
+            needDateOrder('areaStartDate', 'areaEndDate');
+            needTimeOrder('areaStartDate', 'areaEndDate', 'areaStartTime', 'areaEndTime');
+            const objPicked = byId('obj1')?.checked || byId('obj2')?.checked || byId('obj3')?.checked;
+            if (!objPicked) fail(byId('obj1')?.closest('.col-md-12'), 'กรุณาเลือกวัตถุประสงค์อย่างน้อย 1 ข้อ');
+            if (byId('obj3')?.checked) need('objOtherText', 'วัตถุประสงค์ (อื่น ๆ)');
+            const locPicked = byId('loc1')?.checked || byId('loc2')?.checked || byId('loc3')?.checked;
+            if (!locPicked) fail(byId('loc1')?.closest('.col-md-12'), 'กรุณาเลือกสถานที่อย่างน้อย 1 ข้อ');
+            if (byId('loc3')?.checked) need('locOtherText', 'สถานที่ (อื่น ๆ)');
+            needFile(files[0], 'รายละเอียดกิจกรรม');
+            break;
+        }
+        case 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา': {
+            need('in_contract_date', 'วันที่เข้าพื้นที่');
+            needFutureDate('in_contract_date', 'วันที่เข้าพื้นที่');
+            need('in_contract_time_start', 'เวลาเริ่มต้น');
+            need('in_contract_time_end', 'เวลาสิ้นสุด');
+            // ไม่บังคับเวลาสิ้นสุด > เริ่มต้น: งานคู่สัญญาอาจคร่อมเที่ยงคืน (เช่น 22:00–04:00) แต่ฟอร์มมีวันที่เดียว
+            needPick('contractCompany', 'ชื่อบริษัท');
+            needPick('contractBusinessType', 'ประเภทธุรกิจ');
+            needPick('contractCampus', 'พื้นที่การศึกษา');
+            needPick('contractBuilding', 'อาคาร');
+            needFile(files[0], 'เอกสารแนบ');
+            break;
+        }
+        case 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ': {
+            needPick('issueCategory', 'กลุ่มของปัญหา');
+            need('issueDetail', 'รายละเอียดปัญหา');
+            break;
+        }
+    }
+
+    const consent = byId('consentCheck');
+    if (consent && consent.type === 'checkbox' && !consent.checked) {
+        fail(consent.closest('.form-check') || consent, 'กรุณาทำเครื่องหมายรับทราบและตกลงให้ความยินยอม');
+    }
+
+    if (!errors.length) return true;
+
+    errors.forEach(({ el, msg }) => {
+        el.classList.add('is-invalid');
+        const note = document.createElement('div');
+        note.className = 'bpuu-error-msg text-danger small fw-bold mt-1';
+        note.textContent = msg;
+        // วางท้ายแถว flex (.form-check) หรือ .input-group เพื่อให้ข้อความตกบรรทัดใหม่เสมอ
+        (el.closest('.input-group') || el.closest('.form-check') || el).insertAdjacentElement('afterend', note);
+    });
+    const first = errors[0].el;
+    first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (typeof first.focus === 'function') setTimeout(() => first.focus({ preventScroll: true }), 350);
+    return false;
+}
+
+// =========================================================
 // Flow การ Submit ข้อมูล (Preview & Confirm)
 // =========================================================
 function showSummaryModal() {
-    const consent = document.getElementById('consentCheck');
-    if (consent && consent.type === 'checkbox' && !consent.checked) {
-        alert("กรุณาทำเครื่องหมายรับทราบและตกลงให้ความยินยอมก่อนส่งข้อมูลครับ");
-        return;
-    }
+    if (!validateCurrentForm()) return;
 
     let html = `<ul class="list-group list-group-flush small mb-3">`;
     const addRow = (label, value, valueClass = 'text-dark fw-bold') => {
@@ -942,6 +1168,11 @@ function buildRequestDetailFields() {
             const reasonSel = document.getElementById('overnightReason');
             f.q44_requestReason = reasonSel && reasonSel.value ? reasonSel.options[reasonSel.selectedIndex].text : '';
             f.q45_requestDetail = getInputValue('in_overnight_detail');
+            // ยอดประเมินกรณีไม่เข้าเงื่อนไขยกเว้น: 400 บาท/คัน/คืน (ตามประกาศฯ พ.ศ. 2562)
+            const feeNights = Number(getInputValue('overnightTotalDays')) || 0;
+            const feeCars = document.getElementById('overnightMultipleCars')?.checked
+                ? (Number(getInputValue('overnightCarCount')) || 1) : 1;
+            if (feeNights > 0) f.q67_estimatedFee = String(400 * feeCars * feeNights);
             if (document.getElementById('overnightMultipleCars')?.checked) {
                 const carCount = Number(document.getElementById('overnightCarCount')?.value || 0);
                 f.q43_vehicleCount = carCount ? String(carCount) : '';
@@ -1063,13 +1294,14 @@ function buildJotformSubmissionFields() {
         q30_input30: resolveApproverEmail(getInputValue('appName'), getInputValue('appPosition'), approverEmail),
         q31_input31: 'ใช่',
         q32_summary: summaryText,
+        q68_opStatus: 'รอพิจารณา',
         ...buildRequestDetailFields()
     };
 }
 
 function appendSelectedFiles(form) {
     const fileInputs = [...document.querySelectorAll('.view-section.active input[type="file"]')]
-        .filter(input => input.files && input.files.length > 0);
+        .filter(input => input.files && input.files.length > 0 && input.offsetParent !== null);
 
     fileInputs.forEach(sourceInput => {
         try {
@@ -1101,7 +1333,7 @@ function showSubmitSuccess() {
 function submitToJotform(fieldOverrides = {}) {
     if (!navigator.onLine) {
         alert('ไม่สามารถส่งคำขอได้เนื่องจากไม่ได้เชื่อมต่ออินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง');
-        return;
+        return false;
     }
     document.getElementById('jotformSubmitFrame')?.remove();
     document.getElementById('jotformDirectSubmitForm')?.remove();
@@ -1147,11 +1379,20 @@ function submitToJotform(fieldOverrides = {}) {
     document.body.appendChild(form);
     form.submit();
     setTimeout(completeSubmit, 4000);
+    return true;
 }
 
+let isSubmittingRequest = false;
 async function confirmSubmitForm() {
+    if (isSubmittingRequest) return;
+    isSubmittingRequest = true;
+    if (submitToJotform() === false) {
+        // ส่งไม่สำเร็จ (เช่น ออฟไลน์) — ปลดล็อกทันทีและคง modal ไว้ให้ลองใหม่
+        isSubmittingRequest = false;
+        return;
+    }
+    setTimeout(() => { isSubmittingRequest = false; }, 6000);
     summaryModalInstance.hide();
-    submitToJotform();
 }
 
 // =========================================================
@@ -1250,7 +1491,15 @@ window.toggleReasonDetails = function() {
     const fileDiv = document.getElementById('divReasonFile');
     if(reasonVal) {
         detailDiv.style.display = 'block';
-        if (fileDiv) fileDiv.style.display = reasonVal === "1" ? 'none' : 'block';
+        if (fileDiv) {
+            const hideFile = reasonVal === "1";
+            fileDiv.style.display = hideFile ? 'none' : 'block';
+            if (hideFile) {
+                // เคลียร์ไฟล์ค้าง ไม่งั้นไฟล์ที่แนบไว้ก่อนสลับเหตุผลจะถูกอัปโหลดทั้งที่ช่องถูกซ่อน
+                const staleFile = fileDiv.querySelector('input[type="file"]');
+                if (staleFile) staleFile.value = '';
+            }
+        }
     } else {
         detailDiv.style.display = 'none';
     }
