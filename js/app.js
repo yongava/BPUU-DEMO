@@ -60,17 +60,20 @@ function getStaffDepartment(data) {
     const lookup = buildStaffDepartmentLookup();
     const currentCode = (data[1] || '').trim();
     const fallbackName = (data[8] || '').trim();
+    // เรียงจากหน่วยย่อยของผู้ใช้ (Level 4) ไล่ขึ้นไปหน่วยบนสุด (Level 2): 4-3-2
     const departmentNames = getStaffDepartmentCodes(currentCode)
         .map(code => lookup.get(code))
-        .filter(Boolean);
+        .filter(Boolean)
+        .reverse();
 
     if (fallbackName && !departmentNames.includes(fallbackName)) {
-        departmentNames.push(fallbackName);
+        // ชื่อหน่วยของผู้ใช้เอง (Level 4) อยู่บนสุด
+        departmentNames.unshift(fallbackName);
     }
 
     if (!departmentNames.length) return '-';
 
-    // Show the hierarchy from the top level to the user's current unit.
+    // แสดงลำดับชั้นจากหน่วยย่อยของผู้ใช้ (Level 4) ขึ้นไปหน่วยบนสุด (Level 2)
     return uniqueNonEmpty(departmentNames).join('\n');
 }
 
@@ -139,8 +142,8 @@ function getModlinkAdviceHTML() {
     return `
         <div class="col-md-12">
             <div class="alert small mb-0 border-0 rounded bg-light" style="border-left: 4px solid var(--ci-orange) !important;">
-                <strong class="text-ci-orange"><i class="bi bi-megaphone-fill me-1"></i> แนะนำช่องทาง MOD LINK</strong><br>
-                บุคลากรและนักศึกษา มจธ. สามารถแจ้งปัญหาและติดตามสถานะผ่านแอปพลิเคชัน MOD LINK ได้
+                <strong class="text-ci-orange"><i class="bi bi-megaphone-fill me-1"></i> แนะนำช่องทาง MOD LINK Pro</strong><br>
+                บุคลากรและนักศึกษา มจธ. สามารถแจ้งปัญหาและติดตามสถานะผ่านแอปพลิเคชัน MOD LINK Pro ได้
             </div>
         </div>`;
 }
@@ -263,7 +266,7 @@ function updateMenuVisibility() {
         document.getElementById('menu-contract-area').style.display = 'none';
     } else if (currentLoginType === 'external') {
         document.getElementById('menu-contract-area').style.display = 'block'; // บุคคลภายนอกเห็นเข้าพื้นที่คู่สัญญา
-        document.getElementById('menu-monthly').style.display = 'none';
+        // จอดรถรายเดือน: บุคคลภายนอกเห็นได้ (รองรับผู้ปกครอง/บริษัทคู่สัญญา)
         document.getElementById('menu-edit-plate').style.display = 'none';
         document.getElementById('menu-stamp').style.display = 'none'; // บุคคลภายนอกไม่เห็นตราประทับ
     }
@@ -599,9 +602,11 @@ function renderDynamicForm(formName, targetContainerId) {
                     <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ชื่อกิจกรรม <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="in_area_event"></div>
                     <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ทะเบียนรถยนต์ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="text" class="form-control border-light shadow-sm" id="in_area_plate" placeholder="เช่น 1กข2345 (ไม่ต้องเว้นวรรค)"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="areaStartDate"></div>
-                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">เวลาเริ่มต้น <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="areaStartTime" step="60"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="areaEndDate"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">เวลาเริ่มต้น <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="areaStartTime" step="60"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">เวลาสิ้นสุด <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="areaEndTime" step="60"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">จำนวนบูธ <span class="req-star">*</span></label><input type="number" min="1" step="1" class="form-control border-light shadow-sm" id="areaBoothCount" value="1" oninput="calculateAreaBoothFee()"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ค่าใช้จ่ายโดยประมาณ <span class="text-muted fw-normal">(บูธละ 1,000 บาท)</span></label><div class="input-group"><input type="text" class="form-control bg-light text-dark fw-bold" id="areaBoothFee" readonly value="1,000"><span class="input-group-text bg-white border-light text-ci-bluegrey">บาท</span></div></div>
                     <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">วัตถุประสงค์ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj1" value="ประชาสัมพันธ์"><label class="form-check-label" for="obj1">ประชาสัมพันธ์</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj2" value="แจกผลิตภัณฑ์"><label class="form-check-label" for="obj2">แจกผลิตภัณฑ์</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj3" value="อื่นๆ" onchange="toggleOtherInput('obj3', 'objOtherText')"><label class="form-check-label text-nowrap" for="obj3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="objOtherText" placeholder="โปรดระบุ" disabled></div></div>
                     <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">สถานที่ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc1" value="อาคารจอดรถ 1 (S2)"><label class="form-check-label" for="loc1">อาคารจอดรถ 1 (S2)</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc2" value="โรงอาหาร (S14)"><label class="form-check-label" for="loc2">โรงอาหาร (S14)</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc3" value="อื่นๆ" onchange="toggleOtherInput('loc3', 'locOtherText')"><label class="form-check-label text-nowrap" for="loc3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="locOtherText" placeholder="โปรดระบุสถานที่" disabled></div></div>
                     
@@ -670,7 +675,11 @@ function renderDynamicForm(formName, targetContainerId) {
     }
     container.innerHTML = formHTML;
     // กันเลือกวันที่ย้อนหลังตั้งแต่ตัวปฏิทิน (ตรวจซ้ำอีกชั้นใน validateCurrentForm)
-    container.querySelectorAll('input[type="date"]').forEach(input => { input.min = getLocalTodayISO(); });
+    // ยกเว้นจอดค้างคืน — รองรับการขอย้อนหลัง (กรณีขอหลังเกิดเหตุ) จึงไม่ล็อก min
+    container.querySelectorAll('input[type="date"]').forEach(input => {
+        if (input.id === 'overnightStartDate' || input.id === 'overnightEndDate') return;
+        input.min = getLocalTodayISO();
+    });
     if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์') {
         window.renderPlateActionFields();
     }
@@ -772,7 +781,7 @@ function validateCurrentForm() {
             }
             need('overnightStartDate', 'วันที่เริ่มต้น');
             need('overnightEndDate', 'วันที่สิ้นสุด');
-            needFutureDate('overnightStartDate', 'วันที่เริ่มต้น');
+            // จอดค้างคืนขอย้อนหลังได้ — ไม่บังคับว่าต้องเป็นวันที่ในอนาคต
             needDateOrder('overnightStartDate', 'overnightEndDate');
             needPick('overnightReason', 'เหตุผลการขอจอด');
             if (val('overnightReason')) {
@@ -827,6 +836,8 @@ function validateCurrentForm() {
             need('areaEndDate', 'วันที่สิ้นสุด');
             need('areaStartTime', 'เวลาเริ่มต้น');
             need('areaEndTime', 'เวลาสิ้นสุด');
+            const boothCount = Number(val('areaBoothCount') || 0);
+            if (byId('areaBoothCount') && (!boothCount || boothCount < 1)) fail('areaBoothCount', 'กรุณาระบุจำนวนบูธอย่างน้อย 1 บูธ');
             needFutureDate('areaStartDate', 'วันที่เริ่มต้น');
             needDateOrder('areaStartDate', 'areaEndDate');
             needTimeOrder('areaStartDate', 'areaEndDate', 'areaStartTime', 'areaEndTime');
@@ -889,7 +900,8 @@ function showSummaryModal() {
     let html = `<ul class="list-group list-group-flush small mb-3">`;
     const addRow = (label, value, valueClass = 'text-dark fw-bold') => {
         if(value && value !== '-- กรุณาระบุเหตุผล --' && value !== '-- กรุณาระบุประเภท --') {
-            html += `<li class="list-group-item d-flex justify-content-between align-items-start px-0 bg-transparent border-light"><div class="ms-2 me-auto"><div class="fw-bold text-ci-bluegrey" style="font-size:0.75rem;">${label}</div><span class="${valueClass}" style="white-space: pre-line;">${value}</span></div></li>`;
+            // หัวข้อกับข้อมูลอยู่บรรทัดเดียวกัน (label : value) เพื่อให้ q32_summary ในอีเมลอ่านง่าย
+            html += `<li class="list-group-item px-0 bg-transparent border-light"><span class="fw-bold text-ci-bluegrey" style="font-size:0.8rem;">${label} : </span><span class="${valueClass}" style="white-space: pre-line;">${value}</span></li>`;
         }
     };
 
@@ -1001,6 +1013,9 @@ function showSummaryModal() {
         addRow('วัตถุประสงค์', objs.join(', '));
         let locs = []; if(document.getElementById('loc1')?.checked) locs.push('อาคารจอดรถ 1 (S2)'); if(document.getElementById('loc2')?.checked) locs.push('โรงอาหาร (S14)'); if(document.getElementById('loc3')?.checked) locs.push(document.getElementById('locOtherText')?.value || 'อื่นๆ');
         addRow('สถานที่', locs.join(', '));
+        addRow('จำนวนบูธ', document.getElementById('areaBoothCount')?.value);
+        const areaFeeText = document.getElementById('areaBoothFee')?.value;
+        addRow('ค่าใช้จ่ายโดยประมาณ', areaFeeText ? `${areaFeeText} บาท` : '');
         addRow('ข้อความเสนอพิจารณา', document.getElementById('areaProposalNote')?.value);
     }
     else if (currentSelectedForm === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') {
@@ -1230,6 +1245,12 @@ function buildRequestDetailFields() {
             Object.assign(f, dateFieldParts('q37_endDate', getInputValue('areaEndDate')));
             f.q38_startTime = getInputValue('areaStartTime');
             f.q39_endTime = getInputValue('areaEndTime');
+            const boothCount = Number(getInputValue('areaBoothCount')) || 0;
+            if (boothCount > 0) {
+                f.q69_boothCount = String(boothCount);
+                // ค่าบริการพื้นที่ชั่วคราว: บูธละ 1,000 บาท (ระบบคำนวณให้)
+                f.q67_estimatedFee = String(1000 * boothCount);
+            }
             const objs = [];
             if (document.getElementById('obj1')?.checked) objs.push('ประชาสัมพันธ์');
             if (document.getElementById('obj2')?.checked) objs.push('แจกผลิตภัณฑ์');
@@ -1456,6 +1477,13 @@ window.calculateEndDate = function() {
     const mm = String(start.getMonth() + 1).padStart(2, '0');
     const yyyy = start.getFullYear();
     document.getElementById('parkingEndDate').value = `${dd}/${mm}/${yyyy}`;
+};
+
+// ค่าบริการพื้นที่ชั่วคราว: บูธละ 1,000 บาท — คำนวณให้อัตโนมัติ
+window.calculateAreaBoothFee = function() {
+    const count = Math.max(0, Number(document.getElementById('areaBoothCount')?.value || 0));
+    const feeBox = document.getElementById('areaBoothFee');
+    if (feeBox) feeBox.value = (count * 1000).toLocaleString('en-US');
 };
 
 window.calculateDuration = function(startId, endId, totalId, unitType) {
