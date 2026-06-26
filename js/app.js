@@ -345,7 +345,7 @@ function fillInternalData(formName) {
     document.getElementById('approverSectionContent').style.display = hideApprover ? 'none' : 'flex';
     
     if(!hideApprover) {
-        const approverContext = isStaff ? 'สายงานบุคลากร' : 'สายงานนักศึกษา';
+        const approverContext = isStaff ? 'ผู้บังคับบัญชา' : 'สายงานนักศึกษา';
         document.getElementById('approverSectionTitle').innerHTML = `<i class="bi bi-2-circle-fill me-2"></i>ส่วนที่ 2: ข้อมูลผู้มีอำนาจอนุมัติ (${approverContext})`;
     }
     document.getElementById('dynamicSectionTitle').innerHTML = hideApprover ? '<i class="bi bi-2-circle-fill me-2"></i>ส่วนที่ 2: รายละเอียดคำขอ' : '<i class="bi bi-3-circle-fill me-2"></i>ส่วนที่ 3: รายละเอียดคำขอ';
