@@ -905,7 +905,7 @@ function showSummaryModal() {
         }
     };
 
-    html += `<h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-2">ข้อมูลผู้ติดต่อ</h6>`;
+    html += `<h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-2">• ข้อมูลผู้ติดต่อ •</h6>`;
     if (currentLoginType === 'staff') {
         addRow('ประเภท', 'บุคลากร');
         addRow('ชื่อ-สกุล', document.getElementById('reqName').value, 'text-dark');
@@ -935,7 +935,7 @@ function showSummaryModal() {
         addRow('อีเมล', document.getElementById('extEmail').value);
     }
 
-    html += `</ul><p class="m-0"></p><h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-4">• รายละเอียดคำขอ</h6><ul class="list-group list-group-flush small">`;
+    html += `</ul><p class="m-0"></p><h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-4">• รายละเอียดคำขอ •</h6><ul class="list-group list-group-flush small">`;
     
     if (currentSelectedForm === 'แบบฟอร์มขอจอดรถรายเดือน') {
         if (currentLoginType === 'staff') {
@@ -1038,8 +1038,8 @@ function showSummaryModal() {
 
     // โชว์ผู้อนุมัติสำหรับบุคลากร และกรณีนักศึกษาขอใช้ตราประทับ
     if (currentSelectedForm !== 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ' && (currentLoginType === 'staff' || (currentLoginType === 'student' && currentSelectedForm === 'แบบฟอร์มขอใช้ตราประทับ'))) {
-        html += `<ul class="list-group list-group-flush small">`;
-        addRow('ผู้บังคับบัญชา', document.getElementById('appName').value);
+        html += `<p class="m-0"></p><h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-4">• ผู้บังคับบัญชา •</h6><ul class="list-group list-group-flush small">`;
+        html += `<li class="list-group-item px-0 bg-transparent border-light"><span class="text-dark fw-bold" style="white-space: pre-line;">${document.getElementById('appName').value}</span></li>`;
         html += `</ul>`;
     }
 
