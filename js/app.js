@@ -910,7 +910,7 @@ function showSummaryModal() {
         addRow('ประเภท', 'บุคลากร');
         addRow('ชื่อ-สกุล', document.getElementById('reqName').value, 'text-dark');
         addRow('ตำแหน่ง', document.getElementById('reqPosition').value);
-        addRow('หน่วยงาน', document.getElementById('reqDeptCode').value, 'text-dark');
+        addRow('หน่วยงาน', document.getElementById('reqDeptCode').value.replace(/\s*\n\s*/g, ' '), 'text-dark');
         addRow('เบอร์โทรภายใน', document.getElementById('reqInternalPhone').value);
         addRow('อีเมล', document.getElementById('reqEmail').value);
         addRow('เบอร์โทรมือถือ', document.getElementById('reqPhone').value || '-');
@@ -935,7 +935,7 @@ function showSummaryModal() {
         addRow('อีเมล', document.getElementById('extEmail').value);
     }
 
-    html += `</ul><h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-3">รายละเอียดคำขอ</h6><ul class="list-group list-group-flush small">`;
+    html += `</ul><p class="m-0"></p><h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-4">• รายละเอียดคำขอ</h6><ul class="list-group list-group-flush small">`;
     
     if (currentSelectedForm === 'แบบฟอร์มขอจอดรถรายเดือน') {
         if (currentLoginType === 'staff') {
@@ -1038,8 +1038,8 @@ function showSummaryModal() {
 
     // โชว์ผู้อนุมัติสำหรับบุคลากร และกรณีนักศึกษาขอใช้ตราประทับ
     if (currentSelectedForm !== 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ' && (currentLoginType === 'staff' || (currentLoginType === 'student' && currentSelectedForm === 'แบบฟอร์มขอใช้ตราประทับ'))) {
-        html += `<h6 class="fw-bold text-ci-bluegrey border-bottom border-light pb-2 mt-3">ผู้มีอำนาจอนุมัติ</h6><ul class="list-group list-group-flush small">`;
-        addRow('ชื่อผู้อนุมัติ', document.getElementById('appName').value);
+        html += `<ul class="list-group list-group-flush small">`;
+        addRow('ผู้บังคับบัญชา', document.getElementById('appName').value);
         html += `</ul>`;
     }
 
