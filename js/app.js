@@ -306,7 +306,15 @@ function selectForm(formName) {
         switchView('formContentView');
 
         if (formName === 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ' && (currentLoginType === 'staff' || currentLoginType === 'student')) {
-            setTimeout(() => { modlinkModalInstance.show(); }, 500); 
+            const isStaff = currentLoginType === 'staff';
+            const appName = isStaff ? 'MOD LINK Pro' : 'MOD LINK';
+            const userLabel = isStaff ? 'บุคลากร' : 'นักศึกษา';
+            const logoSrc = isStaff ? './AW_MODlink_pro_vertical.jpg' : './AW_MODlink_student_vertical.jpg';
+            const adviceText = document.getElementById('modlinkAdviceText');
+            const logoImg = document.getElementById('modlinkLogo');
+            if (adviceText) adviceText.innerHTML = `สำหรับ <strong>${userLabel} มจธ.</strong> <br>ท่านสามารถแจ้งปัญหาและติดตามสถานะได้ง่ายยิ่งขึ้น ผ่านแอปพลิเคชัน <strong>"${appName}"</strong>`;
+            if (logoImg) { logoImg.src = logoSrc; logoImg.alt = appName; }
+            setTimeout(() => { modlinkModalInstance.show(); }, 500);
         }
     }
 }
@@ -1658,3 +1666,191 @@ window.toggleMonthlyForOther = function() {
 document.getElementById('loginEmpId').addEventListener('keypress', function (e) {
     if (e.key === 'Enter') processLogin();
 });
+
+// =========================================================
+// [DEMO ONLY] ปุ่ม Prefill — เติมข้อมูลตัวอย่างในฟิลด์ที่ยังว่าง
+// เพื่อลดขั้นตอนการพิมพ์ระหว่างเดโม (ไฟล์แนบยังต้องเลือกเองตามจริง)
+// ลบทั้งบล็อกนี้ + ปุ่มใน index.html เมื่อเลิกใช้ได้เลย
+// =========================================================
+window.prefillCurrentForm = function(evt) {
+    const DEMO_PHONE = '0812345678';
+    const byId = id => document.getElementById(id);
+
+    const pfDateISO = offsetDays => {
+        const d = new Date();
+        d.setDate(d.getDate() + offsetDays);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    // เติมเฉพาะช่องที่ยังว่าง — ไม่ทับค่าที่ผู้ใช้กรอกไว้แล้ว
+    const pfText = (id, value) => { const el = byId(id); if (el && !el.value) el.value = value; };
+    const pfDate = (id, offsetDays) => {
+        const el = byId(id);
+        if (el && !el.value) { el.value = pfDateISO(offsetDays); el.dispatchEvent(new Event('change')); }
+    };
+    const pfTime = (id, value) => {
+        const el = byId(id);
+        if (el && !el.value) { el.value = value; el.dispatchEvent(new Event('change')); }
+    };
+    const pfCheck = id => { const el = byId(id); if (el && !el.checked) { el.checked = true; el.dispatchEvent(new Event('change')); } };
+    const pfRadioIfNone = (ids, pickId) => {
+        if (!ids.some(id => byId(id)?.checked)) pfCheck(pickId);
+    };
+    const pfPickSelect = (id, handler) => {
+        const sel = byId(id);
+        if (!sel || sel.disabled || sel.value) return;
+        const opt = [...sel.options].find(o => o.value && !o.disabled);
+        if (!opt) return;
+        sel.value = opt.value;
+        if (handler) handler(); else sel.dispatchEvent(new Event('change'));
+    };
+
+    // สร้างไฟล์ตัวอย่างในหน่วยความจำ (รูป PNG วาดด้วย canvas) — ไม่ต้องเปิด file picker
+    // จึงไม่เผยเอกสารในเครื่องระหว่างเดโม; ใช้ DataTransfer ยัดเข้า input เหมือนตอน submit
+    const makeDemoImageFile = (label) => {
+        const c = document.createElement('canvas');
+        c.width = 800; c.height = 565;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
+        ctx.fillStyle = '#E87722'; ctx.fillRect(0, 0, c.width, 96);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 40px sans-serif';
+        ctx.fillText('เอกสารตัวอย่าง • DEMO DOCUMENT', 40, 60);
+        ctx.fillStyle = '#333333'; ctx.font = '26px sans-serif';
+        ctx.fillText(String(label || ''), 40, 180);
+        ctx.fillText('สร้างอัตโนมัติสำหรับการสาธิตระบบ BPUU', 40, 230);
+        ctx.strokeStyle = '#cccccc'; ctx.strokeRect(40, 280, 720, 240);
+        const dataurl = c.toDataURL('image/png');
+        const bstr = atob(dataurl.split(',')[1]);
+        const u8 = new Uint8Array(bstr.length);
+        for (let i = 0; i < bstr.length; i++) u8[i] = bstr.charCodeAt(i);
+        return new File([u8], 'เอกสารตัวอย่าง-เดโม.png', { type: 'image/png' });
+    };
+    const pfFile = (input, label) => {
+        if (!input || (input.files && input.files.length)) return; // มีไฟล์อยู่แล้ว ไม่ทับ
+        try {
+            const dt = new DataTransfer();
+            dt.items.add(makeDemoImageFile(label));
+            input.files = dt.files;
+            input.dispatchEvent(new Event('change'));
+        } catch (e) { /* เบราว์เซอร์ไม่รองรับการตั้ง .files — ปล่อยให้แนบเอง */ }
+    };
+
+    // ---------- ส่วนที่ 1: ผู้ติดต่อ ----------
+    if (currentLoginType === 'external') {
+        pfText('extFname', 'สมชาย');
+        pfText('extLname', 'ใจดี');
+        pfText('extCompany', 'บริษัท เดโม จำกัด');
+        pfText('extPhone', DEMO_PHONE);
+        pfText('extEmail', 'demo.guest@example.com');
+        if (byId('divExtType') && byId('divExtType').style.display !== 'none') {
+            pfRadioIfNone(['extType1', 'extType2', 'extType3'], 'extType1');
+        }
+    } else if (currentLoginType) {
+        pfText('reqPhone', DEMO_PHONE);
+        pfText('reqEmail', 'demo.user@kmutt.ac.th'); // ปกติดึงอัตโนมัติแล้ว เผื่อกรณีว่าง
+    }
+
+    // ---------- ส่วนรายละเอียดคำขอ ----------
+    switch (currentSelectedForm) {
+        case 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)':
+            pfText('in_overnight_plate', '1กข2345');
+            pfDate('overnightStartDate', 1);
+            pfDate('overnightEndDate', 2);
+            pfPickSelect('overnightReason'); // staff/student = "ไปราชการ" (ไม่ต้องแนบไฟล์), external = "เหตุสุดวิสัย"
+            pfText('in_overnight_detail', 'รายละเอียดเหตุผลสำหรับการเดโม');
+            break;
+
+        case 'แบบฟอร์มขอจอดรถรายเดือน':
+            pfText('in_monthly_plate', '1กข2345');
+            pfDate('parkingStartDate', 3); // dispatch change → คำนวณวันสิ้นสุดอัตโนมัติ
+            break;
+
+        case 'แบบฟอร์มขอใช้ตราประทับ':
+            pfText('stampProjectUnitName', 'โครงการตัวอย่างสำหรับเดโม');
+            pfPickSelect('in_stamp_type');
+            pfDate('stampStartDate', 3);
+            pfDate('stampEndDate', 5);
+            pfText('stampUserName1', 'สมชาย ใจดี');
+            pfText('stampUserEmail1', 'demo.stamp@kmutt.ac.th');
+            break;
+
+        case 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์': {
+            const action = document.querySelector('input[name="plateAction"]:checked')?.value || 'เพิ่ม';
+            const count = Math.min(5, Math.max(1, Number(byId('plateActionCount')?.value || 1)));
+            for (let i = 1; i <= count; i++) {
+                if (action === 'แก้ไข') {
+                    pfText(`plateOld${i}`, `1กข${1000 + i}`);
+                    pfText(`plateNew${i}`, `2ขค${2000 + i}`);
+                } else {
+                    pfText(`plate${i}`, `1กข${1000 + i}`);
+                }
+            }
+            break;
+        }
+
+        case 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว':
+            pfText('in_area_event', 'กิจกรรมประชาสัมพันธ์ (เดโม)');
+            pfDate('areaStartDate', 3);
+            pfDate('areaEndDate', 3);
+            pfTime('areaStartTime', '09:00');
+            pfTime('areaEndTime', '16:00');
+            pfText('areaBoothCount', '1');
+            pfCheck('obj1');
+            pfCheck('loc1');
+            break;
+
+        case 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา': {
+            pfDate('in_contract_date', 3);
+            pfTime('in_contract_time_start', '09:00');
+            pfTime('in_contract_time_end', '16:00');
+            // dropdown แบบลูกโซ่ (บริษัท→ประเภท→พื้นที่→อาคาร) — เลือกจาก "แถวที่มีครบทั้ง 4 ชั้น"
+            // ไม่งั้นการไล่ option แรกแต่ละชั้นอาจตันที่ชั้นอาคาร (บางสายไม่มีอาคารต่อ)
+            const companySel = byId('contractCompany');
+            if (companySel && !companySel.value) {
+                if (![...companySel.options].some(o => o.value)) window.initContractDropdowns?.();
+                const row = contractDatabase.find(r => r && r[7] && r[5] && r[1] && r[3]
+                    && r[7] !== 'ชื่อบริษัท' && r[7] !== 'CompanyName');
+                if (row) {
+                    companySel.value = row[7]; window.onCompanyChange();
+                    byId('contractBusinessType').value = row[5]; window.onBusinessTypeChange();
+                    byId('contractCampus').value = row[1]; window.onCampusChange();
+                    byId('contractBuilding').value = row[3];
+                } else {
+                    pfPickSelect('contractCompany', window.onCompanyChange);
+                    pfPickSelect('contractBusinessType', window.onBusinessTypeChange);
+                    pfPickSelect('contractCampus', window.onCampusChange);
+                    pfPickSelect('contractBuilding');
+                }
+            } else if (companySel) {
+                // ผู้ใช้เลือกบริษัทไว้แล้ว — เติมชั้นที่เหลือแบบ best-effort
+                pfPickSelect('contractBusinessType', window.onBusinessTypeChange);
+                pfPickSelect('contractCampus', window.onCampusChange);
+                pfPickSelect('contractBuilding');
+            }
+            break;
+        }
+
+        case 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ':
+            pfPickSelect('issueCategory');
+            pfText('issueDetail', 'รายละเอียดปัญหาสำหรับการเดโม');
+            break;
+    }
+
+    // เติมไฟล์ตัวอย่างให้ทุกช่องแนบไฟล์ที่ "มองเห็น" และ "ยังว่าง" ในหน้าปัจจุบัน
+    // (ทั้งช่องบังคับและไม่บังคับ) เพื่อไม่ต้องกด Choose File เองเลยระหว่างเดโม
+    [...document.querySelectorAll('.view-section.active input[type="file"]')]
+        .filter(inp => inp.offsetParent !== null && !(inp.files && inp.files.length))
+        .forEach(inp => pfFile(inp, currentSelectedForm));
+
+    pfCheck('consentCheck');
+    clearValidationMarks(); // ล้างกรอบแดงจากการ submit ที่ค้างไว้ก่อนหน้า
+
+    // feedback สั้น ๆ ที่ปุ่ม
+    const btn = evt?.currentTarget;
+    if (btn) {
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>เติมแล้ว';
+        btn.classList.add('btn-success');
+        btn.classList.remove('btn-warning');
+        setTimeout(() => { btn.innerHTML = original; btn.classList.add('btn-warning'); btn.classList.remove('btn-success'); }, 1200);
+    }
+};
