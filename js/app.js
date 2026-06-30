@@ -139,11 +139,14 @@ function getStampRequesterHTML() {
 
 function getModlinkAdviceHTML() {
     if (currentLoginType !== 'staff' && currentLoginType !== 'student') return '';
+    const isStaff = currentLoginType === 'staff';
+    const appName = isStaff ? 'MOD LINK Pro' : 'MOD LINK';
+    const userLabel = isStaff ? 'บุคลากร' : 'นักศึกษา';
     return `
         <div class="col-md-12">
             <div class="alert small mb-0 border-0 rounded bg-light" style="border-left: 4px solid var(--ci-orange) !important;">
-                <strong class="text-ci-orange"><i class="bi bi-megaphone-fill me-1"></i> แนะนำช่องทาง MOD LINK Pro</strong><br>
-                บุคลากรและนักศึกษา มจธ. สามารถแจ้งปัญหาและติดตามสถานะผ่านแอปพลิเคชัน MOD LINK Pro ได้
+                <strong class="text-ci-orange"><i class="bi bi-megaphone-fill me-1"></i> แนะนำช่องทาง ${appName}</strong><br>
+                สำหรับ ${userLabel} ท่านสามารถแจ้งปัญหาและติดตามสถานะได้ง่ายยิ่งขึ้น ผ่านแอปพลิเคชัน "${appName}"
             </div>
         </div>`;
 }
@@ -522,6 +525,11 @@ function renderDynamicForm(formName, targetContainerId) {
                     <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control" id="stampStartDate" onchange="calculateDuration('stampStartDate', 'stampEndDate', 'stampTotalDays', 'days')"></div>
                     <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด <span class="req-star">*</span></label><input type="date" class="form-control" id="stampEndDate" onchange="calculateDuration('stampStartDate', 'stampEndDate', 'stampTotalDays', 'days')"></div>
                     <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">จำนวนวัน</label><div class="input-group"><input type="text" class="form-control bg-light text-dark fw-bold text-center" id="stampTotalDays" readonly value="0"><span class="input-group-text bg-white border-light text-ci-bluegrey">วัน</span></div></div>
+                    <div class="col-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small mb-1">ข้อมูลผู้ใช้ตราประทับ <span class="text-muted fw-normal">(รองรับสูงสุด 2 คน)</span></label></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ชื่อ-สกุล <span class="text-muted fw-normal">(คนที่ 1)</span> <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="stampUserName1" placeholder="ชื่อ-สกุล ผู้ใช้ตราประทับ"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">Email <span class="text-muted fw-normal">(คนที่ 1)</span> <span class="req-star">*</span></label><input type="email" class="form-control border-light shadow-sm" id="stampUserEmail1" placeholder="email@kmutt.ac.th"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ชื่อ-สกุล <span class="text-muted fw-normal">(คนที่ 2 — ถ้ามี)</span></label><input type="text" class="form-control border-light shadow-sm" id="stampUserName2" placeholder="ชื่อ-สกุล ผู้ใช้ตราประทับ"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">Email <span class="text-muted fw-normal">(คนที่ 2 — ถ้ามี)</span></label><input type="email" class="form-control border-light shadow-sm" id="stampUserEmail2" placeholder="email@kmutt.ac.th"></div>
                     <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">แนบรายละเอียดเอกสาร <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
                     
                     <div class="col-12 mt-4">
@@ -605,8 +613,7 @@ function renderDynamicForm(formName, targetContainerId) {
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="areaEndDate"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">เวลาเริ่มต้น <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="areaStartTime" step="60"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">เวลาสิ้นสุด <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="areaEndTime" step="60"></div>
-                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">จำนวนบูธ <span class="req-star">*</span></label><input type="number" min="1" step="1" class="form-control border-light shadow-sm" id="areaBoothCount" value="1" oninput="calculateAreaBoothFee()"></div>
-                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ค่าใช้จ่ายโดยประมาณ <span class="text-muted fw-normal">(บูธละ 1,000 บาท)</span></label><div class="input-group"><input type="text" class="form-control bg-light text-dark fw-bold" id="areaBoothFee" readonly value="1,000"><span class="input-group-text bg-white border-light text-ci-bluegrey">บาท</span></div></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">จำนวนบูธ <span class="req-star">*</span></label><input type="number" min="1" step="1" class="form-control border-light shadow-sm" id="areaBoothCount" value="1"></div>
                     <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">วัตถุประสงค์ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj1" value="ประชาสัมพันธ์"><label class="form-check-label" for="obj1">ประชาสัมพันธ์</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj2" value="แจกผลิตภัณฑ์"><label class="form-check-label" for="obj2">แจกผลิตภัณฑ์</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj3" value="อื่นๆ" onchange="toggleOtherInput('obj3', 'objOtherText')"><label class="form-check-label text-nowrap" for="obj3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="objOtherText" placeholder="โปรดระบุ" disabled></div></div>
                     <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">สถานที่ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc1" value="อาคารจอดรถ 1 (S2)"><label class="form-check-label" for="loc1">อาคารจอดรถ 1 (S2)</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc2" value="โรงอาหาร (S14)"><label class="form-check-label" for="loc2">โรงอาหาร (S14)</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc3" value="อื่นๆ" onchange="toggleOtherInput('loc3', 'locOtherText')"><label class="form-check-label text-nowrap" for="loc3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="locOtherText" placeholder="โปรดระบุสถานที่" disabled></div></div>
                     
@@ -813,6 +820,13 @@ function validateCurrentForm() {
             need('stampEndDate', 'วันที่สิ้นสุด');
             needFutureDate('stampStartDate', 'วันที่เริ่มต้น');
             needDateOrder('stampStartDate', 'stampEndDate');
+            need('stampUserName1', 'ชื่อ-สกุล ผู้ใช้ตราประทับ (คนที่ 1)');
+            needEmail('stampUserEmail1', 'Email ผู้ใช้ตราประทับ (คนที่ 1)', true);
+            // คนที่ 2 ไม่บังคับ แต่ถ้ากรอกช่องใดช่องหนึ่ง ต้องกรอกให้ครบทั้งคู่
+            if (val('stampUserName2') || val('stampUserEmail2')) {
+                need('stampUserName2', 'ชื่อ-สกุล ผู้ใช้ตราประทับ (คนที่ 2)');
+                needEmail('stampUserEmail2', 'Email ผู้ใช้ตราประทับ (คนที่ 2)', true);
+            }
             needFile(files[0], 'รายละเอียดเอกสาร');
             break;
         }
@@ -984,6 +998,12 @@ function showSummaryModal() {
         addRow('วันที่เริ่มต้น', document.getElementById('stampStartDate')?.value);
         addRow('วันที่สิ้นสุด', document.getElementById('stampEndDate')?.value);
         addRow('จำนวนวัน', document.getElementById('stampTotalDays')?.value);
+        const su1n = document.getElementById('stampUserName1')?.value;
+        const su1e = document.getElementById('stampUserEmail1')?.value;
+        if (su1n || su1e) addRow('ผู้ใช้ตราประทับ คนที่ 1', su1n && su1e ? `${su1n} (${su1e})` : (su1n || su1e));
+        const su2n = document.getElementById('stampUserName2')?.value;
+        const su2e = document.getElementById('stampUserEmail2')?.value;
+        if (su2n || su2e) addRow('ผู้ใช้ตราประทับ คนที่ 2', su2n && su2e ? `${su2n} (${su2e})` : (su2n || su2e));
     }
     else if (currentSelectedForm === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์') {
         const action = document.querySelector('input[name="plateAction"]:checked')?.value || '';
@@ -1014,8 +1034,6 @@ function showSummaryModal() {
         let locs = []; if(document.getElementById('loc1')?.checked) locs.push('อาคารจอดรถ 1 (S2)'); if(document.getElementById('loc2')?.checked) locs.push('โรงอาหาร (S14)'); if(document.getElementById('loc3')?.checked) locs.push(document.getElementById('locOtherText')?.value || 'อื่นๆ');
         addRow('สถานที่', locs.join(', '));
         addRow('จำนวนบูธ', document.getElementById('areaBoothCount')?.value);
-        const areaFeeText = document.getElementById('areaBoothFee')?.value;
-        addRow('ค่าใช้จ่ายโดยประมาณ', areaFeeText ? `${areaFeeText} บาท` : '');
         addRow('ข้อความเสนอพิจารณา', document.getElementById('areaProposalNote')?.value);
     }
     else if (currentSelectedForm === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') {
@@ -1212,6 +1230,8 @@ function buildRequestDetailFields() {
             Object.assign(f, dateFieldParts('q36_startDate', getInputValue('stampStartDate')));
             Object.assign(f, dateFieldParts('q37_endDate', getInputValue('stampEndDate')));
             f.q40_totalDays = getInputValue('stampTotalDays');
+            // ข้อมูลผู้ใช้ตราประทับ (ชื่อ-สกุล/อีเมล สูงสุด 2 คน) เก็บในรายละเอียดรวม q32_summary เท่านั้น
+            // (สร้างผ่าน showSummaryModal) — ไม่สร้าง q-field ใหม่ใน JotForm เพื่อเลี่ยงปัญหา workflow แบบ q69
             break;
         }
         case 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์': {
@@ -1477,13 +1497,6 @@ window.calculateEndDate = function() {
     const mm = String(start.getMonth() + 1).padStart(2, '0');
     const yyyy = start.getFullYear();
     document.getElementById('parkingEndDate').value = `${dd}/${mm}/${yyyy}`;
-};
-
-// ค่าบริการพื้นที่ชั่วคราว: บูธละ 1,000 บาท — คำนวณให้อัตโนมัติ
-window.calculateAreaBoothFee = function() {
-    const count = Math.max(0, Number(document.getElementById('areaBoothCount')?.value || 0));
-    const feeBox = document.getElementById('areaBoothFee');
-    if (feeBox) feeBox.value = (count * 1000).toLocaleString('en-US');
 };
 
 window.calculateDuration = function(startId, endId, totalId, unitType) {
