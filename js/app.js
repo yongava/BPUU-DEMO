@@ -157,6 +157,10 @@ document.addEventListener("DOMContentLoaded", function() {
     summaryModalInstance = new bootstrap.Modal(document.getElementById('summaryModal'));
     successModalInstance = new bootstrap.Modal(document.getElementById('successModal'));
     loadDatabases();
+    // consentCheck ถูก render แบบ dynamic — ใช้ event delegation จับการติ๊กเพื่อเปิด/ปิดปุ่มส่ง
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.id === 'consentCheck') updateSubmitState();
+    });
 });
 
 function loadDatabases() {
@@ -180,6 +184,7 @@ function switchView(viewId) {
     document.getElementById(viewId).classList.add('active');
     window.scrollTo(0, 0);
     if(viewId === 'homeView') updateMenuVisibility();
+    updateSubmitState(); // อัปเดตปุ่มส่งของ view ที่เพิ่งเปิด (ต้องเรียกหลังตั้ง active แล้วเท่านั้น)
 }
 
 function goHome() { 
@@ -698,12 +703,26 @@ function renderDynamicForm(formName, targetContainerId) {
     if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์') {
         window.renderPlateActionFields();
     }
+    // หมายเหตุ: การ gate ปุ่มส่งทำใน switchView (เรียกหลัง render เสมอ) เพื่อให้อ่าน active view ถูกตัว
+}
+
+// ปิดปุ่ม "ตรวจสอบและบันทึกคำขอ" จนกว่าจะติ๊กยินยอม (Consent) ในหน้าที่กำลังแสดง
+function updateSubmitState() {
+    const activeView = document.querySelector('.view-section.active');
+    if (!activeView) return;
+    const submitBtn = activeView.querySelector('.form-submit-btn');
+    if (!submitBtn) return;
+    const consent = activeView.querySelector('#consentCheck');
+    // ฟอร์มไหนไม่มี consent ก็ปล่อยให้กดได้ตามปกติ
+    submitBtn.disabled = consent ? !consent.checked : false;
 }
 
 // =========================================================
 // Validation ฝั่งเว็บ — ตรวจทุกฟิลด์ก่อนเปิดหน้าสรุป
 // =========================================================
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// ทะเบียนรถ: ตัวเลขและตัวอักษร (ไทย/อังกฤษ) เท่านั้น ห้ามเว้นวรรคหรืออักขระพิเศษ
+const PLATE_PATTERN = /^[0-9A-Za-zก-๙]+$/;
 
 function getLocalTodayISO() {
     const now = new Date();
@@ -742,6 +761,12 @@ function validateCurrentForm() {
         const digits = val(id).replace(/\D/g, '');
         if (!digits) { if (required) fail(id, `กรุณากรอก${label}`); return; }
         if (!/^0\d{8,9}$/.test(digits)) fail(id, `${label}ต้องเป็นเบอร์โทรไทย 9-10 หลัก ขึ้นต้นด้วย 0`);
+    };
+    const needPlate = (id, label, required) => {
+        if (!byId(id)) return;
+        const v = val(id);
+        if (!v) { if (required) fail(id, `กรุณากรอก${label}`); return; }
+        if (!PLATE_PATTERN.test(v)) fail(id, `${label}ต้องมีเฉพาะตัวเลขและตัวอักษร (ห้ามเว้นวรรคหรืออักขระพิเศษ)`);
     };
     const needFile = (input, label) => {
         if (input && (!input.files || input.files.length === 0)) fail(input, `กรุณาแนบ${label}`);
@@ -785,13 +810,13 @@ function validateCurrentForm() {
 
     switch (currentSelectedForm) {
         case 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)': {
-            need('in_overnight_plate', 'ข้อมูลรถ');
+            needPlate('in_overnight_plate', 'ข้อมูลรถ', true);
             if (byId('overnightMultipleCars')?.checked) {
                 const carCount = Number(val('overnightCarCount') || 0);
                 for (let i = 1; i <= carCount; i++) {
                     need(`overnightCarFirstName${i}`, `ชื่อ (คันที่ ${i})`);
                     need(`overnightCarLastName${i}`, `สกุล (คันที่ ${i})`);
-                    need(`overnightCarPlate${i}`, `ทะเบียนรถ (คันที่ ${i})`);
+                    needPlate(`overnightCarPlate${i}`, `ทะเบียนรถ (คันที่ ${i})`, true);
                 }
             }
             need('overnightStartDate', 'วันที่เริ่มต้น');
@@ -814,7 +839,7 @@ function validateCurrentForm() {
                 needPhone('monthlyOtherPhone', 'เบอร์โทรผู้ใช้บริการจริง', true);
                 needEmail('monthlyOtherEmail', 'อีเมลผู้ใช้บริการจริง', true);
             }
-            need('in_monthly_plate', 'ข้อมูลรถ');
+            needPlate('in_monthly_plate', 'ข้อมูลรถ', true);
             need('parkingStartDate', 'วันที่เริ่มต้น');
             needFutureDate('parkingStartDate', 'วันที่เริ่มต้น');
             needFile(byId('monthlyContractFile'), 'สัญญาจ้าง');
@@ -844,16 +869,17 @@ function validateCurrentForm() {
             const plateCount = Math.min(5, Math.max(1, Number(val('plateActionCount') || 1)));
             for (let i = 1; i <= plateCount; i++) {
                 if (action === 'แก้ไข') {
-                    need(`plateOld${i}`, `ทะเบียนเดิม (คันที่ ${i})`);
-                    need(`plateNew${i}`, `ทะเบียนใหม่ (คันที่ ${i})`);
+                    needPlate(`plateOld${i}`, `ทะเบียนเดิม (คันที่ ${i})`, true);
+                    needPlate(`plateNew${i}`, `ทะเบียนใหม่ (คันที่ ${i})`, true);
                 } else {
-                    need(`plate${i}`, `ทะเบียนรถ (คันที่ ${i})`);
+                    needPlate(`plate${i}`, `ทะเบียนรถ (คันที่ ${i})`, true);
                 }
             }
             break;
         }
         case 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว': {
             need('in_area_event', 'ชื่อกิจกรรม');
+            needPlate('in_area_plate', 'ทะเบียนรถ', false); // ไม่บังคับ แต่ถ้ากรอกต้องถูกรูปแบบ
             need('areaStartDate', 'วันที่เริ่มต้น');
             need('areaEndDate', 'วันที่สิ้นสุด');
             need('areaStartTime', 'เวลาเริ่มต้น');
@@ -873,6 +899,7 @@ function validateCurrentForm() {
             break;
         }
         case 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา': {
+            needPlate('in_contract_plate', 'ทะเบียนรถ', false); // ไม่บังคับ แต่ถ้ากรอกต้องถูกรูปแบบ
             need('in_contract_date', 'วันที่เข้าพื้นที่');
             needFutureDate('in_contract_date', 'วันที่เข้าพื้นที่');
             need('in_contract_time_start', 'เวลาเริ่มต้น');
@@ -1691,7 +1718,7 @@ window.prefillCurrentForm = function(evt) {
         const el = byId(id);
         if (el && !el.value) { el.value = value; el.dispatchEvent(new Event('change')); }
     };
-    const pfCheck = id => { const el = byId(id); if (el && !el.checked) { el.checked = true; el.dispatchEvent(new Event('change')); } };
+    const pfCheck = id => { const el = byId(id); if (el && !el.checked) { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); } };
     const pfRadioIfNone = (ids, pickId) => {
         if (!ids.some(id => byId(id)?.checked)) pfCheck(pickId);
     };
