@@ -285,7 +285,8 @@ function selectForm(formName) {
     
     if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์' && currentLoginType === 'staff') {
         fillInternalData(formName);
-        submitToJotform({ q32_summary: 'บุคลากรถูกส่งต่อไปดำเนินการในระบบ IBGM (https://app.ibgm.cloud/)' });
+        // บันทึก tracking เงียบ ๆ แล้ว redirect ไป IBGM — ไม่โชว์โมดัล "ส่งสำเร็จ" (ไม่ใช่การส่งฟอร์มปกติ)
+        submitToJotform({ q32_summary: 'บุคลากรถูกส่งต่อไปดำเนินการในระบบ IBGM (https://app.ibgm.cloud/)' }, { silent: true });
         window.open('https://app.ibgm.cloud/signin', '_blank');
         return;
     }
@@ -1406,7 +1407,7 @@ function showSubmitSuccess() {
     }, 2000);
 }
 
-function submitToJotform(fieldOverrides = {}) {
+function submitToJotform(fieldOverrides = {}, options = {}) {
     if (!navigator.onLine) {
         alert('ไม่สามารถส่งคำขอได้เนื่องจากไม่ได้เชื่อมต่ออินเทอร์เน็ต กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่อีกครั้ง');
         return false;
@@ -1449,7 +1450,7 @@ function submitToJotform(fieldOverrides = {}) {
     const completeSubmit = () => {
         if (successShown) return;
         successShown = true;
-        showSubmitSuccess();
+        if (!options.silent) showSubmitSuccess();
     };
     iframe.addEventListener('load', completeSubmit);
     document.body.appendChild(form);
