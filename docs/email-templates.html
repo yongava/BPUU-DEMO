@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ต้นแบบเทมเพลตอีเมล — ระบบกระบวนงาน BPUU (JotForm)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ci-orange:#FA4616; --ci-yellow:#FFC72C; --ci-bluegrey:#7B8189;
+    --ink:#1f2933; --muted:#5a626b; --line:#e6e8eb; --bg:#eef1f4;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Sarabun','Leelawadee UI',Tahoma,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);}
+  header.page{background:linear-gradient(135deg,#FA4616,#ff734d);color:#fff;padding:28px 20px;}
+  header.page .wrap{max-width:1080px;margin:0 auto;}
+  header.page .eyebrow{font-size:13px;letter-spacing:.5px;}
+  header.page h1{margin:4px 0 8px;font-size:26px;font-weight:800;line-height:1.3;}
+  header.page p{margin:0;font-size:15px;max-width:760px;line-height:1.6;}
+  .container{max-width:1080px;margin:0 auto;padding:24px 20px 60px;}
+  .legend{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:20px 0 8px;font-size:14px;line-height:1.75;color:var(--muted);}
+  .legend h2{margin:0 0 8px;font-size:16px;color:var(--ci-orange);}
+  .legend code{background:#fff3ee;color:#b8350f;padding:1px 6px;border-radius:5px;font-size:13px;}
+  .toolbar{position:sticky;top:0;z-index:10;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.07);padding:14px 12px 12px;margin:8px -12px 0;border-radius:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+  .toolbar .label{font-size:13px;color:var(--muted);font-weight:600;}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;}
+  .seg button{border:0;background:#fff;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;color:var(--muted);font-family:inherit;}
+  .seg button.active{background:var(--ci-orange);color:#fff;}
+  .toc{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;margin-left:auto;max-width:100%;-webkit-overflow-scrolling:touch;padding-bottom:2px;}
+  .toc a{font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--line);background:#fff;padding:5px 10px;border-radius:999px;white-space:nowrap;flex:0 0 auto;}
+  .toc a:hover{border-color:var(--ci-orange);color:var(--ci-orange);}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;margin:22px 0;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05);}
+  .card .meta{padding:18px 20px;border-bottom:1px solid var(--line);}
+  .card .meta .tag{display:inline-block;background:#fff3ee;color:var(--ci-orange);font-size:12px;font-weight:800;padding:3px 10px;border-radius:6px;margin-bottom:8px;}
+  .card .meta h3{margin:0 0 10px;font-size:19px;font-weight:800;}
+  .kv{font-size:13px;color:var(--muted);line-height:1.8;}
+  .kv b{color:var(--ink);}
+  .subjectline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;}
+  .subjectline code{background:#f6f8fa;border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:13px;color:#3e4a59;word-break:break-all;flex:1;min-width:220px;}
+  .preview{padding:20px;background:var(--bg);display:flex;justify-content:center;}
+  iframe.mail{border:0;width:600px;max-width:100%;background:#f4f5f7;transition:width .2s;}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;padding:0 20px 18px;}
+  .btn{font-family:inherit;font-size:13px;font-weight:700;border-radius:8px;padding:9px 16px;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--muted);}
+  .btn.primary{background:var(--ci-orange);border-color:var(--ci-orange);color:#fff;}
+  .btn:active{transform:translateY(1px);}
+  details.code{margin:0 20px 20px;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  details.code summary{cursor:pointer;padding:10px 14px;font-size:13px;font-weight:700;color:var(--muted);background:#fafbfc;list-style:none;}
+  details.code summary::-webkit-details-marker{display:none;}
+  details.code summary::before{content:'▸ ';}
+  details.code[open] summary::before{content:'▾ ';}
+  details.code textarea{width:100%;border:0;border-top:1px solid var(--line);padding:14px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;color:#2d333b;min-height:240px;resize:vertical;background:#fcfcfd;}
+  .mobile iframe.mail{width:380px;}
+  footer.page{max-width:1080px;margin:0 auto;padding:0 20px 50px;font-size:12px;color:var(--muted);}
+</style>
+</head>
+<body>
+<header class="page">
+  <div class="wrap">
+    <div class="eyebrow">มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี (มจธ.) · กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)</div>
+    <h1>ต้นแบบเทมเพลตอีเมล (Email Template Prototypes)</h1>
+    <p>ชุดต้นแบบสำหรับ JotForm Workflow — ใช้เป็นมาตรฐานหน้าตาของอีเมลทุกประเภทในระบบ ตัวอย่างด้านล่างแสดงผลแบบเดียวกับที่ผู้รับเห็นในกล่องจดหมาย และมีโค้ด HTML พร้อมคัดลอกไปวางในตัวแก้เมลของ JotForm</p>
+  </div>
+</header>
+
+<div class="container">
+  <div class="legend">
+    <h2>วิธีใช้ &amp; ข้อตกลง</h2>
+    <ul style="margin:0;padding-left:20px;">
+      <li>ตัวแปรในวงเล็บปีกกา เช่น <code>{ชื่อ-สกุลผู้ยื่นคำขอ}</code> <code>{ประเภทคำขอ}</code> <code>{id}</code> คือ <b>ฟิลด์จากฟอร์ม</b> — ในตัวแก้เมล JotForm ให้แทรกจากเมนู <b>Fields</b> (โทเคนจริงอาจต่างจากข้อความนี้ ให้ลบข้อความตัวอย่างแล้วแทรกฟิลด์ทับ)</li>
+      <li><code>{SITE_URL}</code> = URL เว็บจริงของระบบแบบเต็ม <b>ต้องขึ้นต้นด้วย <code>https://</code></b> (เช่น <code>https://bpuu.netlify.app</code>) — ถ้าใส่เป็นโดเมนเปล่าไม่มี <code>https://</code> JotForm จะเติม URL ของ workflow นำหน้า ทำให้ลิงก์กลายเป็น 404</li>
+      <li>ปุ่ม <b>Approve / Deny</b> และปุ่ม <b>กรอกฟอร์ม (View Form)</b> เป็นปุ่มที่ <b>ระบบ JotForm แทรกให้อัตโนมัติ</b> — ในต้นแบบจะแสดงเป็นกรอบประ "ตัวอย่าง" เพื่อให้เห็นตำแหน่ง อย่าก๊อปปุ่มตัวอย่างไปใช้จริง</li>
+      <li>โค้ด HTML ใช้โครงสร้างตาราง + inline CSS ให้แสดงผลได้ทุกโปรแกรมอีเมล (Gmail / Outlook / มือถือ) — คัดลอกทั้งก้อนไปวางในโหมด Source (&lt;/&gt;) ของตัวแก้เมล</li>
+    </ul>
+  </div>
+
+  <div class="toolbar">
+    <span class="label">ความกว้างตัวอย่าง:</span>
+    <div class="seg" id="widthSeg">
+      <button class="active" data-mode="desktop">เดสก์ท็อป (600px)</button>
+      <button data-mode="mobile">มือถือ (380px)</button>
+    </div>
+    <nav class="toc" id="toc"></nav>
+  </div>
+
+  <div id="gallery"></div>
+</div>
+
+<footer class="page">
+  ต้นแบบนี้สร้างเพื่อใช้เป็นมาตรฐานหน้าตาอีเมลของระบบกระบวนงาน BPUU · ปรับ/ต่อยอดได้ตามจริง · เนื้อหาอ้างอิงจาก SDS หัวข้อ 6 (jotform-build-sheet.md)
+</footer>
+
+<script>
+/* ============================================================
+   BPUU email base template  (table-based, inline CSS, 600px)
+   ============================================================ */
+var FONT = "'Sarabun','Leelawadee UI',Tahoma,'Segoe UI',Arial,sans-serif";
+
+function footer(){
+  return ''
+  + '<tr><td style="padding:0 28px;"><div style="border-top:1px solid #eceef1;font-size:0;line-height:0;">&nbsp;</div></td></tr>'
+  + '<tr><td style="padding:18px 28px 22px 28px;color:#5a626b;font-size:13px;line-height:1.7;font-family:'+FONT+';">'
+  +   '<strong style="color:#FA4616;">กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)</strong><br>'
+  +   'มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี<br>'
+  +   'โทร. 02-470-8320-3 &nbsp;&middot;&nbsp; อีเมล <a href="mailto:bpuu@kmutt.ac.th" style="color:#FA4616;text-decoration:none;">bpuu@kmutt.ac.th</a>'
+  + '</td></tr>';
+}
+
+function btn(label, href, color){
+  color = color || '#FA4616';
+  return '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 6px;"><tr>'
+    + '<td align="center" style="border-radius:8px;background-color:'+color+';">'
+    + '<a href="'+href+'" target="_blank" style="display:inline-block;padding:13px 32px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;font-family:'+FONT+';">'+label+'</a>'
+    + '</td></tr></table>';
+}
+
+function infoTable(rows){
+  var out = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:12px 0 6px;border:1px solid #eceef1;border-radius:8px;border-collapse:separate;overflow:hidden;">';
+  for(var i=0;i<rows.length;i++){
+    var bg = (i%2) ? '#ffffff' : '#fafbfc';
+    out += '<tr>'
+      + '<td style="padding:10px 14px;color:#5a626b;font-size:13px;width:40%;vertical-align:top;background-color:'+bg+';border-bottom:1px solid #f0f2f4;font-family:'+FONT+';">'+rows[i][0]+'</td>'
+      + '<td style="padding:10px 14px;color:#1f2933;font-size:14px;font-weight:600;background-color:'+bg+';border-bottom:1px solid #f0f2f4;font-family:'+FONT+';">'+rows[i][1]+'</td>'
+      + '</tr>';
+  }
+  return out + '</table>';
+}
+
+function note(html, accent){
+  accent = accent || '#FA4616';
+  return '<div style="margin-top:14px;padding:12px 16px;background:#fff8f0;border:1px dashed '+accent+';border-radius:8px;color:#9a4a1e;font-size:13px;line-height:1.6;font-family:'+FONT+';">'+html+'</div>';
+}
+
+function quote(html, accent, bg){
+  accent = accent || '#FA4616'; bg = bg || '#f6f8fa';
+  return '<div style="margin:8px 0 4px;padding:12px 16px;background:'+bg+';border-left:3px solid '+accent+';border-radius:6px;color:#3e4a59;font-size:16px;line-height:1.7;font-family:'+FONT+';">'+html+'</div>';
+}
+
+/* build the full email HTML body for one template */
+function buildEmail(t){
+  return ''
+  + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0;padding:0;background-color:#f4f5f7;font-family:'+FONT+';">'
+  + '<tr><td align="center" style="padding:24px 12px;">'
+  +   '<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td><![endif]-->'
+  +   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border-radius:12px;border-collapse:separate;overflow:hidden;">'
+  +     '<tr><td style="background-color:#FA4616;background-image:linear-gradient(135deg,#FA4616,#ff734d);padding:20px 28px;">'
+  +       '<div style="color:#ffffff;font-size:12px;letter-spacing:.4px;font-family:'+FONT+';">มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี (มจธ.)</div>'
+  +       '<div style="color:#ffffff;font-size:18px;font-weight:800;padding-top:2px;font-family:'+FONT+';">กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน &middot; BPUU</div>'
+  +     '</td></tr>'
+  +     '<tr><td style="height:4px;line-height:4px;font-size:0;background-color:'+t.statusColor+';">&nbsp;</td></tr>'
+  +     '<tr><td style="padding:24px 28px 0;">'
+  +       '<span style="display:inline-block;background-color:'+t.badgeBg+';color:'+t.badgeText+';font-size:13px;font-weight:700;padding:6px 14px;border-radius:999px;font-family:'+FONT+';">'+t.statusLabel+'</span>'
+  +     '</td></tr>'
+  +     '<tr><td style="padding:14px 28px 0;color:#1f2933;font-size:20px;font-weight:800;line-height:1.45;font-family:'+FONT+';">'+t.heading+'</td></tr>'
+  +     '<tr><td style="padding:12px 28px 22px;color:#3e4a59;font-size:16px;line-height:1.75;font-family:'+FONT+';">'+t.body+'</td></tr>'
+  +     footer()
+  +   '</table>'
+  +   '<!--[if mso]></td></tr></table><![endif]-->'
+  +   '<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" align="center"><tr><td><![endif]-->'
+  +   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;"><tr>'
+  +     '<td style="padding:14px 20px;color:#5f6873;font-size:12px;line-height:1.7;text-align:center;background-color:#f4f5f7;font-family:'+FONT+';">'+t.systemNote+'</td>'
+  +   '</tr></table>'
+  +   '<!--[if mso]></td></tr></table><![endif]-->'
+  + '</td></tr></table>';
+}
+
+/* ============================================================
+   Template definitions  (content from SDS §6 / build sheet)
+   ============================================================ */
+var SYS_AUTO  = 'อีเมลฉบับนี้ส่งจากระบบอัตโนมัติ ไม่สามารถตอบกลับได้ — หากมีปัญหาหรือข้อสงสัย กรุณาโทร 02-470-8320-3';
+var SYS_REPLY = SYS_AUTO;
+
+var TEMPLATES = [
+{
+  anchor:'received', tag:'6.1 · Autoresponder', name:'แจ้งรับเรื่อง (Ticket Received)',
+  to:'อีเมลผู้ยื่นคำขอ', from:'ระบบกระบวนงาน BPUU',
+  subject:'[Received] ระบบได้รับคำขอใช้บริการ {ประเภทคำขอ} ของท่านแล้ว (Ref: {id})',
+  setup:'ตั้งที่ ฟอร์มหลัก → Settings → Emails → Autoresponder',
+  statusLabel:'รับเรื่องแล้ว', statusColor:'#7B8189', badgeBg:'#eef1f4', badgeText:'#5a626b',
+  heading:'ระบบได้รับคำขอของท่านแล้ว',
+  systemNote:SYS_REPLY,
+  body:
+    'เรียน คุณ{ชื่อ-สกุลผู้ยื่นคำขอ}<br><br>'
+    + 'ระบบกระบวนงาน BPUU ได้รับคำขอใช้บริการ <strong>&ldquo;{ประเภทคำขอ}&rdquo;</strong> ของท่านเรียบร้อยแล้ว'
+    + infoTable([['หมายเลขคำขอ (Ref)','{id}'],['ประเภทคำขอ','{ประเภทคำขอ}'],['สถานะปัจจุบัน','รอการตรวจสอบ']])
+    + 'เจ้าหน้าที่จะดำเนินการตรวจสอบและแจ้งผลให้ท่านทราบผ่านอีเมลนี้<br>'
+    + '<span style="color:#5a626b;font-size:13px;">* กรุณาเก็บหมายเลขคำขอไว้สำหรับติดตามสถานะ</span>'
+    + '<br><br>ขอแสดงความนับถือ'
+},
+{
+  anchor:'approval', tag:'6.2 · ทุกกล่องอนุมัติ', name:'ขออนุมัติ (Approval Request)',
+  to:'ผู้มีอำนาจอนุมัติ (เทส = dev.codegym@gmail.com)', from:'ระบบกระบวนงาน BPUU',
+  subject:'[Action Required] อนุมัติคำขอใช้บริการ {ประเภทคำขอ} — คุณ{ชื่อ-สกุลผู้ยื่นคำขอ}',
+  setup:'EDIT EMAIL ของกล่อง Approval แล้วกดไอคอนรูปตา (eye) ติ๊ก Approve + Deny',
+  statusLabel:'ต้องดำเนินการ', statusColor:'#FA4616', badgeBg:'#D62F0A', badgeText:'#ffffff',
+  heading:'มีคำขอรอการพิจารณาอนุมัติ',
+  systemNote:SYS_AUTO,
+  body:
+    'เรียน ผู้มีอำนาจอนุมัติ<br><br>'
+    + 'มีคำขอใช้บริการรายการใหม่รอการพิจารณาของท่าน'
+    + infoTable([['ผู้ยื่นคำขอ','คุณ{ชื่อ-สกุลผู้ยื่นคำขอ}'],['ประเภทคำขอ','{ประเภทคำขอ}'],['หมายเลขคำขอ (Ref)','{id}']])
+    + 'รายละเอียดคำขอทั้งหมดแสดงอยู่ด้านบนของอีเมลฉบับนี้ กรุณากดปุ่มด้านล่างเพื่อพิจารณา'
+    + '<div style="margin-top:14px;padding:14px 16px;background:#fff8f0;border:1px dashed #FA4616;border-radius:8px;font-family:'+FONT+';">'
+    +   '<div style="color:#9a4a1e;font-size:13px;margin-bottom:10px;">ปุ่มพิจารณา — ระบบ JotForm จะแทรกให้ที่ตำแหน่งนี้ (ด้านล่างเป็นเพียงตัวอย่าง):</div>'
+    +   '<span style="display:inline-block;padding:10px 22px;background:#1E7E34;color:#fff;border-radius:6px;font-weight:700;font-size:14px;margin-right:8px;">&#10003; Approve</span>'
+    +   '<span style="display:inline-block;padding:10px 22px;background:#C0392B;color:#fff;border-radius:6px;font-weight:700;font-size:14px;">&#10007; Deny</span>'
+    +   '<div style="color:#9a4a1e;font-size:12px;margin-top:10px;">* ในตัวแก้เมลต้องกดไอคอนรูปตา (eye) แล้วติ๊ก Approve + Deny ทุกครั้ง มิฉะนั้นปุ่มจะไม่ปรากฏ</div>'
+    + '</div>'
+},
+{
+  anchor:'payment', tag:'6.3 · กล่อง [10] Payment', name:'แจ้งชำระเงิน (Payment Notification)',
+  to:'อีเมลผู้ยื่นคำขอ', from:'ระบบกระบวนงาน BPUU',
+  subject:'[Payment] แจ้งชำระค่าธรรมเนียมบริการ {ประเภทคำขอ} (Ref: {id})',
+  setup:'แก้เมล assign ของฟอร์ม Payment — เปิดปุ่มฟอร์มผ่านไอคอนรูปตา (Task Action) อย่าพิมพ์ลิงก์แนบสลิปเอง · ⚠️ {ยอดค่าบริการประเมิน}=q67 ตอนนี้คำนวณเฉพาะสายค้างคืน — สายจ่ายเงินอื่นต้องยืนยันว่า q67 มีค่าก่อน มิฉะนั้นยอดจะว่าง',
+  statusLabel:'รอชำระเงิน', statusColor:'#FFC72C', badgeBg:'#FFF3D6', badgeText:'#7a5f00',
+  heading:'โปรดชำระค่าธรรมเนียมบริการ',
+  systemNote:SYS_REPLY,
+  body:
+    'เรียน คุณ{ชื่อ-สกุลผู้ยื่นคำขอ}<br><br>'
+    + 'คำขอใช้บริการ <strong>&ldquo;{ประเภทคำขอ}&rdquo;</strong> ของท่านมีค่าธรรมเนียมที่ต้องชำระ ดังนี้'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0;background:#FFF7E0;border:1px solid #FFE199;border-radius:10px;"><tr><td style="padding:16px 18px;text-align:center;font-family:'+FONT+';">'
+    +   '<div style="color:#8a6d00;font-size:13px;">ยอดที่ต้องชำระ</div>'
+    +   '<div style="color:#8a6d00;font-size:28px;font-weight:800;line-height:1.3;">{ยอดค่าบริการประเมิน} บาท</div>'
+    + '</td></tr></table>'
+    + '<strong>วิธีชำระเงิน</strong><br>1) กดปุ่มด้านล่างเพื่อสแกน QR / ชำระเงิน<br>2) เมื่อชำระแล้ว แนบสลิปผ่านฟอร์มที่ระบบส่งให้'
+    + btn('ไปหน้าชำระเงิน / สแกน QR','{SITE_URL}/payment.html?ref={id}&amp;amount={ยอดค่าบริการประเมิน}')
+    + '<div style="color:#5a626b;font-size:12px;margin:2px 0 0;font-family:'+FONT+';">* แทนค่า {SITE_URL} ด้วย URL เต็มที่ขึ้นต้นด้วย https:// (เช่น https://bpuu.netlify.app)</div>'
+    + note('แนบสลิป: ปุ่ม <strong>&ldquo;กรอกฟอร์ม (View Form)&rdquo;</strong> สำหรับแนบสลิป ระบบ JotForm จะแทรกให้อัตโนมัติด้านล่างนี้ — กรุณาอย่าพิมพ์ลิงก์เอง')
+},
+{
+  anchor:'approved', tag:'6.4.1 · กล่อง [8]', name:'แจ้งผลอนุมัติ (Completed / Approved)',
+  to:'อีเมลผู้ยื่นคำขอ', from:'ระบบกระบวนงาน BPUU',
+  subject:'[Completed] แจ้งผลการอนุมัติคำขอ {ประเภทคำขอ} (Ref: {id})',
+  setup:'ใช้ถ้อยคำกลางทุกสาย (เลิกใช้คำว่า overnight) · หมายเหตุ: {Approval Comment} อาจว่างหากอนุมัติผ่านปุ่มในอีเมล (คอมเมนต์บังคับเฉพาะในระบบ) — ตั้งคอมเมนต์ default ไว้กันช่องว่าง',
+  statusLabel:'อนุมัติแล้ว', statusColor:'#1E7E34', badgeBg:'#E6F4EA', badgeText:'#1E7E34',
+  heading:'คำขอของท่านได้รับการอนุมัติ &#10003;',
+  systemNote:SYS_REPLY,
+  body:
+    'เรียน คุณ{ชื่อ-สกุลผู้ยื่นคำขอ}<br><br>'
+    + 'คำขอใช้บริการ <strong>&ldquo;{ประเภทคำขอ}&rdquo;</strong> ของท่าน <strong style="color:#1E7E34;">ได้รับการอนุมัติเรียบร้อยแล้ว</strong>'
+    + infoTable([['หมายเลขคำขอ (Ref)','{id}'],['ประเภทคำขอ','{ประเภทคำขอ}'],['ผลการพิจารณา','อนุมัติ']])
+    + '<strong>เหตุผล / หมายเหตุประกอบ</strong>'
+    + quote('{Approval Comment}','#1E7E34')
+    + '<br>ขอบคุณที่ใช้บริการของกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)'
+},
+{
+  anchor:'rejected', tag:'6.4.2 · กล่อง [9]', name:'แจ้งปฏิเสธ (Rejected)',
+  to:'อีเมลผู้ยื่นคำขอ', from:'ระบบกระบวนงาน BPUU',
+  subject:'[Result] แจ้งผลการพิจารณาคำขอ {ประเภทคำขอ} (Ref: {id})',
+  setup:'ใช้ถ้อยคำกลางทุกสาย · หมายเหตุ: {Approval Comment} อาจว่างหากปฏิเสธผ่านปุ่มในอีเมล — ตั้งคอมเมนต์ default ไว้กันช่องว่าง',
+  statusLabel:'ไม่ผ่านการพิจารณา', statusColor:'#C0392B', badgeBg:'#FCE8E8', badgeText:'#C0392B',
+  heading:'ผลการพิจารณาคำขอของท่าน',
+  systemNote:SYS_REPLY,
+  body:
+    'เรียน คุณ{ชื่อ-สกุลผู้ยื่นคำขอ}<br><br>'
+    + 'คำขอใช้บริการ <strong>&ldquo;{ประเภทคำขอ}&rdquo;</strong> ของท่าน <strong style="color:#C0392B;">ไม่ผ่านการพิจารณา</strong>'
+    + infoTable([['หมายเลขคำขอ (Ref)','{id}'],['ประเภทคำขอ','{ประเภทคำขอ}'],['ผลการพิจารณา','ไม่อนุมัติ']])
+    + '<strong>เหตุผล</strong>'
+    + quote('{Approval Comment}','#C0392B','#fff5f5')
+    + '<br>ท่านสามารถยื่นคำขอใหม่อีกครั้งได้ หากมีข้อสงสัยกรุณาติดต่อเจ้าหน้าที่ตามช่องทางด้านล่าง'
+},
+{
+  anchor:'moreinfo', tag:'6.4.3 · ออปชัน', name:'ขอข้อมูลเพิ่มเติม (Request More Info)',
+  to:'อีเมลผู้ยื่นคำขอ', from:'ระบบกระบวนงาน BPUU',
+  subject:'[Result] ขอข้อมูลหรือเอกสารเพิ่มเติม {ประเภทคำขอ} (Ref: {id})',
+  setup:'เปิดฟังก์ชัน "Request more information" ในตัว Approval element',
+  statusLabel:'รอข้อมูลเพิ่มเติม', statusColor:'#E08600', badgeBg:'#FFF1DB', badgeText:'#9a5b00',
+  heading:'ขอข้อมูล / เอกสารเพิ่มเติม',
+  systemNote:SYS_REPLY,
+  body:
+    'เรียน คุณ{ชื่อ-สกุลผู้ยื่นคำขอ}<br><br>'
+    + 'เพื่อดำเนินการคำขอใช้บริการ <strong>&ldquo;{ประเภทคำขอ}&rdquo;</strong> (Ref: {id}) ของท่านต่อ เจ้าหน้าที่ขอความกรุณาให้ท่านส่งข้อมูลหรือเอกสารเพิ่มเติม ดังนี้'
+    + quote('{Approval Comment}','#E08600','#fff8f0')
+    + '<br>กรุณาส่งข้อมูล/เอกสารดังกล่าวกลับผ่านลิงก์/ปุ่มที่ระบบแนบมาให้ (หรือตอบกลับอีเมลฉบับนี้) โดยเร็ว เพื่อให้เจ้าหน้าที่ดำเนินการต่อได้ (คำขอจะอยู่ในสถานะรอข้อมูลจนกว่าจะได้รับข้อมูลเพิ่มเติม)'
+    + note('หากเปิดฟังก์ชัน &ldquo;Request more information&rdquo; ของ JotForm ระบบจะแทรกปุ่ม/ลิงก์สำหรับส่งข้อมูลกลับให้โดยอัตโนมัติ', '#E08600')
+},
+{
+  anchor:'issue', tag:'สายแจ้งปัญหา · กล่อง [16]', name:'แจ้งผลเรื่องที่แจ้ง (Issue Result)',
+  to:'อีเมลผู้แจ้งเรื่อง', from:'ระบบกระบวนงาน BPUU',
+  subject:'[Completed] แจ้งผลการดำเนินการเรื่องที่ท่านแจ้ง (Ref: {id})',
+  setup:'ถ้อยคำกลาง — ทั้ง Approve และ Deny ของกล่อง [15] วิ่งมาเมลนี้ · {Approval Comment} = คอมเมนต์ของกล่อง [15] (ตั้ง default กันช่องว่าง)',
+  statusLabel:'ดำเนินการแล้ว', statusColor:'#1E7E34', badgeBg:'#E6F4EA', badgeText:'#1E7E34',
+  heading:'แจ้งผลการดำเนินการเรื่องที่ท่านแจ้ง',
+  systemNote:SYS_REPLY,
+  body:
+    'เรียน ผู้แจ้งเรื่อง<br><br>'
+    + 'เรื่องที่ท่านแจ้งในกลุ่ม <strong>&ldquo;{กลุ่มของปัญหา}&rdquo;</strong> (Ref: {id}) ได้รับการดำเนินการเรียบร้อยแล้ว<br><br>'
+    + '<strong>สรุปผลการดำเนินการ</strong>'
+    + quote('{Approval Comment}','#1E7E34')
+    + '<br>ขอบคุณที่แจ้งให้เราทราบ ความคิดเห็นของท่านช่วยให้เราพัฒนาการให้บริการได้ดียิ่งขึ้น'
+},
+{
+  anchor:'fyi-contractor', tag:'สายคู่สัญญา · Email ใหม่', name:'FYI ผู้ดูแลพื้นที่ (คู่สัญญา)',
+  to:'อีเมลผู้ดูแลพื้นที่ (เทส = dev.codegym)', from:'ระบบกระบวนงาน BPUU',
+  subject:'[FYI] แจ้งคู่สัญญาเข้าพื้นที่ {อาคาร} วันที่ {วันที่เข้าพื้นที่} เวลา {ตั้งแต่เวลา}–{ถึงเวลา} (Ref: {id})',
+  setup:'chain: Manager คู่สัญญา ─Approve→ [FYI ผู้ดูแลพื้นที่] → [8]',
+  statusLabel:'แจ้งเพื่อทราบ', statusColor:'#7B8189', badgeBg:'#eef1f4', badgeText:'#5a626b',
+  heading:'คู่สัญญาได้รับอนุมัติให้เข้าพื้นที่',
+  systemNote:SYS_AUTO,
+  body:
+    'เรียน ผู้ดูแลพื้นที่ {พื้นที่การศึกษา}<br><br>'
+    + 'ขอแจ้งให้ทราบว่ามีคู่สัญญาได้รับอนุมัติให้เข้าปฏิบัติงานในพื้นที่ที่ท่านดูแล รายละเอียดดังนี้'
+    + infoTable([
+        ['บริษัท / ผู้รับเหมา','{ชื่อบริษัท} ({ประเภทธุรกิจ})'],
+        ['ผู้ประสานงาน','คุณ{ชื่อ-สกุลผู้ยื่นคำขอ} &middot; โทร {เบอร์โทรศัพท์}'],
+        ['วันที่เข้าพื้นที่','{วันที่เข้าพื้นที่}'],
+        ['ช่วงเวลา','{ตั้งแต่เวลา} – {ถึงเวลา} น.'],
+        ['สถานที่','{พื้นที่การศึกษา} อาคาร {อาคาร}'],
+        ['ทะเบียนรถ','{ทะเบียนรถยนต์}'],
+        ['รายละเอียดงาน','{ข้อความเสนอพิจารณา}'],
+        ['หมายเลขคำขอ (Ref)','{id}']
+      ])
+    + 'จึงเรียนมาเพื่อโปรดทราบและเตรียมความพร้อมของพื้นที่ หากมีข้อสงสัยกรุณาติดต่อกลุ่มงาน BPUU'
+},
+{
+  anchor:'fyi-vehicle', tag:'สายทะเบียนรถ · บุคลากร', name:'FYI ทะเบียนรถ (ต่อใน IBGM)',
+  to:'เจ้าหน้าที่ BPUU (เทส = dev.codegym)', from:'ระบบกระบวนงาน BPUU',
+  subject:'[FYI] คำขอทะเบียนรถ — รับทราบและดำเนินการต่อใน IBGM (Ref: {id})',
+  setup:'สาย 4 บุคลากร → Email ใหม่ "FYI ทะเบียนรถ" = จบสาย',
+  statusLabel:'แจ้งเพื่อทราบ', statusColor:'#7B8189', badgeBg:'#eef1f4', badgeText:'#5a626b',
+  heading:'คำขอทะเบียนรถ — ดำเนินการต่อใน IBGM',
+  systemNote:SYS_AUTO,
+  body:
+    'เรียน เจ้าหน้าที่ BPUU<br><br>'
+    + 'มีคำขอเกี่ยวกับ <strong>ทะเบียนรถ</strong> จากบุคลากรที่ต้องดำเนินการต่อในระบบ IBGM'
+    + infoTable([
+        ['ผู้ยื่นคำขอ','คุณ{ชื่อ-สกุลผู้ยื่นคำขอ}'],
+        ['ประเภทคำขอ','{ประเภทคำขอ}'],
+        ['ทะเบียนรถ','{ทะเบียนรถยนต์}'],
+        ['หมายเลขคำขอ (Ref)','{id}']
+      ])
+    + 'กรุณารับทราบและดำเนินการต่อในระบบ IBGM ตามขั้นตอนปกติ — เมื่อดำเนินการในระบบ IBGM แล้ว ถือว่าคำขอนี้เสร็จสมบูรณ์'
+}
+];
+
+/* ============================================================
+   Render gallery
+   ============================================================ */
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function previewDoc(bodyHtml){
+  return '<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">'
+    + '<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet">'
+    + '<style>html,body{margin:0;padding:0;background:#f4f5f7;}</style></head><body>'
+    + bodyHtml + '</body></html>';
+}
+
+var gallery = document.getElementById('gallery');
+var toc = document.getElementById('toc');
+
+TEMPLATES.forEach(function(t){
+  var emailHtml = buildEmail(t);
+
+  var tocA = document.createElement('a');
+  tocA.href = '#' + t.anchor; tocA.textContent = t.name;
+  toc.appendChild(tocA);
+
+  var card = document.createElement('section');
+  card.className = 'card'; card.id = t.anchor;
+
+  card.innerHTML =
+    '<div class="meta">'
+    + '<span class="tag">'+t.tag+'</span>'
+    + '<h3>'+t.name+'</h3>'
+    + '<div class="kv"><b>ถึง (To):</b> '+t.to+' &nbsp;|&nbsp; <b>จาก (From):</b> '+t.from+'</div>'
+    + '<div class="kv"><b>ตั้งค่า:</b> '+t.setup+'</div>'
+    + '<div class="subjectline"><b style="font-size:13px;color:#5a626b;">เรื่อง (Subject):</b><code>'+esc(t.subject)+'</code>'
+    +   '<button class="btn" data-copy-subject="'+t.anchor+'">คัดลอกเรื่อง</button></div>'
+    + '</div>'
+    + '<div class="preview"><iframe class="mail" loading="lazy"></iframe></div>'
+    + '<div class="actions">'
+    +   '<button class="btn primary" data-copy-html="'+t.anchor+'">&#128203; คัดลอกโค้ด HTML</button>'
+    +   '<button class="btn" data-open-html="'+t.anchor+'">เปิดดูเต็มหน้าจอ</button>'
+    + '</div>'
+    + '<details class="code"><summary>ดูโค้ด HTML (สำหรับวางในตัวแก้เมล JotForm)</summary>'
+    +   '<textarea readonly spellcheck="false"></textarea></details>';
+
+  gallery.appendChild(card);
+
+  // fill iframe + textarea after insertion
+  var iframe = card.querySelector('iframe.mail');
+  iframe.srcdoc = previewDoc(emailHtml);
+  iframe.addEventListener('load', function(){
+    try { iframe.style.height = (iframe.contentWindow.document.body.scrollHeight + 8) + 'px'; } catch(e){}
+  });
+  var ta = card.querySelector('textarea');
+  ta.value = emailHtml;
+
+  // wire buttons
+  card.querySelector('[data-copy-html]').addEventListener('click', function(){
+    copy(emailHtml, this);
+  });
+  card.querySelector('[data-copy-subject]').addEventListener('click', function(){
+    copy(t.subject, this);
+  });
+  card.querySelector('[data-open-html]').addEventListener('click', function(){
+    var w = window.open('', '_blank'); w.document.write(previewDoc(emailHtml)); w.document.close();
+  });
+});
+
+function copy(text, btn){
+  var done = function(){ var o=btn.textContent; btn.textContent='✓ คัดลอกแล้ว'; setTimeout(function(){btn.textContent=o;},1400); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done, function(){ legacyCopy(text); done(); });
+  } else { legacyCopy(text); done(); }
+}
+function legacyCopy(text){
+  var ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); }catch(e){} document.body.removeChild(ta);
+}
+
+// width toggle
+document.getElementById('widthSeg').addEventListener('click', function(e){
+  var b = e.target.closest('button'); if(!b) return;
+  this.querySelectorAll('button').forEach(function(x){x.classList.remove('active');});
+  b.classList.add('active');
+  document.body.classList.toggle('mobile', b.dataset.mode==='mobile');
+});
+</script>
+</body>
+</html>
