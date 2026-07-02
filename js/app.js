@@ -151,6 +151,14 @@ function getModlinkAdviceHTML() {
         </div>`;
 }
 
+// เบอร์มือถือ: id ของฟิลด์ที่ต้องบังคับกรอกเฉพาะตัวเลข ขึ้นต้นด้วย 0 และไม่เกิน 10 หลัก
+const PHONE_FIELD_IDS = ['reqPhone', 'extPhone', 'monthlyOtherPhone'];
+function sanitizePhoneInput(el) {
+    let digits = el.value.replace(/\D/g, '');       // ตัวเลขเท่านั้น
+    if (digits && digits[0] !== '0') digits = '0' + digits.replace(/^0+/, ''); // บังคับขึ้นต้นด้วย 0
+    el.value = digits.slice(0, 10);                 // ไม่เกิน 10 หลัก
+}
+
 document.addEventListener("DOMContentLoaded", function() {
     loginModalInstance = new bootstrap.Modal(document.getElementById('loginModal'));
     modlinkModalInstance = new bootstrap.Modal(document.getElementById('modlinkModal'));
@@ -160,6 +168,10 @@ document.addEventListener("DOMContentLoaded", function() {
     // consentCheck ถูก render แบบ dynamic — ใช้ event delegation จับการติ๊กเพื่อเปิด/ปิดปุ่มส่ง
     document.addEventListener('change', function(e) {
         if (e.target && e.target.id === 'consentCheck') updateSubmitState();
+    });
+    // เบอร์มือถือ: กรอกได้เฉพาะตัวเลข ขึ้นต้นด้วย 0 และไม่เกิน 10 หลัก (รองรับฟิลด์ที่ถูก render ทีหลังด้วย event delegation)
+    document.addEventListener('input', function(e) {
+        if (e.target && PHONE_FIELD_IDS.includes(e.target.id)) sanitizePhoneInput(e.target);
     });
 });
 
@@ -414,7 +426,7 @@ function renderDynamicForm(formName, targetContainerId) {
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label text-ci-bluegrey fw-bold small">เบอร์โทรศัพท์ <span class="req-star">*</span></label>
-                                    <input type="tel" class="form-control" id="monthlyOtherPhone" placeholder="08X-XXX-XXXX">
+                                    <input type="tel" inputmode="numeric" maxlength="10" pattern="0[0-9]{9}" class="form-control" id="monthlyOtherPhone" placeholder="08XXXXXXXX">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label text-ci-bluegrey fw-bold small">อีเมล <span class="req-star">*</span></label>
