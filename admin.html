@@ -22,9 +22,14 @@
 
 <div class="container-fluid px-4 pb-5">
 
-    <div class="alert alert-warning small py-2 mb-3">
+    <div class="alert alert-warning small py-2 mb-2">
         <i class="bi bi-exclamation-triangle-fill me-1"></i>
         <strong>โหมดเดโม่:</strong> หน้านี้ฝัง API key ไว้ในตัวเว็บ ใครเข้าถึงหน้านี้ได้ = อ่าน/แก้ข้อมูลทุกคำขอได้ — ก่อนใช้งานจริงต้องย้าย key ไปฝั่งเซิร์ฟเวอร์ (proxy) และ revoke key ชุดนี้
+    </div>
+    <div class="alert alert-info small py-2 mb-3">
+        <i class="bi bi-info-circle-fill me-1"></i>
+        หน้านี้ดึงข้อมูล เอกสารแนบ และเชื่อมสลิปให้อัตโนมัติ — <strong>ไม่ต้องเปิด JotForm Inbox เพื่อดูข้อมูลอีกต่อไป</strong>
+        ยกเว้นขั้นตอน <strong>กดอนุมัติ/ปฏิเสธ</strong> ซึ่ง JotForm ผูกกับลิงก์เฉพาะในอีเมลของผู้อนุมัติแต่ละคน ไม่มี API ให้กดแทนได้ — ขั้นนั้นยังต้องเปิดอีเมล/Inbox ตามปกติ
     </div>
 
     <div id="statusChips" class="d-flex flex-wrap gap-2 mb-3"></div>
@@ -47,7 +52,12 @@
                     <option value="">ทุกสถานะ</option>
                 </select>
                 <input id="searchBox" class="form-control form-control-sm" style="max-width: 240px;" placeholder="ค้นหา ชื่อ / เลขอ้างอิง">
+                <select id="sortOrder" class="form-select form-select-sm" style="max-width: 190px;">
+                    <option value="newest">ใหม่สุดก่อน</option>
+                    <option value="oldest">ค้างนานสุดก่อน</option>
+                </select>
                 <button class="btn btn-sm btn-ci-orange fw-bold" onclick="loadRequests()"><i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช</button>
+                <button class="btn btn-sm btn-outline-secondary fw-bold" onclick="exportCsv()"><i class="bi bi-filetype-csv me-1"></i>ส่งออก CSV</button>
                 <span id="loadInfo" class="small text-ci-bluegrey"></span>
             </div>
             <div id="ticketCards" class="row g-3"></div>
@@ -61,9 +71,9 @@
             <div class="table-responsive bg-white rounded shadow-sm">
                 <table class="table table-hover align-middle small mb-0">
                     <thead class="table-light">
-                        <tr><th>วันที่ส่ง</th><th>เลขอ้างอิงคำขอ</th><th class="text-end">ยอดที่โอน</th><th>ผู้โอน</th><th>อีเมล</th><th>วันที่โอน</th><th>สลิป</th></tr>
+                        <tr><th>วันที่ส่ง</th><th>เลขอ้างอิงคำขอ</th><th class="text-end">ยอดที่โอน</th><th>ผู้โอน</th><th>อีเมล</th><th>วันที่โอน</th><th>สลิป</th><th>Ticket</th></tr>
                     </thead>
-                    <tbody id="slipRows"><tr><td colspan="7" class="text-center text-muted py-4">กด รีเฟรช เพื่อโหลด</td></tr></tbody>
+                    <tbody id="slipRows"><tr><td colspan="8" class="text-center text-muted py-4">กด รีเฟรช เพื่อโหลด</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -95,6 +105,7 @@
           <div class="col-md-6">
             <div class="small text-muted">ผู้ขอ</div>
             <div class="fw-bold" id="mRequester">—</div>
+            <div class="small text-muted" id="mPhone">—</div>
           </div>
           <div class="col-md-6">
             <div class="small text-muted">วันที่ยื่นคำขอ</div>
@@ -103,6 +114,34 @@
           <div class="col-12">
             <div class="small text-muted mb-1">รายละเอียด</div>
             <div class="border rounded p-2 bg-light small" id="mDetail" style="white-space: pre-wrap; max-height: 200px; overflow:auto;">—</div>
+          </div>
+          <div class="col-12" id="mApproverWrap" style="display:none;">
+            <div class="small text-muted mb-1">ผู้อนุมัติ (จากข้อมูลผู้ขอ)</div>
+            <div class="small" id="mApprover">—</div>
+            <div class="small text-muted fst-italic">*ข้อมูลจากผังองค์กรของผู้ขอ อาจไม่ตรงกับผู้อนุมัติจริงในบางประเภทคำขอ — ดูผลอนุมัติจริงที่ Inbox</div>
+          </div>
+          <div class="col-12" id="mFilesWrap" style="display:none;">
+            <div class="small text-muted mb-1"><i class="bi bi-paperclip me-1"></i>เอกสารแนบ</div>
+            <div id="mFiles" class="d-flex flex-wrap gap-2"></div>
+          </div>
+          <div class="col-12" id="mSlipsWrap" style="display:none;">
+            <div class="small text-muted mb-1"><i class="bi bi-receipt me-1"></i>สลิปที่เกี่ยวข้อง</div>
+            <div id="mSlips" class="d-flex flex-wrap gap-2"></div>
+          </div>
+        </div>
+
+        <div class="accordion mb-3" id="mRawAccordion" style="display:none;">
+          <div class="accordion-item">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed small py-2" type="button" data-bs-toggle="collapse" data-bs-target="#mRawCollapse">
+                <i class="bi bi-table me-2"></i>ข้อมูลแบบฟอร์ม (raw) — ไว้ตรวจสอบกับรายละเอียดด้านบน
+              </button>
+            </h2>
+            <div id="mRawCollapse" class="accordion-collapse collapse">
+              <div class="accordion-body p-2">
+                <table class="table table-sm table-borderless mb-0 small" id="mRawTable"><tbody></tbody></table>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -134,17 +173,31 @@ const STATUS_OPTIONS = ['รอพิจารณา', 'แจ้งยอดแ
 const TIMELINE_MAIN = ['รอพิจารณา', 'แจ้งยอดแล้ว-รอสลิป', 'ชำระแล้ว-รอใบเสร็จ', 'เสร็จสิ้น'];
 const STATUS_COLORS = { 'รอพิจารณา': 'secondary', 'แจ้งยอดแล้ว-รอสลิป': 'warning', 'ชำระแล้ว-รอใบเสร็จ': 'info', 'เสร็จสิ้น': 'success', 'ไม่อนุมัติ/ยกเลิก': 'danger' };
 const STATUS_ICONS = { 'รอพิจารณา': 'bi-hourglass-split', 'แจ้งยอดแล้ว-รอสลิป': 'bi-cash-coin', 'ชำระแล้ว-รอใบเสร็จ': 'bi-receipt', 'เสร็จสิ้น': 'bi-check-circle-fill', 'ไม่อนุมัติ/ยกเลิก': 'bi-x-circle-fill' };
+const FINAL_STATUSES = ['เสร็จสิ้น', 'ไม่อนุมัติ/ยกเลิก'];
 let currentTicketId = null;
+
+// qid -> label ต่อประเภทคำขอ (q15) สำหรับตาราง "ข้อมูลแบบฟอร์ม (raw)" ในโมดัล — อ้างอิงจาก js/app.js buildRequestDetailFields()
+const BRANCH_FIELDS = {
+    'แบบฟอร์มขอจอดรถรายเดือน': [['41', 'ทะเบียนรถ'], ['36', 'วันที่เริ่มต้น'], ['37', 'วันที่สิ้นสุด'], ['47', 'ขอให้ใคร'], ['48', 'ชื่อผู้ใช้จริง'], ['49', 'เบอร์ผู้ใช้จริง'], ['50', 'อีเมลผู้ใช้จริง']],
+    'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)': [['41', 'ทะเบียนรถ'], ['42', 'รายการรถ (หลายคัน)'], ['43', 'จำนวนคัน'], ['36', 'วันที่เริ่มต้น'], ['37', 'วันที่สิ้นสุด'], ['40', 'จำนวนคืน'], ['44', 'เหตุผล'], ['45', 'รายละเอียดเหตุผล']],
+    'แบบฟอร์มขอใช้ตราประทับ': [['51', 'ขอเพื่อ'], ['52', 'ชื่อโครงการ/หน่วยงาน'], ['53', 'ประเภทผู้ใช้'], ['54', 'ประเภทผู้ใช้ (อื่นๆ)'], ['36', 'วันที่เริ่มต้น'], ['37', 'วันที่สิ้นสุด'], ['40', 'จำนวนวัน']],
+    'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์': [['55', 'การดำเนินการ'], ['41', 'ทะเบียนรถ'], ['42', 'รายการทะเบียน'], ['43', 'จำนวนรายการ']],
+    'แบบฟอร์มขอใช้พื้นที่ชั่วคราว': [['56', 'ชื่องาน/กิจกรรม'], ['41', 'ทะเบียนรถ'], ['36', 'วันที่เริ่มต้น'], ['37', 'วันที่สิ้นสุด'], ['38', 'เวลาเริ่ม'], ['39', 'เวลาสิ้นสุด'], ['69', 'จำนวนบูธ'], ['57', 'วัตถุประสงค์'], ['58', 'วัตถุประสงค์ (อื่นๆ)'], ['59', 'สถานที่'], ['60', 'สถานที่ (อื่นๆ)'], ['46', 'ข้อความเสนอพิจารณา']],
+    'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา': [['61', 'บริษัท'], ['62', 'ประเภทธุรกิจ'], ['63', 'พื้นที่การศึกษา'], ['64', 'อาคาร'], ['41', 'ทะเบียนรถ'], ['36', 'วันที่'], ['38', 'เวลาเริ่ม'], ['39', 'เวลาสิ้นสุด'], ['46', 'ข้อความเสนอพิจารณา']],
+    'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ': [['65', 'หมวดปัญหา'], ['66', 'รายละเอียดปัญหา']],
+};
+const COMMON_RAW_FIELDS = [['18', 'รหัสบุคลากร/นักศึกษา'], ['22', 'หน่วยงาน/คณะ/บริษัท'], ['23', 'ตำแหน่ง']];
 
 document.getElementById('tablesLink').href = `https://www.jotform.com/tables/${MAIN_FORM_ID}`;
 document.getElementById('inboxLink').href = `https://www.jotform.com/inbox/${MAIN_FORM_ID}`;
 
 let allRequests = [];
+let allSlips = [];
 
 function ans(sub, qid) {
     const a = sub.answers && sub.answers[qid] && sub.answers[qid].answer;
     if (a == null) return '';
-    if (typeof a === 'object') return a.datetime || a.prettyFormat || JSON.stringify(a);
+    if (typeof a === 'object') return a.datetime || a.prettyFormat || a.full || JSON.stringify(a);
     return String(a);
 }
 
@@ -158,15 +211,44 @@ function bkkDate(utcStr) {
     }).format(d).replace(',', '');
 }
 
+function ageDays(utcStr) {
+    if (!utcStr) return null;
+    const d = new Date(utcStr.replace(' ', 'T') + 'Z');
+    if (isNaN(d)) return null;
+    return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+function filesOf(sub, qid) {
+    let f = sub.answers && sub.answers[qid] && sub.answers[qid].answer;
+    if (typeof f === 'string') f = f ? [f] : [];
+    return f || [];
+}
+
+// อัตราที่ยืนยันจากข้อความในฟอร์มจริง (js/app.js) — ใช้เป็นค่าประเมิน "fallback" เฉพาะตอน q67 ว่าง ไม่ทับของจริง
+// จอดรถรายเดือน: 900 บาท/เดือน (คงที่ต่อคำขอ 1 เดือน) — สาขาอื่นที่ยังไม่มีสูตรชัดเจน (ตราประทับ/คู่สัญญา) ไม่ประเมินให้ เพื่อกันเลขผิด
+function calcFeeEstimate(sub) {
+    const type = ans(sub, '15');
+    if (type === 'แบบฟอร์มขอจอดรถรายเดือน') return 900;
+    return null;
+}
+
 async function loadRequests() {
     document.getElementById('loadInfo').textContent = 'กำลังโหลด...';
     try {
-        const r = await fetch(`${API}/form/${MAIN_FORM_ID}/submissions?apiKey=${API_KEY}&limit=200&orderby=created_at`).then(x => x.json());
-        allRequests = (r.content || []).filter(s => s.status !== 'DELETED');
+        let all = [], offset = 0;
+        const pageSize = 100;
+        while (true) {
+            const r = await fetch(`${API}/form/${MAIN_FORM_ID}/submissions?apiKey=${API_KEY}&limit=${pageSize}&offset=${offset}&orderby=created_at`).then(x => x.json());
+            const batch = r.content || [];
+            all = all.concat(batch);
+            if (batch.length < pageSize) break;
+            offset += pageSize;
+        }
+        allRequests = all.filter(s => s.status !== 'DELETED');
         renderRequests();
-        document.getElementById('loadInfo').textContent = `ทั้งหมด ${allRequests.length} รายการ`;
+        document.getElementById('loadInfo').textContent = `ทั้งหมด ${allRequests.length} รายการ (โหลดครบทุกหน้า)`;
     } catch (e) {
-        document.getElementById('requestRows').innerHTML = `<tr><td colspan="6" class="text-danger text-center py-4">โหลดไม่สำเร็จ: ${e.message}</td></tr>`;
+        document.getElementById('ticketCards').innerHTML = `<div class="col-12"><div class="text-danger text-center py-4">โหลดไม่สำเร็จ: ${e.message}</div></div>`;
         document.getElementById('loadInfo').textContent = '';
     }
 }
@@ -194,11 +276,15 @@ function renderRequests() {
     const fPerson = document.getElementById('filterPerson').value;
     const fStatus = document.getElementById('filterStatus').value;
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
+    const sortOrder = document.getElementById('sortOrder').value;
     const rows = allRequests.filter(s => {
         const type = ans(s, '15'), status = ans(s, '68') || 'รอพิจารณา', person = personTypeOf(s);
         const hay = `${s.id} ${ans(s, '19')} ${ans(s, '20')}`.toLowerCase();
         return (!fType || type === fType) && (!fPerson || person === fPerson) && (!fStatus || status === fStatus) && (!q || hay.includes(q));
     });
+    rows.sort((a, b) => sortOrder === 'oldest'
+        ? (a.created_at || '').localeCompare(b.created_at || '')
+        : (b.created_at || '').localeCompare(a.created_at || ''));
     const chipCounts = {};
     allRequests.forEach(s => { const st = ans(s, '68') || 'รอพิจารณา'; chipCounts[st] = (chipCounts[st] || 0) + 1; });
     document.getElementById('statusChips').innerHTML = STATUS_OPTIONS
@@ -207,20 +293,25 @@ function renderRequests() {
     document.getElementById('ticketCards').innerHTML = rows.length ? rows.map(s => {
         const status = ans(s, '68') || 'รอพิจารณา';
         const fee = ans(s, '67');
+        const feeEst = !fee ? calcFeeEstimate(s) : null;
         const detail = ans(s, '32');
+        const age = ageDays(s.created_at);
+        const showAge = !FINAL_STATUSES.includes(status) && age !== null && age >= 3;
+        const ageBadge = showAge ? `<span class="badge text-bg-${age >= 7 ? 'danger' : 'warning'}"><i class="bi bi-alarm me-1"></i>${age} วัน</span>` : '';
+        const fileCount = filesOf(s, '33').length;
         return `<div class="col-md-6 col-xl-4">
           <div class="card h-100 shadow-sm ticket-card" style="cursor:pointer;" onclick="openTicket('${s.id}')">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start mb-1">
                 <code class="small">#${s.id}</code>
-                <span class="badge rounded-pill text-bg-${STATUS_COLORS[status]}">${status}</span>
+                <div class="d-flex gap-1">${ageBadge}<span class="badge rounded-pill text-bg-${STATUS_COLORS[status]}">${status}</span></div>
               </div>
               <div class="fw-bold small mb-1" style="min-height:2.4em;">${ans(s, '15') || '—'}</div>
               <div class="small text-muted mb-1"><i class="bi bi-person-fill me-1"></i>${ans(s, '19') || '—'} <span class="badge bg-light text-dark border ms-1">${personTypeOf(s)}</span></div>
               <div class="small text-truncate text-muted mb-2" title="${(detail || '').replace(/"/g, '&quot;')}"><i class="bi bi-card-text me-1"></i>${detail || 'ไม่มีรายละเอียดเพิ่มเติม'}</div>
               <div class="d-flex justify-content-between align-items-center">
-                <span class="small text-muted">${bkkDate(s.created_at)}</span>
-                <span class="fw-bold">${fee ? Number(fee).toLocaleString('th-TH') + ' บาท' : ''}</span>
+                <span class="small text-muted">${bkkDate(s.created_at)}${fileCount ? ` · <i class="bi bi-paperclip"></i> ${fileCount}` : ''}</span>
+                <span class="fw-bold">${fee ? Number(fee).toLocaleString('th-TH') + ' บาท' : (feeEst ? `~${feeEst.toLocaleString('th-TH')} บาท (ประเมิน)` : '')}</span>
               </div>
             </div>
           </div>
@@ -233,15 +324,66 @@ function openTicket(sid) {
     if (!s) return;
     currentTicketId = sid;
     const status = ans(s, '68') || 'รอพิจารณา';
+    const type = ans(s, '15');
+    const fee = ans(s, '67');
+    const feeEst = !fee ? calcFeeEstimate(s) : null;
+
     document.getElementById('ticketModalTitle').innerHTML = `<i class="bi bi-ticket-perforated-fill me-2"></i>Ticket #${sid}`;
-    document.getElementById('mType').textContent = ans(s, '15') || '—';
+    document.getElementById('mType').textContent = type || '—';
     document.getElementById('mPerson').textContent = personTypeOf(s);
-    document.getElementById('mFee').textContent = ans(s, '67') ? Number(ans(s, '67')).toLocaleString('th-TH') : '—';
+    document.getElementById('mFee').textContent = fee ? Number(fee).toLocaleString('th-TH') : (feeEst ? `~${feeEst.toLocaleString('th-TH')} (ประเมิน)` : '—');
     document.getElementById('mRequester').textContent = `${ans(s, '19') || '—'} (${ans(s, '20') || '-'})`;
+    document.getElementById('mPhone').innerHTML = ans(s, '21') ? `<i class="bi bi-telephone-fill me-1"></i>${ans(s, '21')}` : '';
     document.getElementById('mDate').textContent = bkkDate(s.created_at);
     document.getElementById('mDetail').textContent = ans(s, '32') || 'ไม่มีรายละเอียดเพิ่มเติม';
     document.getElementById('mTimeline').innerHTML = timelineHtml(status);
     document.getElementById('mStatusSelect').innerHTML = STATUS_OPTIONS.map(o => `<option ${o === status ? 'selected' : ''}>${o}</option>`).join('');
+
+    // ผู้อนุมัติจากผังองค์กรผู้ขอ (q28-30) — แสดงเฉพาะถ้ามีค่า พร้อม caveat ในตัว HTML อยู่แล้ว
+    const appName = ans(s, '28'), appPos = ans(s, '29'), appEmail = ans(s, '30');
+    if (appName || appEmail) {
+        document.getElementById('mApprover').textContent = [appName, appPos, appEmail].filter(Boolean).join(' · ');
+        document.getElementById('mApproverWrap').style.display = '';
+    } else {
+        document.getElementById('mApproverWrap').style.display = 'none';
+    }
+
+    // เอกสารแนบ (q33)
+    const files = filesOf(s, '33');
+    if (files.length) {
+        document.getElementById('mFiles').innerHTML = files.map((u, i) =>
+            `<a href="${u}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-arrow-down me-1"></i>เอกสารแนบ ${i + 1}</a>`).join('');
+        document.getElementById('mFilesWrap').style.display = '';
+    } else {
+        document.getElementById('mFilesWrap').style.display = 'none';
+    }
+
+    // ตาราง raw field ตามสาขา q15
+    const fields = [...(BRANCH_FIELDS[type] || []), ...COMMON_RAW_FIELDS];
+    const rowsHtml = fields.map(([qid, label]) => {
+        const v = ans(s, qid);
+        return v ? `<tr><td class="text-muted" style="width:220px;">${label}</td><td class="fw-bold">${v}</td></tr>` : '';
+    }).join('');
+    if (rowsHtml) {
+        document.getElementById('mRawTable').querySelector('tbody').innerHTML = rowsHtml;
+        document.getElementById('mRawAccordion').style.display = '';
+    } else {
+        document.getElementById('mRawAccordion').style.display = 'none';
+    }
+
+    // สลิปที่อ้างอิงถึง ticket นี้ (จับคู่ด้วยเลขอ้างอิงในฟอร์มสลิป qid 2)
+    const matchedSlips = allSlips.filter(sl => (ans(sl, '2') || '').trim() === sid);
+    if (matchedSlips.length) {
+        document.getElementById('mSlips').innerHTML = matchedSlips.map(sl => {
+            const links = filesOf(sl, '7').map((u, i) =>
+                `<a href="${u}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-receipt me-1"></i>สลิป ${i + 1} (${ans(sl, '3') ? Number(ans(sl, '3')).toLocaleString('th-TH') + ' บาท' : '—'})</a>`).join('');
+            return links || '<span class="small text-muted">พบสลิปแต่ไม่มีไฟล์แนบ</span>';
+        }).join('');
+        document.getElementById('mSlipsWrap').style.display = '';
+    } else {
+        document.getElementById('mSlipsWrap').style.display = 'none';
+    }
+
     bootstrap.Modal.getOrCreateInstance(document.getElementById('ticketModal')).show();
 }
 
@@ -270,27 +412,64 @@ async function saveStatus(sid, fromModal) {
 }
 
 async function loadSlips() {
-    document.getElementById('slipRows').innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">กำลังโหลด...</td></tr>';
+    document.getElementById('slipRows').innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">กำลังโหลด...</td></tr>';
     try {
-        const r = await fetch(`${API}/form/${SLIP_FORM_ID}/submissions?apiKey=${API_KEY}&limit=200&orderby=created_at`).then(x => x.json());
-        const subs = (r.content || []).filter(s => s.status !== 'DELETED');
-        document.getElementById('slipRows').innerHTML = subs.length ? subs.map(s => {
-            let files = s.answers && s.answers['7'] && s.answers['7'].answer;
-            if (typeof files === 'string') files = [files];
-            const links = (files || []).map((u, i) => `<a href="${u}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-receipt"></i> เปิดสลิป ${i + 1}</a>`).join(' ');
+        let all = [], offset = 0;
+        const pageSize = 100;
+        while (true) {
+            const r = await fetch(`${API}/form/${SLIP_FORM_ID}/submissions?apiKey=${API_KEY}&limit=${pageSize}&offset=${offset}&orderby=created_at`).then(x => x.json());
+            const batch = r.content || [];
+            all = all.concat(batch);
+            if (batch.length < pageSize) break;
+            offset += pageSize;
+        }
+        allSlips = all.filter(s => s.status !== 'DELETED');
+        document.getElementById('slipRows').innerHTML = allSlips.length ? allSlips.map(s => {
+            const refId = (ans(s, '2') || '').trim();
+            const links = filesOf(s, '7').map((u, i) => `<a href="${u}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-receipt"></i> เปิดสลิป ${i + 1}</a>`).join(' ');
+            const matched = allRequests.some(r => r.id === refId);
+            const ticketBtn = matched
+                ? `<button class="btn btn-sm btn-ci-orange fw-bold" onclick="openTicket('${refId}')"><i class="bi bi-box-arrow-up-right me-1"></i>เปิด</button>`
+                : `<span class="badge bg-warning text-dark">ไม่พบคำขอที่ตรงกัน</span>`;
             return `<tr>
                 <td class="text-nowrap">${bkkDate(s.created_at)}</td>
-                <td><code>${ans(s, '2')}</code></td>
+                <td><code>${refId || '—'}</code></td>
                 <td class="text-end fw-bold">${ans(s, '3') ? Number(ans(s, '3')).toLocaleString('th-TH') : '—'}</td>
                 <td>${ans(s, '4')}</td>
                 <td>${ans(s, '5')}</td>
                 <td class="text-nowrap">${ans(s, '6').slice(0, 10)}</td>
                 <td>${links || '—'}</td>
+                <td>${ticketBtn}</td>
             </tr>`;
-        }).join('') : '<tr><td colspan="7" class="text-center text-muted py-4">ยังไม่มีสลิปส่งเข้ามา</td></tr>';
+        }).join('') : '<tr><td colspan="8" class="text-center text-muted py-4">ยังไม่มีสลิปส่งเข้ามา</td></tr>';
     } catch (e) {
-        document.getElementById('slipRows').innerHTML = `<tr><td colspan="7" class="text-danger text-center py-4">โหลดไม่สำเร็จ: ${e.message}</td></tr>`;
+        document.getElementById('slipRows').innerHTML = `<tr><td colspan="8" class="text-danger text-center py-4">โหลดไม่สำเร็จ: ${e.message}</td></tr>`;
     }
+}
+
+function exportCsv() {
+    const fType = document.getElementById('filterType').value;
+    const fPerson = document.getElementById('filterPerson').value;
+    const fStatus = document.getElementById('filterStatus').value;
+    const q = document.getElementById('searchBox').value.trim().toLowerCase();
+    const rows = allRequests.filter(s => {
+        const type = ans(s, '15'), status = ans(s, '68') || 'รอพิจารณา', person = personTypeOf(s);
+        const hay = `${s.id} ${ans(s, '19')} ${ans(s, '20')}`.toLowerCase();
+        return (!fType || type === fType) && (!fPerson || person === fPerson) && (!fStatus || status === fStatus) && (!q || hay.includes(q));
+    });
+    const esc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const header = ['เลขอ้างอิง', 'ประเภทคำขอ', 'ประเภทบุคคล', 'ผู้ขอ', 'อีเมล', 'เบอร์โทร', 'ยอด (บาท)', 'สถานะ', 'วันที่ยื่น (ไทย)'];
+    const lines = rows.map(s => {
+        const fee = ans(s, '67') || calcFeeEstimate(s) || '';
+        return [s.id, ans(s, '15'), personTypeOf(s), ans(s, '19'), ans(s, '20'), ans(s, '21'), fee, ans(s, '68') || 'รอพิจารณา', bkkDate(s.created_at)].map(esc).join(',');
+    });
+    const csv = '﻿' + [header.map(esc).join(','), ...lines].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bpuu-requests-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
 }
 
 function showToast(msg, ok) {
@@ -306,10 +485,11 @@ const PERSON_OPTIONS = ['บุคลากร', 'นักศึกษา', '�
 document.getElementById('filterType').innerHTML += TYPE_OPTIONS.map(t => `<option>${t}</option>`).join('');
 document.getElementById('filterPerson').innerHTML += PERSON_OPTIONS.map(t => `<option>${t}</option>`).join('');
 document.getElementById('filterStatus').innerHTML += STATUS_OPTIONS.map(t => `<option>${t}</option>`).join('');
-['filterType', 'filterPerson', 'filterStatus'].forEach(id => document.getElementById(id).addEventListener('change', renderRequests));
+['filterType', 'filterPerson', 'filterStatus', 'sortOrder'].forEach(id => document.getElementById(id).addEventListener('change', renderRequests));
 document.getElementById('searchBox').addEventListener('input', renderRequests);
 
-loadRequests();
+// โหลด requests ก่อนแล้วค่อยโหลด slips ต่อ (ให้ allRequests พร้อมแล้วก่อนจับคู่สลิป↔ticket ตั้งแต่โหลดหน้าแรก)
+loadRequests().then(loadSlips);
 </script>
 </body>
 </html>
