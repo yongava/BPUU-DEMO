@@ -296,9 +296,7 @@ function selectForm(formName) {
     currentSelectedForm = formName;
     
     if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์' && currentLoginType === 'staff') {
-        fillInternalData(formName);
-        // บันทึก tracking เงียบ ๆ แล้ว redirect ไป IBGM — ไม่โชว์โมดัล "ส่งสำเร็จ" (ไม่ใช่การส่งฟอร์มปกติ)
-        submitToJotform({ q32_summary: 'บุคลากรถูกส่งต่อไปดำเนินการในระบบ IBGM (https://app.ibgm.cloud/)' }, { silent: true });
+        // บุคลากรใช้ระบบ IBGM โดยตรง ไม่ผ่าน JotForm — ห้าม submit เข้า JotForm เพราะจะทำให้ JotForm ยิงอีเมลแจ้งเตือนตามปกติของฟอร์ม
         window.open('https://app.ibgm.cloud/signin', '_blank');
         return;
     }
