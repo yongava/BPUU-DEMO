@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADFS OIDC Sandbox &mdash; Test Console</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f2f4f7;
+    --card-bg: #ffffff;
+    --border: #dde1e7;
+    --text: #1f2430;
+    --muted: #666f7d;
+    --accent: #2f5fdb;
+    --accent-contrast: #ffffff;
+    --ok: #1a7f37;
+    --err-bg: #fdecec;
+    --err-border: #e0a1a1;
+    --err-text: #7a1f1f;
+    --code-bg: #f6f7f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 48px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .card {
+    max-width: 720px;
+    margin: 0 auto 20px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 8px; }
+  h2 { font-size: 1.1rem; margin: 0 0 8px; }
+  p { margin: 8px 0; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  a.button, button.button {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    text-decoration: none;
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    font-size: 0.95rem;
+  }
+  a.button[disabled], button.button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  a.link { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; word-break: break-word; }
+  th { color: var(--muted); font-weight: 600; width: 32%; white-space: nowrap; }
+  code, pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+  }
+  footer { text-align: center; color: var(--muted); font-size: 0.78rem; margin-top: 24px; }
+  /*
+   * The console-log box intentionally stays a dark "terminal" regardless of
+   * light/dark mode — it uses fixed colors instead of the theme variables
+   * above.
+   */
+  .console-log {
+    background: #0b0f14;
+    color: #d7e0ea;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+    max-height: 320px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .console-log .line { margin: 2px 0; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #14161a;
+      --card-bg: #1d2026;
+      --border: #2c313a;
+      --text: #e7e9ee;
+      --muted: #9aa2b1;
+      --accent: #6f95f5;
+      --accent-contrast: #0d1117;
+      --err-bg: #2a1717;
+      --err-border: #5c2b2b;
+      --err-text: #f2a7a7;
+      --code-bg: #14161a;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>ADFS OIDC Sandbox &mdash; Test Console</h1>
+  <p>
+    This page exercises the OpenID Connect Authorization Code flow (with PKCE) against Microsoft
+    ADFS acting as an OIDC Provider. Click the button below to run the flow in a popup window and
+    watch each step reported live below, without leaving this page. This tool is for testing and
+    validating an ADFS Relying Party Trust / client registration only &mdash; it is not part of the
+    normal BPUU workflow site.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Discovery metadata</h2>
+  <table id="discovery-table">
+    <tr><th>Issuer</th><td id="disc-issuer">Loading&hellip;</td></tr>
+    <tr><th>Authorization endpoint</th><td id="disc-authz">Loading&hellip;</td></tr>
+    <tr><th>Token endpoint</th><td id="disc-token">Loading&hellip;</td></tr>
+    <tr><th>Client ID</th><td id="disc-client">Loading&hellip;</td></tr>
+  </table>
+  <p class="muted">The client secret is never displayed here.</p>
+</div>
+
+<div class="card">
+  <p>
+    <button class="button" id="run-test-btn" type="button">&#9654; Run Authentication Test</button>
+  </p>
+  <p class="muted"><a class="link" href="/adfs/login">Or test without a popup (full page redirect)</a></p>
+  <p class="muted"><a class="link" href="/adfs/logout">Clear ADFS session</a></p>
+  <div id="console-log" class="console-log" aria-live="polite"></div>
+</div>
+
+<footer>ADFS OIDC test console &mdash; for validating the ADFS integration only, not part of the BPUU workflow.</footer>
+
+<script>
+window.__FLOW_STEPS__ = [
+  'User opens the sandbox app',
+  'App builds the authorization request (state, nonce, PKCE)',
+  'ADFS authenticates the user against AD',
+  'ADFS returns an authorization code',
+  'App exchanges the code for tokens',
+  'ADFS returns an ID token',
+  'App validates the ID token',
+  'App grants access'
+];
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var STEP_ICONS = { ok: '✅', fail: '❌', pending: '▫️' };
+  var runBtn = document.getElementById('run-test-btn');
+  var consoleEl = document.getElementById('console-log');
+
+  function resetConsole() {
+    while (consoleEl.firstChild) {
+      consoleEl.removeChild(consoleEl.firstChild);
+    }
+  }
+
+  // MANDATORY: every log line is built via textContent/createElement/
+  // createTextNode only — never innerHTML with interpolated/concatenated
+  // dynamic text. Claim values and ADFS error text are untrusted and must
+  // never be parsed as HTML.
+  function logLine(text) {
+    var line = document.createElement('div');
+    line.className = 'line';
+    line.appendChild(document.createTextNode(text));
+    consoleEl.appendChild(line);
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+
+  function renderResult(result) {
+    resetConsole();
+    var steps;
+    if (!result) {
+      steps = (window.__FLOW_STEPS__ || []).map(function (label, idx) {
+        return { step: idx + 1, label: label, status: 'pending' };
+      });
+    } else {
+      steps = result.steps || [];
+    }
+
+    steps.forEach(function (s) {
+      var icon = STEP_ICONS[s.status] || STEP_ICONS.pending;
+      logLine(icon + ' Step ' + s.step + ': ' + s.label);
+    });
+
+    if (!result) {
+      logLine('Ready — click Run Authentication Test to begin.');
+      return;
+    }
+
+    if (result.ok) {
+      logLine('🎉 Login succeeded.');
+      var claims = result.claims || {};
+      Object.keys(claims).forEach(function (key) {
+        var value = claims[key];
+        var display = (typeof value === 'object' && value !== null) ? JSON.stringify(value) : String(value);
+        logLine('claim.' + key + ' = ' + display);
+      });
+    } else {
+      logLine('❌ ' + result.title + ': ' + result.message);
+      (result.hints || []).forEach(function (h) {
+        logLine('hint: ' + h);
+      });
+    }
+  }
+
+  window.renderResult = renderResult;
+
+  function readInitialResultFromHash() {
+    var hash = window.location.hash || '';
+    var marker = '#result=';
+    if (hash.indexOf(marker) !== 0) return null;
+    try {
+      var encoded = hash.slice(marker.length);
+      var parsed = JSON.parse(decodeURIComponent(encoded));
+      return parsed;
+    } catch (e) {
+      // malformed/tampered fragment — fall back to the "ready" state and
+      // log nothing scary.
+      return null;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var initialResult = readInitialResultFromHash();
+    renderResult(initialResult);
+    if (initialResult) {
+      // Read-once: strip the fragment so a manual refresh afterward does
+      // not replay the same result.
+      history.replaceState(null, '', '/adfs');
+    }
+
+    loadDiscovery();
+  });
+
+  function setDiscoveryUnavailable() {
+    ['disc-issuer', 'disc-authz', 'disc-token', 'disc-client'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = 'unavailable';
+    });
+  }
+
+  function loadDiscovery() {
+    fetch('/adfs/discovery')
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data || data.error) {
+          setDiscoveryUnavailable();
+          return;
+        }
+        var issuerEl = document.getElementById('disc-issuer');
+        var authzEl = document.getElementById('disc-authz');
+        var tokenEl = document.getElementById('disc-token');
+        var clientEl = document.getElementById('disc-client');
+        if (issuerEl) issuerEl.textContent = data.issuer || 'unavailable';
+        if (authzEl) authzEl.textContent = data.authorization_endpoint || 'unavailable';
+        if (tokenEl) tokenEl.textContent = data.token_endpoint || 'unavailable';
+        if (clientEl) clientEl.textContent = data.clientIdPreview || 'unavailable';
+      })
+      .catch(function () {
+        setDiscoveryUnavailable();
+      });
+  }
+
+  if (!runBtn) return;
+
+  var pollTimer = null;
+  var timeoutTimer = null;
+  var reloadTimer = null;
+  var messageHandler = null;
+
+  function cleanup() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null; }
+    if (messageHandler) { window.removeEventListener('message', messageHandler); messageHandler = null; }
+  }
+
+  runBtn.addEventListener('click', function () {
+    if (reloadTimer) { clearTimeout(reloadTimer); reloadTimer = null; }
+    cleanup();
+    runBtn.disabled = true;
+    resetConsole();
+    logLine('Starting test...');
+
+    var popup = window.open('/adfs/login?popup=1', 'adfs_login', 'width=520,height=650');
+    if (!popup) {
+      logLine('❌ Popup blocked by the browser. Use the fallback link below instead.');
+      runBtn.disabled = false;
+      return;
+    }
+
+    logLine('Waiting for the popup to complete ADFS login...');
+
+    messageHandler = function (event) {
+      if (event.origin !== window.location.origin) return;
+      if (!event.data || event.data.source !== 'adfs-oidc-sandbox') return;
+
+      renderResult(event.data);
+      var wasOk = !!event.data.ok;
+      cleanup();
+      if (wasOk) {
+        // Keep the button disabled — a reload is imminent and will restore
+        // it anyway; re-enabling here would let a rapid re-click race with
+        // this pending reload and silently lose the second run's result.
+        reloadTimer = setTimeout(function () { window.location.reload(); }, 1200);
+      } else {
+        runBtn.disabled = false;
+      }
+    };
+    window.addEventListener('message', messageHandler);
+
+    pollTimer = setInterval(function () {
+      if (popup.closed) {
+        logLine('Popup closed before finishing — try again.');
+        runBtn.disabled = false;
+        cleanup();
+      }
+    }, 500);
+
+    timeoutTimer = setTimeout(function () {
+      logLine('Timed out waiting for a response.');
+      runBtn.disabled = false;
+      cleanup();
+    }, 120000);
+  });
+})();
+</script>
+
+</body>
+</html>
