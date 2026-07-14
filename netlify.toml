@@ -1,28 +1,2 @@
 [build]
   publish = "."
-  functions = "netlify/functions"
-
-[[redirects]]
-  from = "/adfs"
-  to = "/adfs.html"
-  status = 200
-
-[[redirects]]
-  from = "/adfs/login"
-  to = "/.netlify/functions/adfs-login"
-  status = 200
-
-[[redirects]]
-  from = "/adfs/callback"
-  to = "/.netlify/functions/adfs-callback"
-  status = 200
-
-[[redirects]]
-  from = "/adfs/logout"
-  to = "/.netlify/functions/adfs-logout"
-  status = 200
-
-[[redirects]]
-  from = "/adfs/discovery"
-  to = "/.netlify/functions/adfs-discovery"
-  status = 200
