@@ -336,9 +336,18 @@ function selectForm(formName) {
 }
 
 function fillInternalData(formName) {
-    if(!globalUserData) return;
-    const d = globalUserData;
     const isStaff = currentLoginType === 'staff';
+    // SSO (ADFS) staff/student users never populate globalUserData — that's
+    // only ever set by the old CSV-ID-entry flow (processLogin()). For SSO
+    // users, server.js's /redirect callback resolves a Master Data profile
+    // and index.html's trailing inline script exposes it here as
+    // window.kmuttRequesterProfile. If neither is present (e.g. an
+    // unclassified 'kmutt' user, or Master Data had no match), fall through
+    // exactly like the original code did: nothing gets filled.
+    const kmuttProfile = window.kmuttRequesterProfile && window.kmuttRequesterProfile.requester
+        ? window.kmuttRequesterProfile
+        : null;
+    if (!globalUserData && !kmuttProfile) return;
 
     document.getElementById('divReqId').style.display = isStaff ? 'none' : 'block';
     document.getElementById('divReqPosition').style.display = isStaff ? 'block' : 'none';
@@ -348,22 +357,58 @@ function fillInternalData(formName) {
     document.getElementById('divReqFaculty').style.display = isStaff ? 'none' : 'block';
     document.getElementById('divReqMajor').style.display = isStaff ? 'none' : 'block';
 
-    document.getElementById('reqEmpId').value = d[0];
-    document.getElementById('reqEmail').value = isStaff ? d[6] : d[7];
+    if (globalUserData) {
+        const d = globalUserData;
 
-    if (isStaff) {
-        document.getElementById('reqName').value = `${d[2] || ''}${d[3] || ''} ${d[4] || ''}`.trim();
-        document.getElementById('reqPosition').value = d[5] || '-';
-        document.getElementById('reqDeptCode').value = getStaffDepartment(d);
-        document.getElementById('reqInternalPhone').value = d[7] ? `0${d[7]}` : '-'; 
-        setApprover(d[9], `${d[10] || ''}${d[11] || ''} ${d[12] || ''}`.trim(), d[14], d[13]);
+        document.getElementById('reqEmpId').value = d[0];
+        document.getElementById('reqEmail').value = isStaff ? d[6] : d[7];
+
+        if (isStaff) {
+            document.getElementById('reqName').value = `${d[2] || ''}${d[3] || ''} ${d[4] || ''}`.trim();
+            document.getElementById('reqPosition').value = d[5] || '-';
+            document.getElementById('reqDeptCode').value = getStaffDepartment(d);
+            document.getElementById('reqInternalPhone').value = d[7] ? `0${d[7]}` : '-';
+            setApprover(d[9], `${d[10] || ''}${d[11] || ''} ${d[12] || ''}`.trim(), d[14], d[13]);
+        } else {
+            let title = (d[2] === "หญิง") ? "นางสาว" : (d[2] === "ชาย" ? "นาย" : "");
+            document.getElementById('reqName').value = `${title}${d[3] || ''} ${d[4] || ''}`.trim();
+            document.getElementById('reqStatus').value = d[8] || '-';
+            document.getElementById('reqFaculty').value = d[5] || '-';
+            document.getElementById('reqMajor').value = d[6] || '-';
+            setApprover(d[9], `${d[10] || ''}${d[11] || ''} ${d[12] || ''}`.trim(), d[14], d[13]);
+        }
     } else {
-        let title = (d[2] === "หญิง") ? "นางสาว" : (d[2] === "ชาย" ? "นาย" : "");
-        document.getElementById('reqName').value = `${title}${d[3] || ''} ${d[4] || ''}`.trim();
-        document.getElementById('reqStatus').value = d[8] || '-';
-        document.getElementById('reqFaculty').value = d[5] || '-';
-        document.getElementById('reqMajor').value = d[6] || '-';
-        setApprover(d[9], `${d[10] || ''}${d[11] || ''} ${d[12] || ''}`.trim(), d[14], d[13]);
+        // SSO staff/student, filled from Master Data via lookupKmuttRequesterProfile
+        // (server.js) instead of the CSV-indexed globalUserData array above.
+        const requester = kmuttProfile.requester;
+        const approver = kmuttProfile.approver;
+
+        document.getElementById('reqEmail').value = requester.email;
+        document.getElementById('reqName').value = requester.name;
+
+        if (isStaff) {
+            document.getElementById('reqEmpId').value = requester.employeeId;
+            document.getElementById('reqPosition').value = requester.position;
+            document.getElementById('reqDeptCode').value = requester.department;
+            document.getElementById('reqInternalPhone').value = requester.internalPhone;
+        } else {
+            document.getElementById('reqEmpId').value = requester.studentCode;
+            document.getElementById('reqStatus').value = requester.status;
+            document.getElementById('reqFaculty').value = requester.faculty;
+            document.getElementById('reqMajor').value = requester.major;
+        }
+
+        if (approver) {
+            // setApprover's first argument is purely an error sentinel (falsy /
+            // "หาหน่วยงานไม่เจอ" / "ไม่พบข้อมูล" -> not-found state) — it is never
+            // displayed, so a fixed truthy marker is correct here. Using
+            // requester.employeeId/studentCode instead would incorrectly report
+            // "no approver found" whenever the requester's own ID happens to be
+            // empty, even though a real approver was resolved.
+            setApprover('resolved', approver.name, approver.position, approver.email);
+        } else {
+            setApprover(null, '', '', '');
+        }
     }
 
     const showApprover = formName !== 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ' && (isStaff || (currentLoginType === 'student' && formName === 'แบบฟอร์มขอใช้ตราประทับ'));

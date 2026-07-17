@@ -17,8 +17,33 @@
             <span class="d-none d-md-inline">ระบบกระบวนงาน (Workflow) การให้บริการของกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน</span>
             <span class="d-inline d-md-none">ระบบกระบวนงาน BPUU</span>
         </span>
+        <span id="userProfileBar" class="d-flex align-items-center gap-2 text-white small"></span>
     </div>
 </nav>
+
+<!-- KMUTT dev preview banner (developer/test convenience only — see js in
+     the trailing <script> block below and POST /api/kmutt-dev-preview in
+     server.js). Hidden by default; only ever shown when the server reports
+     devPreviewActive: true on /api/me, which itself only ever happens when
+     THIS real, ADFS-authenticated session's own Master Data classification
+     is null. Deliberately placed outside every .view-section (which the
+     existing CSS toggles to display:none on navigation) so it stays visible
+     across #homeView, #formContentView, and the summary modal for the
+     entire duration a preview is active — not just on the home screen.
+     Never mistakeable for the real session: it names the previewed email
+     explicitly and offers an immediate way out. -->
+<div class="container">
+    <div id="kmuttDevPreviewBanner" class="alert alert-warning d-none align-items-center justify-content-between flex-wrap gap-2 mb-0 mt-3" role="alert">
+        <span>
+            <i class="bi bi-cone-striped me-2"></i>
+            <strong>โหมดพรีวิว (โหมดทดสอบสำหรับนักพัฒนา):</strong>
+            กำลังแสดงข้อมูลของ <span id="kmuttDevPreviewEmailText" class="fw-bold"></span> (ไม่ใช่บัญชีจริงที่ login)
+        </span>
+        <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="clearKmuttDevPreview()">
+            <i class="bi bi-x-circle me-1"></i>ล้างพรีวิว
+        </button>
+    </div>
+</div>
 
 <div class="container pb-5">
 
@@ -56,7 +81,6 @@
                 <h3 class="fw-bold text-ci-orange m-0" id="welcomeText">ยินดีต้อนรับ</h3>
                 <p class="text-ci-bluegrey m-0 small">เลือกบริการที่คุณต้องการใช้งานจากเมนูด้านล่าง</p>
             </div>
-            <button class="btn btn-outline-danger btn-sm fw-bold" onclick="logout()"><i class="bi bi-box-arrow-right me-1"></i> เปลี่ยนผู้ใช้งาน</button>
         </div>
 
         <h4 class="mb-3 text-ci-bluegrey section-parking-title"><i class="bi bi-p-circle-fill me-2 text-ci-orange"></i>Parking Services (เฉพาะอาคารจอดรถ S2)</h4>
@@ -116,7 +140,6 @@
 
     <div id="formContentView" class="view-section">
         <button class="btn btn-ci-bluegrey mb-3" onclick="switchView('homeView')"><i class="bi bi-arrow-left"></i> ย้อนกลับ</button>
-        <button class="btn btn-warning mb-3 ms-2 fw-bold" onclick="prefillCurrentForm(event)" title="เติมข้อมูลตัวอย่างอัตโนมัติ (เฉพาะเดโม)"><i class="bi bi-magic me-1"></i>Prefill</button>
 
         <div class="card shadow border-0 border-top border-ci-orange border-5">
             <div class="card-header bg-white p-3 border-bottom-0 pt-4">
@@ -193,7 +216,6 @@
 
     <div id="externalFormView" class="view-section">
         <button class="btn btn-ci-bluegrey mb-3" onclick="switchView('homeView')"><i class="bi bi-arrow-left"></i> ย้อนกลับ</button>
-        <button class="btn btn-warning mb-3 ms-2 fw-bold" onclick="prefillCurrentForm(event)" title="เติมข้อมูลตัวอย่างอัตโนมัติ (เฉพาะเดโม)"><i class="bi bi-magic me-1"></i>Prefill</button>
 
         <div class="card shadow border-0 border-top border-ci-yellow border-5">
             <div class="card-header bg-white p-3 border-bottom-0 pt-4">
@@ -263,6 +285,41 @@
     </div>
 </div>
 
+<!-- KMUTT dev preview modal (developer/test convenience only). Only ever
+     shown when this real ADFS session's own Master Data classification came
+     back null (see the trailing <script> block below) and no preview has
+     been set yet. Submits to POST /api/kmutt-dev-preview, which is itself
+     gated server-side (401 with no real session, 403 if the real session is
+     already classified staff/student) — this dialog can never be used to
+     bypass that. -->
+<div class="modal fade" id="kmuttDevPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold"><i class="bi bi-cone-striped me-2"></i>โหมดพรีวิวสำหรับนักพัฒนา</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-ci-bluegrey small mb-3">
+                    <strong>(โหมดทดสอบสำหรับนักพัฒนา)</strong> — บัญชีของท่านยังไม่มีข้อมูลใน KMUTT Master Data
+                    จึงไม่สามารถระบุได้ว่าเป็นบุคลากรหรือนักศึกษา ท่านสามารถระบุอีเมลของสมาชิก มจธ. ท่านอื่น
+                    (ที่มีตัวตนจริงใน Master Data) เพื่อดูตัวอย่างการเติมข้อมูลส่วนที่ 1 / ส่วนที่ 2 โดยอัตโนมัติ
+                    ราวกับว่าเข้าสู่ระบบด้วยบัญชีนั้น — ใช้เพื่อการทดสอบเท่านั้น
+                </p>
+                <div class="input-group input-group-lg mb-2 shadow-sm">
+                    <span class="input-group-text bg-white border-ci-orange text-ci-orange"><i class="bi bi-envelope"></i></span>
+                    <input type="email" class="form-control border-ci-orange" id="kmuttDevPreviewEmailInput" placeholder="example@mail.kmutt.ac.th">
+                </div>
+                <div class="text-danger small mb-3 d-none" id="kmuttDevPreviewError"></div>
+                <button type="button" class="btn btn-ci-orange w-100 btn-lg fw-bold" id="kmuttDevPreviewSubmitBtn" onclick="submitKmuttDevPreview()">
+                    <span class="spinner-border spinner-border-sm me-2 d-none" id="kmuttDevPreviewSpinner" role="status"></span>
+                    <span id="kmuttDevPreviewBtnText">ดูตัวอย่างข้อมูล</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="modlinkModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow-lg" style="border-top: 5px solid var(--ci-orange) !important;">
@@ -317,5 +374,280 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
 <script src="js/workflow-test-config.js?v=20260710-1"></script>
 <script src="js/app.js?v=20260710-1"></script>
+
+<script>
+    // Entry-point routing + profile bar, for BOTH identity providers.
+    //
+    // Person type is now decided BEFORE reaching this page (on the
+    // server-rendered landing page: SSO login vs. the "บุคคลภายนอก" link,
+    // which now itself goes through a ThaID login gate at /external) — so
+    // this page no longer shows the old "เลือกประเภทบุคคล" step
+    // (#initialUserTypeView) itself. Both entry points below jump straight
+    // to #homeView.
+    //
+    // /external is now server-gated exactly like / is (just against a ThaID
+    // session instead of an ADFS one) — it is only ever reached here with a
+    // verified session already in place, so we always ask the server which
+    // kind via /api/me rather than special-casing the path client-side.
+    //
+    // This is separate from the existing logout()/"เปลี่ยนผู้ใช้งาน" flow
+    // elsewhere on this page, which only clears local form-selection state
+    // and is unrelated to server-side login.
+
+    // Builds the same icon + name + logout-link profile bar markup for
+    // either identity type (createElement/textContent only, no innerHTML).
+    function renderProfileBar(bar, name) {
+        if (!bar || !name) return;
+
+        while (bar.firstChild) {
+            bar.removeChild(bar.firstChild);
+        }
+
+        var icon = document.createElement('i');
+        icon.className = 'bi bi-person-circle';
+        bar.appendChild(icon);
+
+        var nameSpan = document.createElement('span');
+        nameSpan.textContent = name;
+        bar.appendChild(nameSpan);
+
+        var logoutLink = document.createElement('a');
+        logoutLink.href = '/logout';
+        logoutLink.className = 'text-white ms-2 text-decoration-none d-flex align-items-center gap-1';
+
+        var logoutIcon = document.createElement('i');
+        logoutIcon.className = 'bi bi-box-arrow-right';
+        logoutLink.appendChild(logoutIcon);
+        logoutLink.appendChild(document.createTextNode('ออกจากระบบ'));
+
+        bar.appendChild(logoutLink);
+    }
+
+    // ---------------------------------------------------------------------
+    // KMUTT dev preview (developer/test convenience only).
+    //
+    // This whole block is inert unless the server has already told us (via
+    // /api/me) that THIS real, ADFS-authenticated session's own Master Data
+    // classification came back null — see the DOMContentLoaded handler
+    // below. It is not a general "log in as anyone" tool: every request it
+    // makes goes through POST /api/kmutt-dev-preview / GET
+    // /api/kmutt-dev-preview/clear in server.js, which independently
+    // enforce the same real-session-required, not-already-classified gating
+    // server-side regardless of what this client code does.
+    // ---------------------------------------------------------------------
+
+    var kmuttDevPreviewModalInstance = null;
+    function getKmuttDevPreviewModal() {
+        if (!kmuttDevPreviewModalInstance) {
+            kmuttDevPreviewModalInstance = new bootstrap.Modal(document.getElementById('kmuttDevPreviewModal'));
+        }
+        return kmuttDevPreviewModalInstance;
+    }
+
+    function showKmuttDevPreviewModal() {
+        var errorEl = document.getElementById('kmuttDevPreviewError');
+        if (errorEl) {
+            errorEl.classList.add('d-none');
+            errorEl.innerText = '';
+        }
+        var input = document.getElementById('kmuttDevPreviewEmailInput');
+        if (input) input.value = '';
+        getKmuttDevPreviewModal().show();
+    }
+
+    function showKmuttDevPreviewBanner(previewEmail) {
+        var banner = document.getElementById('kmuttDevPreviewBanner');
+        var emailText = document.getElementById('kmuttDevPreviewEmailText');
+        if (emailText) emailText.innerText = previewEmail || '';
+        if (banner) {
+            banner.classList.remove('d-none');
+            banner.classList.add('d-flex');
+        }
+    }
+
+    function submitKmuttDevPreview() {
+        var input = document.getElementById('kmuttDevPreviewEmailInput');
+        var errorEl = document.getElementById('kmuttDevPreviewError');
+        var btn = document.getElementById('kmuttDevPreviewSubmitBtn');
+        var spinner = document.getElementById('kmuttDevPreviewSpinner');
+        var btnText = document.getElementById('kmuttDevPreviewBtnText');
+        if (!input || !errorEl || !btn || !spinner || !btnText) return;
+
+        var email = (input.value || '').trim();
+
+        errorEl.classList.add('d-none');
+        errorEl.innerText = '';
+
+        if (!email) {
+            errorEl.innerText = 'กรุณาระบุอีเมล';
+            errorEl.classList.remove('d-none');
+            return;
+        }
+
+        btn.disabled = true;
+        spinner.classList.remove('d-none');
+        btnText.innerText = 'กำลังตรวจสอบ...';
+
+        fetch('/api/kmutt-dev-preview', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email })
+        })
+            .then(function (res) {
+                return res.json()
+                    .catch(function () { return {}; })
+                    .then(function (body) { return { status: res.status, body: body }; });
+            })
+            .then(function (result) {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+                btnText.innerText = 'ดูตัวอย่างข้อมูล';
+
+                if (result.status === 200 && result.body && result.body.found === true) {
+                    // Reload so everything (including the preview banner)
+                    // re-renders from a fresh /api/me call.
+                    window.location.reload();
+                    return;
+                }
+
+                if (result.status === 200 && result.body && result.body.found === false) {
+                    errorEl.innerText = 'ไม่พบข้อมูลสมาชิกนี้ใน Master Data';
+                    errorEl.classList.remove('d-none');
+                    return;
+                }
+
+                // 401/403/400/500 — shouldn't normally happen given the
+                // server-side gating (see server.js), but handle
+                // defensively without retrying automatically.
+                errorEl.innerText = 'เกิดข้อผิดพลาด ไม่สามารถดำเนินการได้ในขณะนี้ กรุณาลองใหม่ภายหลัง';
+                errorEl.classList.remove('d-none');
+            })
+            .catch(function () {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+                btnText.innerText = 'ดูตัวอย่างข้อมูล';
+                errorEl.innerText = 'เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่';
+                errorEl.classList.remove('d-none');
+            });
+    }
+
+    function clearKmuttDevPreview() {
+        fetch('/api/kmutt-dev-preview/clear', { method: 'POST', credentials: 'same-origin' })
+            .then(function () {
+                window.location.reload();
+            })
+            .catch(function () {
+                window.location.reload();
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var bar = document.getElementById('userProfileBar');
+
+        fetch('/api/me', { credentials: 'same-origin' })
+            .then(function (res) {
+                return res.ok ? res.json() : null;
+            })
+            .then(function (data) {
+                if (!data) {
+                    // 401 — shouldn't normally happen since both / and
+                    // /external are server-gated, but defensively just leave
+                    // the page as-is rather than crashing.
+                    return;
+                }
+
+                if (data.type === 'kmutt') {
+                    var claims = data.claims || {};
+                    var identifier = claims.name || claims.upn || claims.unique_name || claims.sub || '';
+
+                    renderProfileBar(bar, identifier);
+
+                    // currentLoginType/switchView/updateMenuVisibility come
+                    // from js/app.js (loaded above as a classic script, so
+                    // they share this page's global scope). The server
+                    // (server.js's /redirect handler) now looks up staff/
+                    // student status via KMUTT Master Data right after ADFS
+                    // login and returns it here as data.userType. When it
+                    // resolves to a known type, use it so the existing
+                    // 'staff'/'student' branches in updateMenuVisibility()
+                    // apply correctly; otherwise (Master Data unconfigured,
+                    // unreachable, or no match) fall back to the original
+                    // 'kmutt' behavior, which shows every menu item —
+                    // nothing regresses for that case.
+                    var userType = data.userType || {};
+                    if (userType.type === 'staff') {
+                        currentLoginType = 'staff';
+                    } else if (userType.type === 'student') {
+                        currentLoginType = 'student';
+                    } else {
+                        currentLoginType = 'kmutt';
+                    }
+                    // Requester/approver profile (ส่วนที่ 1 / ส่วนที่ 2 auto-fill
+                    // data) from the same Master Data lookup — read later by
+                    // js/app.js's fillInternalData() when a form is selected.
+                    // js/app.js is loaded above as a classic script, so this
+                    // plain assignment is visible to it via shared global scope,
+                    // same as currentLoginType above.
+                    window.kmuttRequesterProfile = data.requesterProfile || null;
+                    var displayIdentifier = userType.displayName || identifier;
+                    var welcomeEl = document.getElementById('welcomeText');
+                    if (welcomeEl) {
+                        welcomeEl.innerText = displayIdentifier ? ('ยินดีต้อนรับ ' + displayIdentifier) : 'ยินดีต้อนรับ';
+                    }
+                    switchView('homeView');
+
+                    // KMUTT dev preview (developer/test convenience only —
+                    // see POST /api/kmutt-dev-preview in server.js for the
+                    // actual gating). data.devPreviewActive can only ever be
+                    // true here as a result of THIS real, ADFS-authenticated
+                    // session's own Master Data classification (userType
+                    // above, before any preview override) having come back
+                    // null — an already-classified staff/student session
+                    // never reaches either branch below, by construction of
+                    // that endpoint's 403 gate.
+                    if (data.devPreviewActive) {
+                        // A preview is already active: userType/requesterProfile
+                        // above are already the previewed identity (server-side
+                        // swap in /api/me), so currentLoginType/welcomeText are
+                        // already set correctly by the code above — just make
+                        // sure this can never be mistaken for the real session.
+                        showKmuttDevPreviewBanner(data.devPreviewEmail);
+                    } else if (data.userType && data.userType.type === null) {
+                        // No preview set yet, and Master Data could not
+                        // classify this real account — offer the dev-only
+                        // preview dialog. Default fallback behavior
+                        // (currentLoginType = 'kmutt', set above) is
+                        // unchanged either way.
+                        showKmuttDevPreviewModal();
+                    }
+                } else if (data.type === 'external') {
+                    // Existing, untouched helper: sets
+                    // currentLoginType = 'external', its own welcomeText,
+                    // and switches to #homeView.
+                    setExternalUser();
+
+                    // Then overwrite welcomeText with the real ThaID-verified
+                    // name (falling back to setExternalUser()'s default text
+                    // if it's somehow empty), and show the same kind of
+                    // profile bar KMUTT users get. Name only — the masked
+                    // pid is available in data.claims.pid if ever needed
+                    // later, but there's no requirement to show it now.
+                    var verifiedName = (data.claims && data.claims.name) || '';
+                    var welcomeEl2 = document.getElementById('welcomeText');
+                    if (welcomeEl2) {
+                        welcomeEl2.innerText = verifiedName
+                            ? ('ยินดีต้อนรับ, ' + verifiedName)
+                            : 'ยินดีต้อนรับ, บุคคลภายนอก';
+                    }
+                    renderProfileBar(bar, verifiedName);
+                }
+            })
+            .catch(function () {
+                // Defensive only — both / and /external are server-gated,
+                // so /api/me should not normally fail.
+            });
+    });
+</script>
 </body>
 </html>
