@@ -1,5 +1,6 @@
 .claude/worktrees/charming-spence-a16ca8/
 .DS_Store
 node_modules
-.env
+.env*
+!.env.example
 certs/
