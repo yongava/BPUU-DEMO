@@ -362,7 +362,7 @@ async function lookupKmuttUserType(email) {
       return {
         type: 'staff',
         displayName: buildMasterDataDisplayName(
-          staff.firstnameth,
+          `${staff.titleshortth2 || ''}${staff.firstnameth || ''}`,
           staff.lastnameth,
           staff.firstnameen,
           staff.lastnameen
@@ -425,7 +425,7 @@ async function lookupKmuttUserType(email) {
 // intentionally propagate to the caller (lookupKmuttRequesterProfile), which
 // wraps the whole lookup in a single try/catch, matching the same
 // all-or-nothing defensive pattern as lookupKmuttUserType above.
-async function resolveKmuttApprover(departmentCode) {
+async function resolveKmuttApprover(departmentCode, requesterEmployeeId) {
   if (!departmentCode) return null;
 
   const token = await getMasterDataToken();
@@ -452,13 +452,24 @@ async function resolveKmuttApprover(departmentCode) {
 
   const org = orgResults[0];
 
+  // Walk from the most immediate management level (2) up to the most senior
+  // (6), picking the first level that both has a named position AND is held
+  // by someone other than the requester themselves. A department head who is
+  // also its own requester cannot be their own approver — skip that level
+  // (one hop up to the next, larger org unit) and keep looking, rather than
+  // stopping at the first non-empty level regardless of who holds it.
   let matchedLevel = null;
   for (const level of [2, 3, 4, 5, 6]) {
     const levelName = org[`ADMINPOS0${level}_NAME`];
-    if (typeof levelName === 'string' && levelName.trim()) {
-      matchedLevel = level;
-      break;
+    const levelEmp = org[`ADMINPOS0${level}_EMP`];
+    if (typeof levelName !== 'string' || !levelName.trim() || !levelEmp) {
+      continue;
     }
+    if (requesterEmployeeId && String(levelEmp).trim() === String(requesterEmployeeId).trim()) {
+      continue;
+    }
+    matchedLevel = level;
+    break;
   }
 
   if (matchedLevel === null) {
@@ -467,10 +478,6 @@ async function resolveKmuttApprover(departmentCode) {
 
   const positionTitle = org[`ADMINPOS0${matchedLevel}_NAME`];
   const empId = org[`ADMINPOS0${matchedLevel}_EMP`];
-
-  if (!empId) {
-    return null;
-  }
 
   const empUrl = new URL(`${config.masterdataBaseUrl}/backend/api/data/DH0002_HR_EmployeeProfile`);
   empUrl.searchParams.set('employeeid', empId);
@@ -495,7 +502,7 @@ async function resolveKmuttApprover(departmentCode) {
   const emp = empResults[0];
 
   const resolvedName = buildMasterDataDisplayName(
-    `${emp.titleshortth1 || ''}${emp.firstnameth || ''}`,
+    `${emp.titleshortth2 || ''}${emp.firstnameth || ''}`,
     emp.lastnameth,
     emp.firstnameen,
     emp.lastnameen
@@ -561,7 +568,7 @@ async function lookupKmuttRequesterProfile(email) {
       const staff = staffResults[0];
 
       const name = buildMasterDataDisplayName(
-        `${staff.titleshortth1 || ''}${staff.firstnameth || ''}`,
+        `${staff.titleshortth2 || ''}${staff.firstnameth || ''}`,
         staff.lastnameth,
         staff.firstnameen,
         staff.lastnameen
@@ -580,7 +587,10 @@ async function lookupKmuttRequesterProfile(email) {
         email: staff.internalemail || email,
       };
 
-      const approver = await resolveKmuttApprover(staff.departmentcode);
+      // Pass the requester's own employeeid so a department head who would
+      // otherwise be resolved as their own approver gets escalated one hop
+      // up to the next (larger) org unit instead (see resolveKmuttApprover).
+      const approver = await resolveKmuttApprover(staff.departmentcode, staff.employeeid);
 
       return { type: 'staff', requester, approver };
     }
@@ -754,9 +764,10 @@ function renderLoginLandingPage() {
     <a href="/login" class="btn btn-ci-orange btn-lg w-100 fw-bold mb-2">
       <i class="bi bi-box-arrow-in-right me-2"></i>บุคลากร / นักศึกษา
     </a>
-    <a href="/external" class="btn btn-ci-bluegrey btn-lg w-100 fw-bold">
+    <a href="/external" class="btn btn-ci-bluegrey btn-lg w-100 fw-bold mb-2">
       <i class="bi bi-people-fill me-2"></i>บุคคลภายนอก (ThaiD)
     </a>
+    <a href="/guest" class="small text-ci-bluegrey d-block mt-1">guest (ชั่วคราว ระหว่างรอเชื่อมต่อ ThaID)</a>
   </div>
 </body>
 </html>`;
@@ -845,6 +856,24 @@ function requireLogin(req, res, next) {
 app.get(
   ['/', '/index.html'],
   requireLogin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+    res.sendFile(INDEX_HTML_PATH);
+  })
+);
+
+// TEMPORARY stopgap for people without a KMUTT account, while ThaID
+// credentials are still pending (see /external below, which 503s until
+// THAID_CLIENT_ID/SECRET are configured). Deliberately unauthenticated —
+// this doesn't remove any real access control: '/external' itself was never
+// meant to require proof of identity beyond "not a KMUTT account holder",
+// ThaID is an added verification layer on top of that, not a security
+// boundary protecting sensitive data (no Master Data lookup, no staff/
+// student session, happens here). Intended to be removed once ThaID is
+// wired up with real credentials — remove this route and the landing-page
+// link to it at that point.
+app.get(
+  '/guest',
   asyncHandler(async (req, res) => {
     noStore(res);
     res.sendFile(INDEX_HTML_PATH);
@@ -1411,6 +1440,65 @@ app.get(
     } else {
       res.status(401).json({ error: 'unauthenticated' });
     }
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Unauthenticated diagnostics endpoint.
+//
+// Deliberately reachable with NO authentication and usable BEFORE ADFS is
+// even correctly configured — a team deploying this app to a new host has no
+// way to complete a real ADFS login until REDIRECT_URI is set correctly and
+// registered with ADFS, so without this route they'd have no way to check
+// "is my config even close to right" without already having a working login.
+// Reports only non-sensitive, already-known state — never a client secret,
+// session secret, or full client_id, and never a fresh network probe on this
+// request: discoveryLoaded/issuer below just reflect whatever
+// oidcMetadata/thaidMetadata were populated with (or left null as) by the
+// discovery fetches already performed once at boot (see
+// loadDiscoveryMetadata()/loadThaidDiscoveryMetadata() and main() above).
+// ---------------------------------------------------------------------------
+
+// Returns a short, non-sensitive preview of an OIDC client_id — first 8
+// characters followed by '***' — never the full client_id. Used only by
+// /diagnostics; kept generic so it could mask a ThaID/Master Data client_id
+// the same way if this ever needs to report one.
+function maskClientId(clientId) {
+  if (!clientId) return null;
+  return String(clientId).slice(0, 8) + '***';
+}
+
+app.get(
+  '/diagnostics',
+  asyncHandler(async (req, res) => {
+    noStore(res);
+    res.status(200).json({
+      configuredRedirectUri: config.redirectUri,
+      configuredPostLogoutRedirectUri: config.postLogoutRedirectUri,
+      tls: {
+        certMounted: hasTlsCert,
+        listeningOn: hasTlsCert ? 'https' : 'http',
+      },
+      adfs: {
+        // Always true: REQUIRED_ENV_VARS (ADFS_DISCOVERY_URL, ADFS_CLIENT_ID,
+        // ADFS_CLIENT_SECRET, REDIRECT_URI) already enforces this at boot —
+        // see validateEnv() above, which exits the process before this
+        // handler could ever be reached if any were missing.
+        configured: true,
+        discoveryLoaded: Boolean(oidcMetadata),
+        issuer: oidcMetadata ? oidcMetadata.issuer : null,
+        clientIdPreview: maskClientId(config.clientId),
+      },
+      thaid: {
+        configured: isThaidConfigured(),
+        discoveryLoaded: Boolean(thaidMetadata),
+        issuer: thaidMetadata ? thaidMetadata.issuer : null,
+      },
+      masterdata: {
+        configured: isMasterDataConfigured(),
+      },
+      serverTimeUtc: new Date().toISOString(),
+    });
   })
 );
 
