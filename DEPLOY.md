@@ -49,6 +49,17 @@ terminate TLS itself.
 `GET /api/me` always responds (200 or 401, never requires auth) — use it for
 a liveness/readiness probe.
 
+## Before attempting a real login, check `GET /diagnostics`
+
+Unauthenticated, safe to check before ADFS is even correctly configured —
+it's the fastest way to confirm a deploy is set up right without needing a
+working login first. Returns JSON: the actual `configuredRedirectUri` /
+`configuredPostLogoutRedirectUri` this instance is using (confirm it matches
+what's registered with ADFS and how you're actually reaching this
+container), whether it's serving `https` or `http` internally, and whether
+ADFS/ThaID/Master Data discovery succeeded at boot. Never returns a secret or
+full client_id (only an 8-character preview).
+
 ## Notes
 
 - Sessions are in-memory (single instance only, no shared session store yet
