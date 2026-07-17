@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * bpuudemo server
+ * bpuu-workflow server
  *
  * Serves the KMUTT internal workflow form site (static index.html + css/js)
  * behind a real ADFS OpenID Connect login gate. Nothing in the page loads
@@ -38,7 +38,7 @@ const REQUIRED_ENV_VARS = [
 function validateEnv() {
   const missing = REQUIRED_ENV_VARS.filter((name) => !process.env[name] || !String(process.env[name]).trim());
   if (missing.length > 0) {
-    console.error('\n[bpuudemo] Missing required environment variable(s):');
+    console.error('\n[bpuu-workflow] Missing required environment variable(s):');
     for (const name of missing) {
       console.error(`  - ${name}`);
     }
@@ -86,7 +86,7 @@ const config = {
 
 if (!config.sessionSecret) {
   console.warn(
-    '[bpuudemo] SESSION_SECRET is not set. Generating a random in-memory secret for this run only ' +
+    '[bpuu-workflow] SESSION_SECRET is not set. Generating a random in-memory secret for this run only ' +
       '(sessions will not survive a restart). Set SESSION_SECRET in .env for stable sessions.'
   );
   config.sessionSecret = crypto.randomBytes(32).toString('hex');
@@ -105,17 +105,17 @@ async function loadDiscoveryMetadata() {
     response = await fetch(config.discoveryUrl);
   } catch (err) {
     console.error(
-      `\n[bpuudemo] Could not reach ADFS_DISCOVERY_URL (${config.discoveryUrl}).\n` +
+      `\n[bpuu-workflow] Could not reach ADFS_DISCOVERY_URL (${config.discoveryUrl}).\n` +
         'This app needs network access to the ADFS discovery endpoint — if ADFS is not ' +
         'internet-facing, make sure you are connected to the required VPN or campus network.\n'
     );
-    console.error(`[bpuudemo] Underlying error: ${err.message}`);
+    console.error(`[bpuu-workflow] Underlying error: ${err.message}`);
     process.exit(1);
   }
 
   if (!response.ok) {
     console.error(
-      `\n[bpuudemo] ADFS discovery endpoint returned HTTP ${response.status} ${response.statusText}.\n` +
+      `\n[bpuu-workflow] ADFS discovery endpoint returned HTTP ${response.status} ${response.statusText}.\n` +
         `URL: ${config.discoveryUrl}\n`
     );
     process.exit(1);
@@ -125,7 +125,7 @@ async function loadDiscoveryMetadata() {
   try {
     metadata = await response.json();
   } catch (err) {
-    console.error('\n[bpuudemo] ADFS discovery endpoint did not return valid JSON.\n');
+    console.error('\n[bpuu-workflow] ADFS discovery endpoint did not return valid JSON.\n');
     process.exit(1);
   }
 
@@ -133,7 +133,7 @@ async function loadDiscoveryMetadata() {
   const missing = required.filter((key) => !metadata[key]);
   if (missing.length > 0) {
     console.error(
-      `\n[bpuudemo] ADFS discovery document is missing required field(s): ${missing.join(', ')}\n`
+      `\n[bpuu-workflow] ADFS discovery document is missing required field(s): ${missing.join(', ')}\n`
     );
     process.exit(1);
   }
@@ -181,7 +181,7 @@ async function loadThaidDiscoveryMetadata() {
     response = await fetch(discoveryUrl);
   } catch (err) {
     console.warn(
-      `[bpuudemo] Could not reach ThaID discovery endpoint (${discoveryUrl}). ` +
+      `[bpuu-workflow] Could not reach ThaID discovery endpoint (${discoveryUrl}). ` +
         `ThaID login (/external) will show an "unavailable" page until this is reachable. ` +
         `Underlying error: ${err.message}`
     );
@@ -190,7 +190,7 @@ async function loadThaidDiscoveryMetadata() {
 
   if (!response.ok) {
     console.warn(
-      `[bpuudemo] ThaID discovery endpoint returned HTTP ${response.status} ${response.statusText}. ` +
+      `[bpuu-workflow] ThaID discovery endpoint returned HTTP ${response.status} ${response.statusText}. ` +
         `ThaID login (/external) will show an "unavailable" page. URL: ${discoveryUrl}`
     );
     return null;
@@ -200,7 +200,7 @@ async function loadThaidDiscoveryMetadata() {
   try {
     metadata = await response.json();
   } catch (err) {
-    console.warn('[bpuudemo] ThaID discovery endpoint did not return valid JSON. ThaID login (/external) will show an "unavailable" page.');
+    console.warn('[bpuu-workflow] ThaID discovery endpoint did not return valid JSON. ThaID login (/external) will show an "unavailable" page.');
     return null;
   }
 
@@ -208,7 +208,7 @@ async function loadThaidDiscoveryMetadata() {
   const missing = required.filter((key) => !metadata[key]);
   if (missing.length > 0) {
     console.warn(
-      `[bpuudemo] ThaID discovery document is missing required field(s): ${missing.join(', ')}. ` +
+      `[bpuu-workflow] ThaID discovery document is missing required field(s): ${missing.join(', ')}. ` +
         'ThaID login (/external) will show an "unavailable" page.'
     );
     return null;
@@ -406,7 +406,7 @@ async function lookupKmuttUserType(email) {
 
     return notFound;
   } catch (err) {
-    console.warn(`[bpuudemo] Master Data lookup failed for user (non-fatal, falling back to no classification): ${err.message}`);
+    console.warn(`[bpuu-workflow] Master Data lookup failed for user (non-fatal, falling back to no classification): ${err.message}`);
     return notFound;
   }
 }
@@ -629,7 +629,7 @@ async function lookupKmuttRequesterProfile(email) {
     return notFound;
   } catch (err) {
     console.warn(
-      `[bpuudemo] Master Data requester profile lookup failed for user (non-fatal, falling back to no profile): ${err.message}`
+      `[bpuu-workflow] Master Data requester profile lookup failed for user (non-fatal, falling back to no profile): ${err.message}`
     );
     return notFound;
   }
@@ -788,7 +788,7 @@ const hasTlsCert = fs.existsSync(config.tlsCertPath) && fs.existsSync(config.tls
 
 app.use(
   session({
-    name: 'bpuudemo_sid',
+    name: 'bpuu_workflow_sid',
     secret: config.sessionSecret,
     resave: false,
     saveUninitialized: false,
@@ -888,7 +888,7 @@ app.get(
       authUrl.searchParams.set('state', state);
       authUrl.searchParams.set('nonce', nonce);
 
-      console.log('[bpuudemo] redirecting to ThaID authorization endpoint');
+      console.log('[bpuu-workflow] redirecting to ThaID authorization endpoint');
       res.redirect(authUrl.toString());
       return;
     }
@@ -905,7 +905,7 @@ app.get(
 app.get(
   '/external/callback',
   asyncHandler(async (req, res) => {
-    console.log('[bpuudemo] ThaID callback received');
+    console.log('[bpuu-workflow] ThaID callback received');
 
     if (!isThaidConfigured()) {
       noStore(res);
@@ -923,7 +923,7 @@ app.get(
     if (req.query.error) {
       const errorCode = String(req.query.error);
       const errorDescription = req.query.error_description ? String(req.query.error_description) : '';
-      console.error(`[bpuudemo] ThaID returned an error: ${errorCode} ${errorDescription}`);
+      console.error(`[bpuu-workflow] ThaID returned an error: ${errorCode} ${errorDescription}`);
       res.status(400).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -977,7 +977,7 @@ app.get(
         body: tokenParams.toString(),
       });
     } catch (err) {
-      console.error('[bpuudemo] ThaID token endpoint request failed:', err.message);
+      console.error('[bpuu-workflow] ThaID token endpoint request failed:', err.message);
       res.status(502).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -992,7 +992,7 @@ app.get(
     try {
       tokenBody = await tokenResponse.json();
     } catch (err) {
-      console.error('[bpuudemo] ThaID token endpoint returned invalid JSON');
+      console.error('[bpuu-workflow] ThaID token endpoint returned invalid JSON');
       res.status(502).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1006,7 +1006,7 @@ app.get(
     if (!tokenResponse.ok || tokenBody.error) {
       const errorCode = tokenBody.error || `HTTP ${tokenResponse.status}`;
       const errorDescription = tokenBody.error_description || '';
-      console.error(`[bpuudemo] ThaID token exchange failed: ${errorCode} ${errorDescription}`);
+      console.error(`[bpuu-workflow] ThaID token exchange failed: ${errorCode} ${errorDescription}`);
       res.status(502).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1018,7 +1018,7 @@ app.get(
     }
 
     if (!tokenBody.id_token) {
-      console.error('[bpuudemo] ThaID token response did not include an id_token');
+      console.error('[bpuu-workflow] ThaID token response did not include an id_token');
       res.status(502).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1029,7 +1029,7 @@ app.get(
       return;
     }
 
-    console.log('[bpuudemo] ThaID token exchange ok');
+    console.log('[bpuu-workflow] ThaID token exchange ok');
 
     let payload;
     try {
@@ -1039,7 +1039,7 @@ app.get(
       });
       payload = verifyResult.payload;
     } catch (err) {
-      console.error('[bpuudemo] ThaID id_token validation failed:', err.message);
+      console.error('[bpuu-workflow] ThaID id_token validation failed:', err.message);
       res.status(400).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1057,7 +1057,7 @@ app.get(
     // don't support; if they ever do return one (undocumented or a future
     // change), this still catches a token-replay mismatch.
     if (payload.nonce && payload.nonce !== req.session.thaid_nonce) {
-      console.error('[bpuudemo] ThaID id_token nonce mismatch');
+      console.error('[bpuu-workflow] ThaID id_token nonce mismatch');
       res.status(400).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1068,7 +1068,7 @@ app.get(
       return;
     }
 
-    console.log('[bpuudemo] ThaID verification ok');
+    console.log('[bpuu-workflow] ThaID verification ok');
 
     // Regenerate the session ID on successful login so a session ID observed
     // or fixed before authentication cannot be reused as an authenticated
@@ -1076,7 +1076,7 @@ app.get(
     // callback above.
     req.session.regenerate((err) => {
       if (err) {
-        console.error('[bpuudemo] session regenerate error:', err.message);
+        console.error('[bpuu-workflow] session regenerate error:', err.message);
         res.status(500).send(
           renderErrorPage({
             title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1099,7 +1099,7 @@ app.get(
       delete req.session.thaid_state;
       delete req.session.thaid_nonce;
 
-      console.log('[bpuudemo] ThaID login successful');
+      console.log('[bpuu-workflow] ThaID login successful');
       res.redirect('/external');
     });
   })
@@ -1130,7 +1130,7 @@ app.get(
     authUrl.searchParams.set('code_challenge', codeChallenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
 
-    console.log('[bpuudemo] redirecting to ADFS authorization endpoint');
+    console.log('[bpuu-workflow] redirecting to ADFS authorization endpoint');
     res.redirect(authUrl.toString());
   })
 );
@@ -1138,12 +1138,12 @@ app.get(
 app.get(
   '/redirect',
   asyncHandler(async (req, res) => {
-    console.log('[bpuudemo] callback received');
+    console.log('[bpuu-workflow] callback received');
 
     if (req.query.error) {
       const errorCode = String(req.query.error);
       const errorDescription = req.query.error_description ? String(req.query.error_description) : '';
-      console.error(`[bpuudemo] ADFS returned an error: ${errorCode} ${errorDescription}`);
+      console.error(`[bpuu-workflow] ADFS returned an error: ${errorCode} ${errorDescription}`);
       res.status(400).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1193,7 +1193,7 @@ app.get(
         body: tokenParams.toString(),
       });
     } catch (err) {
-      console.error('[bpuudemo] token endpoint request failed:', err.message);
+      console.error('[bpuu-workflow] token endpoint request failed:', err.message);
       res.status(502).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1207,7 +1207,7 @@ app.get(
     try {
       tokenBody = await tokenResponse.json();
     } catch (err) {
-      console.error('[bpuudemo] token endpoint returned invalid JSON');
+      console.error('[bpuu-workflow] token endpoint returned invalid JSON');
       res.status(502).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1220,7 +1220,7 @@ app.get(
     if (!tokenResponse.ok || tokenBody.error) {
       const errorCode = tokenBody.error || `HTTP ${tokenResponse.status}`;
       const errorDescription = tokenBody.error_description || '';
-      console.error(`[bpuudemo] token exchange failed: ${errorCode} ${errorDescription}`);
+      console.error(`[bpuu-workflow] token exchange failed: ${errorCode} ${errorDescription}`);
       res.status(502).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1231,7 +1231,7 @@ app.get(
     }
 
     if (!tokenBody.id_token) {
-      console.error('[bpuudemo] token response did not include an id_token');
+      console.error('[bpuu-workflow] token response did not include an id_token');
       res.status(502).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1241,7 +1241,7 @@ app.get(
       return;
     }
 
-    console.log('[bpuudemo] token exchange ok');
+    console.log('[bpuu-workflow] token exchange ok');
 
     let payload;
     try {
@@ -1251,7 +1251,7 @@ app.get(
       });
       payload = verifyResult.payload;
     } catch (err) {
-      console.error('[bpuudemo] id_token validation failed:', err.message);
+      console.error('[bpuu-workflow] id_token validation failed:', err.message);
       res.status(400).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1262,7 +1262,7 @@ app.get(
     }
 
     if (!payload.nonce || payload.nonce !== nonce) {
-      console.error('[bpuudemo] nonce mismatch on id_token');
+      console.error('[bpuu-workflow] nonce mismatch on id_token');
       res.status(400).send(
         renderErrorPage({
           title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1292,7 +1292,7 @@ app.get(
     // session afterward (session fixation).
     req.session.regenerate((err) => {
       if (err) {
-        console.error('[bpuudemo] session regenerate error:', err.message);
+        console.error('[bpuu-workflow] session regenerate error:', err.message);
         res.status(500).send(
           renderErrorPage({
             title: 'เข้าสู่ระบบไม่สำเร็จ',
@@ -1330,7 +1330,7 @@ app.get(
       }
       delete req.session.redirectAfterLogin;
 
-      console.log(`[bpuudemo] login successful for sub=${payload.sub}`);
+      console.log(`[bpuu-workflow] login successful for sub=${payload.sub}`);
       res.redirect(redirectTo);
     });
   })
@@ -1346,7 +1346,7 @@ app.get(
 
     req.session.destroy((err) => {
       if (err) {
-        console.error('[bpuudemo] session destroy error:', err.message);
+        console.error('[bpuu-workflow] session destroy error:', err.message);
       }
 
       if (wasKmutt) {
@@ -1500,13 +1500,13 @@ app.post(
       // email being previewed as.
       const realUpn = (req.session.user.claims && req.session.user.claims.upn) || '(unknown upn)';
       console.log(
-        `[bpuudemo] KMUTT dev preview used: real upn=${realUpn} now previewing as email=${previewEmail}`
+        `[bpuu-workflow] KMUTT dev preview used: real upn=${realUpn} now previewing as email=${previewEmail}`
       );
 
       res.status(200).json({ found: true, userType, requesterProfile });
     } catch (err) {
       console.error(
-        `[bpuudemo] KMUTT dev preview lookup failed (non-fatal): ${err && err.message ? err.message : err}`
+        `[bpuu-workflow] KMUTT dev preview lookup failed (non-fatal): ${err && err.message ? err.message : err}`
       );
       res.status(500).json({ error: 'an unexpected error occurred while looking up that account' });
     }
@@ -1565,7 +1565,7 @@ function retryHrefFor(req) {
 
 // Fallback error handler: never leak stack traces to the client.
 app.use((err, req, res, next) => {
-  console.error('[bpuudemo] unhandled error:', err && err.stack ? err.stack : err);
+  console.error('[bpuu-workflow] unhandled error:', err && err.stack ? err.stack : err);
   if (res.headersSent) {
     next(err);
     return;
@@ -1595,23 +1595,23 @@ app.use((req, res) => {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log(`[bpuudemo] fetching discovery metadata from ${config.discoveryUrl}`);
+  console.log(`[bpuu-workflow] fetching discovery metadata from ${config.discoveryUrl}`);
   oidcMetadata = await loadDiscoveryMetadata();
-  console.log(`[bpuudemo] discovery metadata loaded. issuer=${oidcMetadata.issuer}`);
+  console.log(`[bpuu-workflow] discovery metadata loaded. issuer=${oidcMetadata.issuer}`);
 
   remoteJwks = createRemoteJWKSet(new URL(oidcMetadata.jwks_uri));
 
   // ThaID discovery — best-effort, non-fatal (see loadThaidDiscoveryMetadata).
   console.log(
-    `[bpuudemo] fetching ThaID discovery metadata from ${config.thaidBaseUrl}/.well-known/openid-configuration`
+    `[bpuu-workflow] fetching ThaID discovery metadata from ${config.thaidBaseUrl}/.well-known/openid-configuration`
   );
   thaidMetadata = await loadThaidDiscoveryMetadata();
   if (thaidMetadata) {
-    console.log(`[bpuudemo] ThaID discovery metadata loaded. issuer=${thaidMetadata.issuer}`);
+    console.log(`[bpuu-workflow] ThaID discovery metadata loaded. issuer=${thaidMetadata.issuer}`);
     thaidRemoteJwks = createRemoteJWKSet(new URL(thaidMetadata.jwks_uri));
   } else {
     console.warn(
-      '[bpuudemo] ThaID metadata unavailable — /external will show a friendly "unavailable" page ' +
+      '[bpuu-workflow] ThaID metadata unavailable — /external will show a friendly "unavailable" page ' +
         'until this is fixed. The KMUTT/ADFS flow above is unaffected.'
     );
   }
@@ -1622,9 +1622,9 @@ async function main() {
       key: fs.readFileSync(config.tlsKeyPath),
     };
     https.createServer(tlsOptions, app).listen(config.port, () => {
-      console.log(`[bpuudemo] listening on https://localhost:${config.port}`);
+      console.log(`[bpuu-workflow] listening on https://localhost:${config.port}`);
       console.log(
-        '[bpuudemo] using certs/cert.pem + certs/key.pem — if these were generated with plain ' +
+        '[bpuu-workflow] using certs/cert.pem + certs/key.pem — if these were generated with plain ' +
           'openssl (not mkcert), the browser will warn the certificate is untrusted; that is expected, ' +
           'proceed past the warning. If generated with `mkcert` after `mkcert -install`, the browser ' +
           'should trust it with no warning.'
@@ -1632,18 +1632,18 @@ async function main() {
     });
   } else {
     console.warn(
-      `\n[bpuudemo] No TLS cert found at ${config.tlsCertPath} — falling back to plain HTTP.\n` +
+      `\n[bpuu-workflow] No TLS cert found at ${config.tlsCertPath} — falling back to plain HTTP.\n` +
         'ADFS requires an HTTPS redirect_uri (confirmed by KMUTT IT), so a REDIRECT_URI pointing at ' +
         'http://localhost will be rejected. Generate a local cert (e.g. via mkcert) or set TLS_CERT_PATH / ' +
         'TLS_KEY_PATH to use HTTPS.\n'
     );
     app.listen(config.port, () => {
-      console.log(`[bpuudemo] listening on http://localhost:${config.port}`);
+      console.log(`[bpuu-workflow] listening on http://localhost:${config.port}`);
     });
   }
 }
 
 main().catch((err) => {
-  console.error('[bpuudemo] fatal startup error:', err.message);
+  console.error('[bpuu-workflow] fatal startup error:', err.message);
   process.exit(1);
 });

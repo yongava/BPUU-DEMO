@@ -1,5 +1,5 @@
 {
-  "name": "bpuudemo",
+  "name": "bpuu-workflow",
   "version": "1.0.0",
   "private": true,
   "description": "KMUTT internal workflow form site, gated behind ADFS OIDC login.",

@@ -1,4 +1,4 @@
-# Deploying bpuudemo
+# Deploying bpuu-workflow
 
 Node.js/Express app, gated behind KMUTT ADFS login (plus an optional ThaID
 path for external users). Ships as a Docker image with no secrets baked in —
@@ -7,11 +7,11 @@ config comes entirely from environment variables at run time.
 ## Build & run
 
 ```
-docker build -t bpuudemo .
-docker run --env-file bpuudemo-uat.env -p 9999:9999 bpuudemo
+docker build -t bpuu-workflow .
+docker run --env-file bpuu-workflow-uat.env -p 9999:9999 bpuu-workflow
 ```
 
-`bpuudemo-uat.env` was sent separately (not in this repo) — it has the real
+`bpuu-workflow-uat.env` was sent separately (not in this repo) — it has the real
 ADFS/Master Data credentials already filled in. **`REDIRECT_URI` and
 `POST_LOGOUT_REDIRECT_URI` in that file are placeholders** — they need to be
 the actual host/port this container ends up reachable at, and that same

@@ -1487,7 +1487,7 @@ function submitToJotform(fieldOverrides = {}, options = {}) {
 
     appendHiddenField(form, 'formID', JOTFORM_FORM_ID);
     appendHiddenField(form, 'simple_spc', `${JOTFORM_FORM_ID}-${JOTFORM_FORM_ID}`);
-    appendHiddenField(form, 'submitSource', 'BPUU-DEMO');
+    appendHiddenField(form, 'submitSource', 'bpuu-workflow');
     appendHiddenField(form, 'submitDate', new Date().toISOString());
     appendHiddenField(form, 'eventObserver', '1');
     appendHiddenField(form, 'website', '');
