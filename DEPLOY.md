@@ -7,15 +7,14 @@ config comes entirely from environment variables at run time.
 ## Load & run
 
 You received a **pre-built image**, not source — no `docker build` needed or
-possible from what's in this zip.
+possible from what's in this zip. `bpuu-workflow-uat.env` is bundled in this
+same zip, ready to use as-is — no separate file to track down.
 
 ```
 # 1. Import the image (this restores the "bpuu-workflow:latest" tag)
 docker load -i bpuu-workflow-image.tar.gz
 
-# 2. Fill in REDIRECT_URI / POST_LOGOUT_REDIRECT_URI in the env file (see
-#    below) to match wherever this container will actually be reachable,
-#    then start it:
+# 2. Run it with the bundled env file:
 docker run --env-file bpuu-workflow-uat.env -p 9999:9999 bpuu-workflow:latest
 ```
 
@@ -23,14 +22,13 @@ docker run --env-file bpuu-workflow-uat.env -p 9999:9999 bpuu-workflow:latest
 change — that requires the actual repo, not this zip: `docker build -t
 bpuu-workflow .` from the project root.)
 
-`bpuu-workflow-uat.env` was sent separately (not in this zip, not in any
-repo) — it has the real ADFS/Master Data credentials already filled in.
-**`REDIRECT_URI` and `POST_LOGOUT_REDIRECT_URI` in that file are
-placeholders** — they need to be the actual host/port this container ends up
-reachable at, and that same `REDIRECT_URI` needs to be registered on the
-KMUTT ADFS Relying Party Trust for this client (`70443b94-...`) or login
-will fail with an invalid-redirect error, same as we hit during local
-testing. Without `--env-file` (or the vars set some other way — `-e`, a
+**`bpuu-workflow-uat.env` contains real, live secrets** (ADFS, Master Data,
+and ThaID client credentials, plus a session-signing secret) — treat this
+zip itself as sensitive from here on, the same care you'd give any file with
+live credentials in it. `REDIRECT_URI`/`POST_LOGOUT_REDIRECT_URI` and
+`THAID_REDIRECT_URI` are already set to `bpuu-service-uat.kmutt.ac.th` and
+already confirmed accepted by ADFS/DOPA respectively — no placeholders left
+to fill in. Without `--env-file` (or the vars set some other way — `-e`, a
 Kubernetes Secret, etc.), the container starts and exits immediately with an
 error naming exactly which required variable is missing.
 
@@ -65,6 +63,7 @@ full client_id (only an 8-character preview).
 - Sessions are in-memory (single instance only, no shared session store yet
   — fine for UAT with expected traffic, worth revisiting before real
   production load).
-- `/external` (ThaID) shows a friendly "not available" page until
-  `THAID_CLIENT_ID`/`THAID_CLIENT_SECRET` are set — no code changes needed
-  once DOPA issues real credentials, just fill in the env file.
+- `/external` (ThaID) is fully configured and live-verified end-to-end
+  (real QR scan, real callback) as of 2026-07-21 — no placeholder state left
+  here. If those credentials ever get unset, this path degrades gracefully
+  to a friendly "not available" page rather than an error.
