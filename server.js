@@ -71,7 +71,7 @@ const config = {
   thaidClientId: process.env.THAID_CLIENT_ID,
   thaidClientSecret: process.env.THAID_CLIENT_SECRET,
   thaidRedirectUri: process.env.THAID_REDIRECT_URI,
-  thaidScope: process.env.THAID_SCOPE || 'pid name openid',
+  thaidScope: process.env.THAID_SCOPE || 'pid name',
 
   // KMUTT Master Data (server-to-server client-credentials API) config —
   // used after a successful ADFS login to look up whether the user is staff
@@ -222,7 +222,7 @@ async function loadThaidDiscoveryMetadata() {
 
 // True only when both the required ThaID env vars are present AND discovery
 // metadata was loaded successfully at boot — used to gate /external and
-// /external/callback behind a friendly error page instead of crashing or
+// /callback behind a friendly error page instead of crashing or
 // redirecting into a broken flow.
 function isThaidConfigured() {
   return Boolean(
@@ -764,10 +764,9 @@ function renderLoginLandingPage() {
     <a href="/login" class="btn btn-ci-orange btn-lg w-100 fw-bold mb-2">
       <i class="bi bi-box-arrow-in-right me-2"></i>บุคลากร / นักศึกษา
     </a>
-    <a href="/external" class="btn btn-ci-bluegrey btn-lg w-100 fw-bold mb-2">
+    <a href="/external" class="btn btn-ci-bluegrey btn-lg w-100 fw-bold">
       <i class="bi bi-people-fill me-2"></i>บุคคลภายนอก (ThaiD)
     </a>
-    <a href="/guest" class="small text-ci-bluegrey d-block mt-1">guest (ชั่วคราว ระหว่างรอเชื่อมต่อ ThaID)</a>
   </div>
 </body>
 </html>`;
@@ -862,24 +861,6 @@ app.get(
   })
 );
 
-// TEMPORARY stopgap for people without a KMUTT account, while ThaID
-// credentials are still pending (see /external below, which 503s until
-// THAID_CLIENT_ID/SECRET are configured). Deliberately unauthenticated —
-// this doesn't remove any real access control: '/external' itself was never
-// meant to require proof of identity beyond "not a KMUTT account holder",
-// ThaID is an added verification layer on top of that, not a security
-// boundary protecting sensitive data (no Master Data lookup, no staff/
-// student session, happens here). Intended to be removed once ThaID is
-// wired up with real credentials — remove this route and the landing-page
-// link to it at that point.
-app.get(
-  '/guest',
-  asyncHandler(async (req, res) => {
-    noStore(res);
-    res.sendFile(INDEX_HTML_PATH);
-  })
-);
-
 // Entry point for people without a KMUTT account ("บุคคลภายนอก") — gated on a
 // ThaID (Thailand national digital ID, DOPA) session instead of the ADFS
 // session that gates '/'. Mirrors requireLogin's shape: no ThaID session yet
@@ -927,12 +908,14 @@ app.get(
   })
 );
 
-// ThaID callback — matches THAID_REDIRECT_URI's path. The authorization code
+// ThaID callback — matches THAID_REDIRECT_URI's path
+// (https://bpuu-service.kmutt.ac.th/callback), deliberately a clean,
+// top-level path separate from ADFS's '/redirect'. The authorization code
 // ThaID issues is valid for only 30 seconds and is single-use, so this
 // handler exchanges it for a token immediately; no other slow work happens
 // before that POST.
 app.get(
-  '/external/callback',
+  '/callback',
   asyncHandler(async (req, res) => {
     console.log('[bpuu-workflow] ThaID callback received');
 
@@ -1046,55 +1029,79 @@ app.get(
       return;
     }
 
-    if (!tokenBody.id_token) {
-      console.error('[bpuu-workflow] ThaID token response did not include an id_token');
-      res.status(502).send(
-        renderErrorPage({
-          title: 'เข้าสู่ระบบไม่สำเร็จ',
-          message: 'The token response did not include an ID token. Please try again.',
-          retryHref: '/external',
-        })
-      );
-      return;
-    }
-
     console.log('[bpuu-workflow] ThaID token exchange ok');
 
-    let payload;
-    try {
-      const verifyResult = await jwtVerify(tokenBody.id_token, thaidRemoteJwks, {
-        issuer: thaidMetadata.issuer,
-        audience: config.thaidClientId,
-      });
-      payload = verifyResult.payload;
-    } catch (err) {
-      console.error('[bpuu-workflow] ThaID id_token validation failed:', err.message);
-      res.status(400).send(
-        renderErrorPage({
-          title: 'เข้าสู่ระบบไม่สำเร็จ',
-          message: "we couldn't verify your login, please try again.",
-          retryHref: '/external',
-        })
-      );
-      return;
-    }
+    // Branch on whether the token response included an id_token. The
+    // registered scope for this client is exactly "pid name" — no openid —
+    // so per DOPA's ThaID API docs, the NORMAL/expected response here has NO
+    // id_token: the requested fields are returned directly as plain
+    // top-level JSON fields on the token response instead. The id_token
+    // branch below is kept for robustness in case the scope is ever widened
+    // to include openid in the future.
+    let pid;
+    let name;
 
-    // ThaID's documented authorization request params don't list 'nonce' and
-    // its documented id_token claims don't list 'nonce' either, so this
-    // check is only enforced if a nonce claim actually shows up — if ThaID
-    // never returns one, we don't fail every real login over a claim they
-    // don't support; if they ever do return one (undocumented or a future
-    // change), this still catches a token-replay mismatch.
-    if (payload.nonce && payload.nonce !== req.session.thaid_nonce) {
-      console.error('[bpuu-workflow] ThaID id_token nonce mismatch');
-      res.status(400).send(
-        renderErrorPage({
-          title: 'เข้าสู่ระบบไม่สำเร็จ',
-          message: "we couldn't verify your login, please try again.",
-          retryHref: '/external',
-        })
-      );
-      return;
+    if (tokenBody.id_token) {
+      // Scope included openid — standard OIDC id_token flow, unchanged.
+      let payload;
+      try {
+        const verifyResult = await jwtVerify(tokenBody.id_token, thaidRemoteJwks, {
+          issuer: thaidMetadata.issuer,
+          audience: config.thaidClientId,
+        });
+        payload = verifyResult.payload;
+      } catch (err) {
+        console.error('[bpuu-workflow] ThaID id_token validation failed:', err.message);
+        res.status(400).send(
+          renderErrorPage({
+            title: 'เข้าสู่ระบบไม่สำเร็จ',
+            message: "we couldn't verify your login, please try again.",
+            retryHref: '/external',
+          })
+        );
+        return;
+      }
+
+      // ThaID's documented authorization request params don't list 'nonce' and
+      // its documented id_token claims don't list 'nonce' either, so this
+      // check is only enforced if a nonce claim actually shows up — if ThaID
+      // never returns one, we don't fail every real login over a claim they
+      // don't support; if they ever do return one (undocumented or a future
+      // change), this still catches a token-replay mismatch.
+      if (payload.nonce && payload.nonce !== req.session.thaid_nonce) {
+        console.error('[bpuu-workflow] ThaID id_token nonce mismatch');
+        res.status(400).send(
+          renderErrorPage({
+            title: 'เข้าสู่ระบบไม่สำเร็จ',
+            message: "we couldn't verify your login, please try again.",
+            retryHref: '/external',
+          })
+        );
+        return;
+      }
+
+      pid = payload.pid;
+      name = payload.name;
+    } else {
+      // No id_token — the expected shape for the registered "pid name" scope.
+      // There is no signature to verify and, per this response shape's own
+      // documented fields, no nonce claim available to check — that's an
+      // inherent property of not requesting the openid scope, not a
+      // shortcut being taken here.
+      if (!tokenBody.pid && !tokenBody.name) {
+        console.error('[bpuu-workflow] ThaID token response did not include the expected pid/name fields');
+        res.status(502).send(
+          renderErrorPage({
+            title: 'เข้าสู่ระบบไม่สำเร็จ',
+            message: 'The token response did not include the expected pid/name fields. Please try again.',
+            retryHref: '/external',
+          })
+        );
+        return;
+      }
+
+      pid = tokenBody.pid;
+      name = tokenBody.name;
     }
 
     console.log('[bpuu-workflow] ThaID verification ok');
@@ -1120,8 +1127,8 @@ app.get(
       // which nothing downstream needs. Never log pid/name (matching the
       // existing discipline of never logging the ADFS client secret).
       req.session.externalUser = {
-        pid: payload.pid,
-        name: payload.name,
+        pid,
+        name,
         verifiedAt: new Date().toISOString(),
       };
 
@@ -1648,7 +1655,9 @@ app.get('/AW_MODlink_student_vertical.jpg', (req, res) =>
 // default "Try again" link (/login, into the ADFS gate) would be a dead end
 // for them — route based on which flow the request was actually in.
 function retryHrefFor(req) {
-  return req.path && req.path.startsWith('/external') ? '/external' : '/login';
+  return req.path && (req.path.startsWith('/external') || req.path.startsWith('/callback'))
+    ? '/external'
+    : '/login';
 }
 
 // Fallback error handler: never leak stack traces to the client.
