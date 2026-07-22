@@ -42,6 +42,33 @@ ingress in front of this container (typical, and what we'd default to), or
 mount a real cert and set those two env vars if the container should
 terminate TLS itself.
 
+## Admin dashboard (`/admin`)
+
+ADFS-gated (KMUTT login only — ThaID/external users can never qualify), and
+allowlisted on top of that: only KMUTT emails in `admin-allowlist.json` can
+actually see the page, seeded on first use from `ADMIN_SEED_EMAIL` (defaults
+to `chotthanin.neti@kmutt.ac.th` if unset). Manage the allowlist through the
+page itself once logged in as an existing admin, or by editing the file
+directly.
+
+**Mount a volume, or the allowlist resets on every restart.** It's written
+to `/app/data/admin-allowlist.json` inside the container (a writable
+directory created specifically for this — `/app` itself is read-only to the
+process). Without a volume mount, any admin added through the UI is lost the
+next time the container restarts or redeploys, reverting to just the seed
+admin:
+
+```
+docker run --env-file bpuu-workflow-uat.env -p 9999:9999 \
+  -v bpuu-workflow-admin-data:/app/data \
+  bpuu-workflow:latest
+```
+
+The JotForm request list on this page needs `JOTFORM_API_KEY` set (not
+included in the bundled env file) — without it, that section just shows
+"not configured" rather than an error. Login/menu functionality is
+unaffected either way.
+
 ## Health check
 
 `GET /api/me` always responds (200 or 401, never requires auth) — use it for
