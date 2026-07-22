@@ -82,6 +82,25 @@ const config = {
   masterdataBaseUrl: process.env.MASTERDATA_BASE_URL || 'https://master-data.kmutt.ac.th',
   masterdataClientId: process.env.MASTERDATA_CLIENT_ID,
   masterdataClientSecret: process.env.MASTERDATA_CLIENT_SECRET,
+
+  // JotForm API (read-only) config — used ONLY by the /admin page to list
+  // request submissions and their workflow status (form field q68). The
+  // form data itself lives entirely in JotForm, not here, so without an API
+  // key there is no request list to show. Deliberately NOT in
+  // REQUIRED_ENV_VARS: the rest of the app (login, the request form, the
+  // approval gate) works fine without it; only the admin request list needs
+  // it — see isJotformConfigured() below. The form id defaults to the one
+  // hardcoded in js/app.js so admins don't have to set it just to try this.
+  jotformApiBaseUrl: process.env.JOTFORM_API_BASE_URL || 'https://api.jotform.com',
+  jotformApiKey: process.env.JOTFORM_API_KEY,
+  jotformFormId: process.env.JOTFORM_FORM_ID || '261200763585052',
+
+  // Admin allowlist seed — the FIRST admin email, used only to create
+  // admin-allowlist.json on first boot if that file doesn't exist yet.
+  // After that, the file is the source of truth and is edited through the
+  // /admin settings zone (or by hand). Changing this env var does NOT
+  // retroactively rewrite an existing file. See loadAdminAllowlist() below.
+  adminSeedEmail: process.env.ADMIN_SEED_EMAIL || 'chotthanin.neti@kmutt.ac.th',
 };
 
 if (!config.sessionSecret) {
@@ -254,6 +273,14 @@ function isThaidConfigured() {
 // config + discovery, not a live probe.
 function isMasterDataConfigured() {
   return Boolean(config.masterdataClientId && config.masterdataClientSecret);
+}
+
+// True only when a JotForm API key is present. Gates the /admin request
+// list: with no key, /api/admin/requests reports { configured: false } and
+// the admin page shows a "not configured" notice instead of an empty table
+// that would look like "there are no requests".
+function isJotformConfigured() {
+  return Boolean(config.jotformApiKey);
 }
 
 // Module-level cached token state. A fresh token is requested only when
@@ -852,6 +879,143 @@ function requireLogin(req, res, next) {
   next();
 }
 
+// Like requireLogin, but accepts EITHER identity (KMUTT/ADFS or ThaID) —
+// used by /approve-gate. Unlike '/', which is deliberately KMUTT-only,
+// approving here just needs *some* identified login for the audit trail;
+// the university's requirement was "must authenticate before approving,"
+// not "must be KMUTT staff" — ThaID still ties the click to a real person.
+function requireAnyLogin(req, res, next) {
+  if (!req.session.user && !req.session.externalUser) {
+    req.session.redirectAfterLogin = req.originalUrl;
+    noStore(res);
+    res.status(200).send(renderLoginLandingPage());
+    return;
+  }
+  next();
+}
+
+// ---------------------------------------------------------------------------
+// Admin allowlist — which KMUTT emails may see the /admin page.
+//
+// Persisted to admin-allowlist.json (project root) so it survives restarts
+// and can be edited both through the /admin settings zone and by hand. The
+// file is the source of truth; config.adminSeedEmail only seeds it on first
+// boot when the file doesn't exist yet. Emails are always compared/stored
+// normalized (trimmed + lowercased) so "Chotthanin.Neti@KMUTT.ac.th" and
+// "chotthanin.neti@kmutt.ac.th" are the same admin.
+//
+// Deliberately ADFS-only (see requireAdmin): the allowlist keys on KMUTT
+// email, and ThaID identities have no @kmutt.ac.th email to match — an
+// external ThaID user can never be an admin, which is the intended policy.
+// ---------------------------------------------------------------------------
+
+// Defaults to /app/data/admin-allowlist.json inside the shipped Docker image
+// (see Dockerfile — /app/data is created and chowned to the non-root "node"
+// user specifically so this is writable; /app itself is root-owned there and
+// is NOT writable by the process). Override via ADMIN_ALLOWLIST_PATH if the
+// deployment mounts a volume somewhere else. Mount /app/data as a volume for
+// the allowlist to survive container restarts/redeploys — otherwise it
+// reverts to just the seed admin every time, same as an in-memory list.
+const ADMIN_ALLOWLIST_PATH =
+  process.env.ADMIN_ALLOWLIST_PATH || path.join(__dirname, 'data', 'admin-allowlist.json');
+
+function normalizeEmail(value) {
+  return String(value == null ? '' : value)
+    .trim()
+    .toLowerCase();
+}
+
+// In-memory cache of the normalized allowlist, loaded once at first use and
+// kept in sync on every save. null until first load.
+let adminAllowlistCache = null;
+
+function loadAdminAllowlist() {
+  if (adminAllowlistCache) return adminAllowlistCache;
+
+  let list = null;
+  try {
+    const raw = fs.readFileSync(ADMIN_ALLOWLIST_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      list = parsed.map(normalizeEmail).filter(Boolean);
+    } else {
+      console.warn('[bpuu-workflow] admin-allowlist.json is not a JSON array — ignoring and reseeding');
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      // A malformed/unreadable file must NOT silently grant nobody OR
+      // everybody — log loudly and fall through to the seed so there is
+      // always at least the seed admin who can fix it via the UI.
+      console.error(`[bpuu-workflow] could not read admin-allowlist.json (${err.message}) — reseeding`);
+    }
+  }
+
+  if (!list || list.length === 0) {
+    const seed = normalizeEmail(config.adminSeedEmail);
+    list = seed ? [seed] : [];
+    // Best-effort seed write; if the disk is read-only the app still works
+    // in-memory for this run, it just won't persist across a restart.
+    try {
+      fs.mkdirSync(path.dirname(ADMIN_ALLOWLIST_PATH), { recursive: true });
+      fs.writeFileSync(ADMIN_ALLOWLIST_PATH, JSON.stringify(list, null, 2) + '\n', 'utf8');
+      console.log(`[bpuu-workflow] seeded admin-allowlist.json with ${list.length} admin(s)`);
+    } catch (err) {
+      console.error(`[bpuu-workflow] could not write admin-allowlist.json seed (${err.message})`);
+    }
+  }
+
+  adminAllowlistCache = list;
+  return adminAllowlistCache;
+}
+
+// Throws on write failure (e.g. read-only filesystem, missing permissions)
+// — callers (the POST /api/admin/allowlist route) must catch this and
+// respond with a clear error rather than letting it hit the generic error
+// middleware, which historically returned an HTML page instead of JSON to
+// this route's fetch()-based client code.
+function saveAdminAllowlist(list) {
+  const normalized = Array.from(new Set(list.map(normalizeEmail).filter(Boolean)));
+  fs.mkdirSync(path.dirname(ADMIN_ALLOWLIST_PATH), { recursive: true });
+  fs.writeFileSync(ADMIN_ALLOWLIST_PATH, JSON.stringify(normalized, null, 2) + '\n', 'utf8');
+  adminAllowlistCache = normalized;
+  return normalized;
+}
+
+// The KMUTT email of the currently logged-in ADFS user, normalized. ThaID
+// sessions (externalUser) have no upn/email and return '' — so they never
+// match the allowlist. upn is the KMUTT email in this deployment (it's what
+// the Master Data lookups use as internalemail/KMUTT_EMAIL); email/
+// preferred_username are checked only as fallbacks for robustness.
+function getSessionAdminEmail(req) {
+  const claims = req.session.user && req.session.user.claims;
+  if (!claims) return '';
+  return normalizeEmail(claims.upn || claims.email || claims.preferred_username || '');
+}
+
+function isAdmin(req) {
+  const email = getSessionAdminEmail(req);
+  return Boolean(email) && loadAdminAllowlist().includes(email);
+}
+
+// Gate for /admin and its APIs. Assumes requireLogin ran first (so there IS
+// a KMUTT session); this only adds the allowlist check on top. Not-an-admin
+// gets an explicit 403, never a redirect loop.
+function requireAdmin(req, res, next) {
+  if (!isAdmin(req)) {
+    noStore(res);
+    res.status(403).send(
+      renderErrorPage({
+        title: 'ไม่มีสิทธิ์เข้าถึง',
+        message:
+          'บัญชีของท่านไม่มีสิทธิ์เข้าถึงหน้าผู้ดูแลระบบ หากต้องการสิทธิ์ กรุณาติดต่อผู้ดูแลระบบเพื่อเพิ่มอีเมลของท่านในรายชื่อที่อนุญาต',
+        retryHref: '/',
+      })
+    );
+    return;
+  }
+  next();
+}
+
 app.get(
   ['/', '/index.html'],
   requireLogin,
@@ -1106,6 +1270,13 @@ app.get(
 
     console.log('[bpuu-workflow] ThaID verification ok');
 
+    // Read BEFORE regenerate() below, same reason as the ADFS callback
+    // above: regenerate() replaces req.session with a fresh, empty object,
+    // so anything stashed pre-regenerate (e.g. by requireAnyLogin when
+    // /approve-gate sent the user through here) would otherwise be lost,
+    // and this route would always land back on the hardcoded '/external'.
+    const stashedRedirect = req.session.redirectAfterLogin;
+
     // Regenerate the session ID on successful login so a session ID observed
     // or fixed before authentication cannot be reused as an authenticated
     // session afterward (session fixation) — same pattern as the ADFS
@@ -1135,8 +1306,21 @@ app.get(
       delete req.session.thaid_state;
       delete req.session.thaid_nonce;
 
+      // Default stays '/external' — its own handler serves index.html once
+      // externalUser is set, exactly as before — unless a gate elsewhere
+      // (e.g. requireAnyLogin on /approve-gate) stashed a specific path to
+      // return to instead.
+      let redirectTo = '/external';
+      if (
+        typeof stashedRedirect === 'string' &&
+        stashedRedirect.startsWith('/') &&
+        !stashedRedirect.startsWith('//')
+      ) {
+        redirectTo = stashedRedirect;
+      }
+
       console.log('[bpuu-workflow] ThaID login successful');
-      res.redirect('/external');
+      res.redirect(redirectTo);
     });
   })
 );
@@ -1323,6 +1507,16 @@ app.get(
     // stays untouched.
     const kmuttRequesterProfile = await lookupKmuttRequesterProfile(payload.upn);
 
+    // Read BEFORE regenerate() below — regenerate() replaces the session
+    // store entry with a brand new, empty session object, so anything
+    // stashed on the pre-regenerate req.session (like this) is gone by the
+    // time the callback runs. Previously read after regenerate(), which
+    // silently discarded it every time and fell back to '/' — invisible
+    // as long as requireLogin only ever gated '/' and '/index.html'
+    // (stashing '/' and falling back to '/' look identical), but broke any
+    // deep link through requireLogin, e.g. /approve-gate.
+    const stashedRedirect = req.session.redirectAfterLogin;
+
     // Regenerate the session ID on successful login so a session ID observed
     // or fixed before authentication cannot be reused as an authenticated
     // session afterward (session fixation).
@@ -1360,11 +1554,13 @@ app.get(
       req.session.user.kmuttRequesterProfile = kmuttRequesterProfile;
 
       let redirectTo = '/';
-      const stashed = req.session.redirectAfterLogin;
-      if (typeof stashed === 'string' && stashed.startsWith('/') && !stashed.startsWith('//')) {
-        redirectTo = stashed;
+      if (
+        typeof stashedRedirect === 'string' &&
+        stashedRedirect.startsWith('/') &&
+        !stashedRedirect.startsWith('//')
+      ) {
+        redirectTo = stashedRedirect;
       }
-      delete req.session.redirectAfterLogin;
 
       console.log(`[bpuu-workflow] login successful for sub=${payload.sub}`);
       res.redirect(redirectTo);
@@ -1451,6 +1647,603 @@ app.get(
 );
 
 // ---------------------------------------------------------------------------
+// Approval gate — sits in front of JotForm's own approve/deny action links.
+//
+// Workflow emails used to link straight to {approvalDeeplink}?outcomeID=N,
+// which JotForm completes with no login at all. The university's concern:
+// anyone who gets hold of that email (forwarded, shared inbox, left open on
+// a screen) can approve/deny on the real approver's behalf with zero
+// authentication. Emails now link here first instead; this route forces an
+// ADFS login, then forwards the browser on to the exact same JotForm link.
+//
+// Deliberately does NOT check that the logged-in identity matches the
+// request's intended approver — staff sometimes delegate this to a
+// secretary, and blocking that would break real workflows. The point isn't
+// "only the approver may click" — JotForm's own deeplink already restricts
+// who receives it — it's "whoever clicks must be a real, identified KMUTT
+// login," so there is always an audit trail of who actually made the call.
+// ---------------------------------------------------------------------------
+
+// Only ever forward to JotForm's own domain. `target` is attacker-influenced
+// input (it's echoed out of a query string an attacker could edit before
+// clicking) — without this allowlist, this route would be an open redirect.
+const JOTFORM_APPROVAL_TARGET_HOSTS = new Set(['www.jotform.com', 'submit.jotform.com', 'jotform.com']);
+
+function isAllowedApprovalTarget(rawTarget) {
+  try {
+    const parsed = new URL(rawTarget);
+    return parsed.protocol === 'https:' && JOTFORM_APPROVAL_TARGET_HOSTS.has(parsed.hostname);
+  } catch (err) {
+    return false;
+  }
+}
+
+// JotForm's {approvalDeeplink} merge value is itself a full URL with its own
+// query string (e.g. ".../deeplink?deeplink=...&redirect=...") — confirmed
+// from a real workflow email — not the bare path the initial design assumed.
+// req.query.target (Express's parsed query string) would silently truncate
+// at that embedded '&', turning "&redirect=..." into an unrelated top-level
+// req.query.redirect and leaving target missing its second half plus the
+// "?outcomeID=N" suffix entirely. There is no JotForm merge-tag filter to
+// percent-encode the value before it lands in the href, so this reads the
+// tail of the raw request URL directly instead of trusting the query parser
+// — target must stay the LAST parameter in the link for this to work.
+function extractRawTarget(originalUrl) {
+  const match = originalUrl.match(/[?&]target=(.*)$/);
+  return match ? match[1] : '';
+}
+
+function outcomeToLabel(outcome) {
+  return outcome === 'reject' ? 'ไม่อนุมัติ' : outcome === 'accept' ? 'อนุมัติ' : String(outcome || '-');
+}
+
+// requireAnyLogin accepts either identity — this builds the audit-trail
+// label from whichever one is actually present. ThaID has no upn, only a
+// national ID (pid); log it masked, same discipline as /api/me.
+function resolveApprovalIdentityLabel(req) {
+  if (req.session.user) {
+    return (req.session.user.claims && req.session.user.claims.upn) || '(unknown upn)';
+  }
+  if (req.session.externalUser) {
+    return `thaid:${maskPid(req.session.externalUser.pid)}`;
+  }
+  return '(unknown identity)';
+}
+
+// Confirmation screen shown after login, before forwarding to JotForm. Also
+// protects against a real-world gotcha: corporate mail security scanners
+// auto-crawl links in incoming email, which would silently auto-approve
+// requests if the gate redirected immediately instead of requiring a click.
+//
+// This is a plain browser navigation to JotForm's real deeplink — a prior
+// attempt replaced this with a server-side fetch() to hide the jump
+// entirely, but that's confirmed NOT to work (2026-07-22 testing): the
+// fetch reported success while JotForm's own workflow never actually
+// advanced, almost certainly because completing it needs a real browser
+// context (cookies/JS/redirect chain) that Node's fetch doesn't reproduce.
+// Do not reintroduce a server-side completion path without a way to
+// verify JotForm's side actually changed, not just that the HTTP call
+// returned 200.
+function renderApprovalConfirmPage({ id, outcomeLabel, target, upn }) {
+  return `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ยืนยันการพิจารณาคำขอ — ระบบกระบวนงาน BPUU</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sarabun", Roboto, Helvetica, Arial, sans-serif;
+      background: #f2f4f7; color: #1f2430; margin: 0; padding: 48px 16px; line-height: 1.6; }
+    .card { max-width: 480px; margin: 0 auto; background: #fff; border: 1px solid #dde1e7; border-radius: 10px; padding: 28px; text-align: center; }
+    h1 { font-size: 1.2rem; margin: 0 0 12px; }
+    p { margin: 8px 0; color: #444; }
+    .meta { font-size: 0.9rem; color: #667; margin-top: 4px; }
+    a.button { display: inline-block; margin-top: 20px; background: #ea580c; color: #fff; text-decoration: none;
+      padding: 12px 28px; border-radius: 6px; font-weight: 600; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #14161a; color: #e7e9ee; }
+      .card { background: #1d2026; border-color: #2c313a; }
+      p { color: #b7bfcc; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>ยืนยันผลการพิจารณา</h1>
+    <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
+    <p>ท่านกำลังจะบันทึกผล: <strong>${escapeHtml(outcomeLabel)}</strong></p>
+    <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
+    <a class="button" href="${escapeHtml(target)}">ยืนยัน — ${escapeHtml(outcomeLabel)}</a>
+  </div>
+</body>
+</html>`;
+}
+
+app.get(
+  '/approve-gate',
+  requireAnyLogin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+
+    // id/outcome are simple values and come before target in every link this
+    // app generates, so Express's own query parser handles them fine. target
+    // is NOT read from req.query — see extractRawTarget() for why.
+    const { id, outcome } = req.query;
+    const targetStr = extractRawTarget(req.originalUrl);
+
+    if (!targetStr || !isAllowedApprovalTarget(targetStr)) {
+      res.status(400).send(
+        renderErrorPage({
+          title: 'ลิงก์ไม่ถูกต้อง',
+          message: 'ลิงก์อนุมัตินี้ไม่ถูกต้องหรือหมดอายุ กรุณาติดต่อผู้ดูแลระบบ',
+          retryHref: '/',
+        })
+      );
+      return;
+    }
+
+    const outcomeLabel = outcomeToLabel(outcome);
+    const identityLabel = resolveApprovalIdentityLabel(req);
+
+    console.log(
+      `[bpuu-workflow] approval gate: identity=${identityLabel} id=${id || '(none)'} outcome=${outcome || '(none)'} -> confirm screen`
+    );
+
+    res.status(200).send(
+      renderApprovalConfirmPage({ id, outcomeLabel, target: targetStr, upn: identityLabel })
+    );
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Admin page — request list + workflow-status tracking + permission settings.
+//
+// The request data lives entirely in JotForm (this app never stored it), so
+// the list is read live from the JotForm submissions API using a read-only
+// API key (JOTFORM_API_KEY). The "workflow status" shown per request is the
+// form's own สถานะดำเนินการ field (q68), which the JotForm workflow updates
+// as a request moves through approval stages — that field is the status
+// signal available via the API; JotForm does not expose a separate
+// per-submission "current workflow node" through this endpoint.
+// ---------------------------------------------------------------------------
+
+const JOTFORM_FETCH_TIMEOUT_MS = 8000;
+
+// Serialize a value for safe embedding inside an inline <script> as a JS
+// literal: JSON.stringify handles JS-string escaping, and escaping '<'
+// prevents a "</script>" sequence in the data from closing the tag early.
+function toScriptJson(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+// The /admin page. Server-rendered shell (branding, current admin, the two
+// panels) with inline JS that pulls live data from the admin JSON APIs and
+// builds the tables/lists with textContent — never innerHTML on the fetched
+// values — so JotForm submission content and allowlist emails can't inject
+// markup into this page.
+function renderAdminPage({ currentEmail, jotformConfigured }) {
+  return `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ผู้ดูแลระบบ — ระบบกระบวนงาน BPUU</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="/css/styles.css">
+  <style>
+    body { background: #f2f4f7; font-family: "Sarabun", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    .admin-header { background: linear-gradient(135deg, #FA4616, #ff734d); color: #fff; padding: 18px 0; }
+    .admin-header .sub { font-size: 12px; letter-spacing: .4px; opacity: .95; }
+    .admin-header .title { font-size: 20px; font-weight: 800; }
+    .panel { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; }
+    .panel-head { padding: 16px 20px; border-bottom: 1px solid #eef0f3; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .panel-head h2 { font-size: 1.05rem; font-weight: 700; margin: 0; }
+    .panel-body { padding: 16px 20px; }
+    table.req { font-size: 0.9rem; }
+    table.req td, table.req th { vertical-align: middle; }
+    .status-badge { font-size: 0.8rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; display: inline-block; white-space: nowrap; }
+    .status-wait { background: #fff4e5; color: #b26a00; }
+    .status-ok { background: #e6f4ea; color: #1e7e34; }
+    .status-reject { background: #fdecea; color: #c0392b; }
+    .status-neutral { background: #eef0f3; color: #55606d; }
+    .email-chip { display: inline-flex; align-items: center; gap: 8px; background: #f6f8fa; border: 1px solid #e3e6ea; border-radius: 999px; padding: 6px 8px 6px 14px; margin: 0 8px 8px 0; font-size: 0.9rem; }
+    .email-chip.is-you { border-color: #FA4616; }
+    .email-chip button { border: none; background: transparent; color: #c0392b; cursor: pointer; line-height: 1; padding: 2px 4px; border-radius: 50%; }
+    .email-chip button:disabled { color: #c3c8cf; cursor: not-allowed; }
+    .muted { color: #7a828d; }
+    .state-msg { padding: 24px; text-align: center; color: #7a828d; }
+  </style>
+</head>
+<body>
+  <div class="admin-header">
+    <div class="container d-flex align-items-center justify-content-between">
+      <div>
+        <div class="sub">มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี (มจธ.)</div>
+        <div class="title">ผู้ดูแลระบบ · ระบบกระบวนงาน BPUU</div>
+      </div>
+      <div class="text-end">
+        <div style="font-size:.85rem;opacity:.95;">${escapeHtml(currentEmail)}</div>
+        <a href="/logout" class="text-white" style="font-size:.85rem;"><i class="bi bi-box-arrow-right"></i> ออกจากระบบ</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="container py-4">
+    <!-- Requests panel -->
+    <div class="panel mb-4">
+      <div class="panel-head">
+        <h2><i class="bi bi-inbox text-ci-orange"></i> รายการคำขอ &amp; สถานะ</h2>
+        <button id="refreshBtn" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-clockwise"></i> รีเฟรช</button>
+      </div>
+      <div class="panel-body">
+        <div class="table-responsive">
+          <table class="table table-hover req align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Ref</th><th>วันที่</th><th>ผู้ขอ</th><th>ประเภทบริการ</th>
+                <th>ผู้อนุมัติ</th><th class="text-end">ยอด (บาท)</th><th>สถานะ</th>
+              </tr>
+            </thead>
+            <tbody id="reqBody">
+              <tr><td colspan="7" class="state-msg">กำลังโหลด…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings / permission panel -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2><i class="bi bi-shield-lock text-ci-orange"></i> สิทธิ์การเข้าถึงหน้าผู้ดูแล</h2>
+      </div>
+      <div class="panel-body">
+        <p class="muted mb-3">เฉพาะอีเมลในรายการนี้เท่านั้นที่เข้าหน้าผู้ดูแลระบบได้ (บัญชี KMUTT/ADFS เท่านั้น)</p>
+        <div id="allowlist" class="mb-3"><span class="muted">กำลังโหลด…</span></div>
+        <form id="addForm" class="row g-2 align-items-center" style="max-width:520px;">
+          <div class="col-auto flex-grow-1">
+            <input type="email" id="addEmail" class="form-control form-control-sm" placeholder="email@kmutt.ac.th" required>
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-ci-orange fw-bold"><i class="bi bi-plus-lg"></i> เพิ่มอีเมล</button>
+          </div>
+        </form>
+        <div id="settingsMsg" class="mt-2" style="font-size:.9rem;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const JOTFORM_CONFIGURED = ${jotformConfigured ? 'true' : 'false'};
+    const CURRENT_EMAIL = ${toScriptJson(currentEmail)};
+
+    function statusClass(status) {
+      const s = String(status || '');
+      if (/อนุมัติ|สำเร็จ|เสร็จ|เรียบร้อย|ผ่าน/.test(s) && !/ไม่อนุมัติ/.test(s)) return 'status-ok';
+      if (/ไม่อนุมัติ|ปฏิเสธ|ยกเลิก|ไม่ผ่าน/.test(s)) return 'status-reject';
+      if (/รอ|กำลัง|ตรวจสอบ/.test(s)) return 'status-wait';
+      return 'status-neutral';
+    }
+
+    function cell(text) {
+      const td = document.createElement('td');
+      td.textContent = text == null || text === '' ? '—' : String(text);
+      return td;
+    }
+
+    function renderRequests(requests) {
+      const body = document.getElementById('reqBody');
+      body.replaceChildren();
+      if (!requests.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 7; td.className = 'state-msg'; td.textContent = 'ยังไม่มีคำขอ';
+        tr.appendChild(td); body.appendChild(tr);
+        return;
+      }
+      for (const r of requests) {
+        const tr = document.createElement('tr');
+        tr.appendChild(cell(r.id));
+        tr.appendChild(cell(r.createdAt));
+        tr.appendChild(cell(r.requester));
+        tr.appendChild(cell(r.requestType));
+        tr.appendChild(cell(r.approver || r.approverEmail));
+        const amount = cell(r.amount);
+        amount.className = 'text-end';
+        tr.appendChild(amount);
+        const st = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = 'status-badge ' + statusClass(r.status);
+        badge.textContent = r.status && r.status !== '' ? r.status : 'ไม่ระบุ';
+        st.appendChild(badge);
+        tr.appendChild(st);
+        body.appendChild(tr);
+      }
+    }
+
+    function stateRow(text) {
+      const body = document.getElementById('reqBody');
+      body.replaceChildren();
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 7; td.className = 'state-msg'; td.textContent = text;
+      tr.appendChild(td); body.appendChild(tr);
+    }
+
+    async function loadRequests() {
+      stateRow('กำลังโหลด…');
+      try {
+        const res = await fetch('/api/admin/requests', { headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+        if (data.configured === false) {
+          stateRow('ยังไม่ได้ตั้งค่า JotForm API key — เพิ่ม JOTFORM_API_KEY ใน .env เพื่อดูรายการคำขอ');
+          return;
+        }
+        if (data.error) { stateRow(data.error); return; }
+        renderRequests(data.requests || []);
+      } catch (err) {
+        stateRow('เกิดข้อผิดพลาดในการโหลดรายการคำขอ');
+      }
+    }
+
+    function renderAllowlist(emails) {
+      const box = document.getElementById('allowlist');
+      box.replaceChildren();
+      const onlyOne = emails.length <= 1;
+      for (const email of emails) {
+        const chip = document.createElement('span');
+        chip.className = 'email-chip' + (email === CURRENT_EMAIL ? ' is-you' : '');
+        const label = document.createElement('span');
+        label.textContent = email + (email === CURRENT_EMAIL ? ' (คุณ)' : '');
+        chip.appendChild(label);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.title = 'ลบ';
+        btn.innerHTML = '<i class="bi bi-x-lg"></i>';
+        btn.disabled = onlyOne;
+        btn.addEventListener('click', () => removeEmail(email));
+        chip.appendChild(btn);
+        box.appendChild(chip);
+      }
+    }
+
+    async function loadAllowlist() {
+      try {
+        const res = await fetch('/api/admin/allowlist', { headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+        renderAllowlist(data.emails || []);
+      } catch (err) {
+        document.getElementById('allowlist').textContent = 'โหลดรายชื่อไม่สำเร็จ';
+      }
+    }
+
+    function showSettingsMsg(text, ok) {
+      const el = document.getElementById('settingsMsg');
+      el.textContent = text;
+      el.style.color = ok ? '#1e7e34' : '#c0392b';
+    }
+
+    async function mutateAllowlist(action, email) {
+      const res = await fetch('/api/admin/allowlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, email }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showSettingsMsg(data.error || 'ดำเนินการไม่สำเร็จ', false); return false; }
+      renderAllowlist(data.emails || []);
+      return true;
+    }
+
+    async function removeEmail(email) {
+      if (!confirm('ลบสิทธิ์ของ ' + email + ' ?')) return;
+      if (await mutateAllowlist('remove', email)) showSettingsMsg('ลบ ' + email + ' แล้ว', true);
+    }
+
+    document.getElementById('addForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('addEmail');
+      const email = input.value.trim();
+      if (!email) return;
+      if (await mutateAllowlist('add', email)) { showSettingsMsg('เพิ่ม ' + email + ' แล้ว', true); input.value = ''; }
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', loadRequests);
+
+    loadRequests();
+    loadAllowlist();
+  </script>
+</body>
+</html>`;
+}
+
+// Maps a submission's answers object (JotForm keys answers by numeric qid)
+// to the compact record the admin table needs. qid → meaning comes from
+// js/app.js buildJotformSubmissionFields(): 15=ประเภทคำขอ, 16=ประเภทผู้ใช้,
+// 19=ชื่อผู้ขอ, 20=อีเมลผู้ขอ, 22=หน่วยงาน, 28=ชื่อผู้อนุมัติ, 30=อีเมลผู้อนุมัติ,
+// 67=ยอดค่าบริการประเมิน, 68=สถานะดำเนินการ.
+function jotformAnswer(answers, qid) {
+  const entry = answers && answers[qid];
+  if (!entry) return '';
+  // Simple text fields expose .answer as a string; .prettyFormat is a nicer
+  // rendering some field types provide. Fall back across both, never return
+  // an object (which would render as "[object Object]" in the table).
+  const value = entry.answer !== undefined ? entry.answer : entry.prettyFormat;
+  if (value === undefined || value === null) return '';
+  return typeof value === 'string' ? value : String(value);
+}
+
+async function fetchJotformRequests() {
+  const url = new URL(`${config.jotformApiBaseUrl}/form/${config.jotformFormId}/submissions`);
+  url.searchParams.set('apiKey', config.jotformApiKey);
+  url.searchParams.set('limit', '1000');
+
+  const response = await fetch(url, {
+    method: 'GET',
+    signal: AbortSignal.timeout(JOTFORM_FETCH_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    throw new Error(`JotForm submissions API returned HTTP ${response.status}`);
+  }
+
+  const body = await response.json();
+  const content = Array.isArray(body.content) ? body.content : [];
+
+  const requests = content.map((sub) => {
+    const answers = sub.answers || {};
+    return {
+      id: sub.id,
+      createdAt: sub.created_at || '',
+      requester: jotformAnswer(answers, '19'),
+      requesterEmail: jotformAnswer(answers, '20'),
+      requestType: jotformAnswer(answers, '15'),
+      userType: jotformAnswer(answers, '16'),
+      department: jotformAnswer(answers, '22'),
+      approver: jotformAnswer(answers, '28'),
+      approverEmail: jotformAnswer(answers, '30'),
+      amount: jotformAnswer(answers, '67'),
+      status: jotformAnswer(answers, '68'),
+    };
+  });
+
+  // Newest first — JotForm returns oldest-first by default and there's no
+  // stable server-side desc order across field types, so sort here.
+  requests.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return requests;
+}
+
+// A syntactically-plausible email — intentionally loose. The real gate is
+// that only an @kmutt.ac.th ADFS login can ever MATCH an allowlist entry
+// (ThaID has no email), so a typo'd or non-KMUTT entry is harmless: it just
+// never grants access to anyone.
+function looksLikeEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+app.get(
+  '/admin',
+  requireLogin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+    res.status(200).send(
+      renderAdminPage({
+        currentEmail: getSessionAdminEmail(req),
+        jotformConfigured: isJotformConfigured(),
+      })
+    );
+  })
+);
+
+app.get(
+  '/api/admin/requests',
+  requireLogin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+
+    if (!isJotformConfigured()) {
+      res.status(200).json({ configured: false, requests: [] });
+      return;
+    }
+
+    try {
+      const requests = await fetchJotformRequests();
+      res.status(200).json({ configured: true, requests });
+    } catch (err) {
+      console.error(`[bpuu-workflow] admin requests fetch failed: ${err.message}`);
+      res.status(502).json({ configured: true, error: 'ไม่สามารถดึงรายการคำขอจาก JotForm ได้ในขณะนี้' });
+    }
+  })
+);
+
+app.get(
+  '/api/admin/allowlist',
+  requireLogin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+    res.status(200).json({
+      emails: loadAdminAllowlist(),
+      currentEmail: getSessionAdminEmail(req),
+    });
+  })
+);
+
+// Add/remove an admin email. State-changing, so POST (not GET): SameSite=Lax
+// on the session cookie keeps a cross-site POST from carrying the admin's
+// session, matching the CSRF posture the existing /api/kmutt-dev-preview/
+// clear route already relies on.
+app.post(
+  '/api/admin/allowlist',
+  requireLogin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+
+    const action = req.body && req.body.action;
+    const email = normalizeEmail(req.body && req.body.email);
+
+    if (action !== 'add' && action !== 'remove') {
+      res.status(400).json({ error: 'action must be "add" or "remove"' });
+      return;
+    }
+    if (!email) {
+      res.status(400).json({ error: 'email is required' });
+      return;
+    }
+    if (action === 'add' && !looksLikeEmail(email)) {
+      res.status(400).json({ error: 'อีเมลไม่ถูกต้อง' });
+      return;
+    }
+
+    const current = loadAdminAllowlist();
+
+    if (action === 'add') {
+      if (current.includes(email)) {
+        res.status(200).json({ emails: current, unchanged: true });
+        return;
+      }
+      let updated;
+      try {
+        updated = saveAdminAllowlist([...current, email]);
+      } catch (err) {
+        console.error(`[bpuu-workflow] could not persist admin-allowlist.json (${err.message})`);
+        res.status(500).json({ error: 'บันทึกรายชื่อผู้ดูแลระบบไม่สำเร็จ กรุณาลองใหม่ภายหลัง' });
+        return;
+      }
+      console.log(`[bpuu-workflow] admin allowlist: ${getSessionAdminEmail(req)} added ${email}`);
+      res.status(200).json({ emails: updated });
+      return;
+    }
+
+    // action === 'remove'
+    if (!current.includes(email)) {
+      res.status(200).json({ emails: current, unchanged: true });
+      return;
+    }
+    // Never let the list be emptied — that would lock everyone out with no
+    // way back in through the UI. The last remaining admin cannot be removed.
+    if (current.length <= 1) {
+      res.status(409).json({ error: 'ไม่สามารถลบผู้ดูแลระบบคนสุดท้ายได้' });
+      return;
+    }
+    let updated;
+    try {
+      updated = saveAdminAllowlist(current.filter((e) => e !== email));
+    } catch (err) {
+      console.error(`[bpuu-workflow] could not persist admin-allowlist.json (${err.message})`);
+      res.status(500).json({ error: 'บันทึกรายชื่อผู้ดูแลระบบไม่สำเร็จ กรุณาลองใหม่ภายหลัง' });
+      return;
+    }
+    console.log(`[bpuu-workflow] admin allowlist: ${getSessionAdminEmail(req)} removed ${email}`);
+    res.status(200).json({ emails: updated });
+  })
+);
+
+// ---------------------------------------------------------------------------
 // Unauthenticated diagnostics endpoint.
 //
 // Deliberately reachable with NO authentication and usable BEFORE ADFS is
@@ -1503,6 +2296,12 @@ app.get(
       },
       masterdata: {
         configured: isMasterDataConfigured(),
+      },
+      jotform: {
+        // Whether the /admin request list can pull data. Reports only
+        // configured-or-not and the form id — never the API key itself.
+        configured: isJotformConfigured(),
+        formId: config.jotformFormId,
       },
       serverTimeUtc: new Date().toISOString(),
     });
@@ -1667,7 +2466,20 @@ app.use((err, req, res, next) => {
     next(err);
     return;
   }
-  res.status(500).send(
+
+  const status = (err && (err.status || err.statusCode)) || 500;
+
+  // API routes are consumed by fetch()-based client code expecting JSON
+  // (res.json() on every response) — an HTML error page here just throws
+  // client-side instead of surfacing a clear error. Covers cases like
+  // malformed JSON bodies (express.json() throws a 400 SyntaxError) as well
+  // as any other API-route failure.
+  if (req.path && req.path.startsWith('/api/')) {
+    res.status(status).json({ error: 'An unexpected error occurred while handling your request.' });
+    return;
+  }
+
+  res.status(status).send(
     renderErrorPage({
       title: 'เกิดข้อผิดพลาด',
       message: 'An unexpected error occurred while handling your request. Please try again.',
