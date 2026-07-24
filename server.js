@@ -350,6 +350,60 @@ function buildMasterDataDisplayName(thFirst, thLast, enFirst, enLast) {
   return en || null;
 }
 
+// ---------------------------------------------------------------------------
+// CRITICAL: the Master Data list API matches every query-string filter as a
+// SUBSTRING (contains), NOT exact equality. Verified against the live API
+// (2026-07-22): internalemail=neti returns EVERY person whose email merely
+// contains "neti" (2 different people), employeeid=256 returns every id
+// containing "256" (5 people), and KMUTT_EMAIL behaves the same. Taking
+// results[0] under pageSize=1 (the previous approach) therefore returned the
+// WRONG person whenever the queried value is a substring of another row's
+// value — e.g. a user "chai.x@kmutt.ac.th" is a substring of a different
+// user "nichai.x@kmutt.ac.th", so the query matched both and pageSize=1
+// returned whichever had the lower employeeid. That is the "auth as one
+// person, Master Data shows a different person" bug.
+//
+// Every lookup MUST therefore fetch the candidate substring matches and keep
+// only the row whose field EXACTLY equals the queried value (case- and
+// whitespace-insensitively for emails). A full email/id almost never
+// substring-collides with more than a handful of rows, so a modest page size
+// is plenty to contain the exact match.
+const MASTERDATA_EXACT_MATCH_PAGE_SIZE = 100;
+
+function normalizeMasterdataValue(value, caseInsensitive) {
+  const s = value === undefined || value === null ? '' : String(value).trim();
+  return caseInsensitive ? s.toLowerCase() : s;
+}
+
+// Fetches DH00xx rows filtered by `field=value` and returns the single row
+// whose `field` EXACTLY matches `value` (after normalization), or null if no
+// exact match exists among the substring candidates. Throws on HTTP error
+// (callers wrap in try/catch, matching the existing all-or-nothing pattern).
+async function masterdataFindExact(token, table, field, value, { caseInsensitive = false } = {}) {
+  const want = normalizeMasterdataValue(value, caseInsensitive);
+  if (!want) return null;
+
+  const url = new URL(`${config.masterdataBaseUrl}/backend/api/data/${table}`);
+  url.searchParams.set(field, value);
+  url.searchParams.set('page', '1');
+  url.searchParams.set('pageSize', String(MASTERDATA_EXACT_MATCH_PAGE_SIZE));
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(MASTERDATA_FETCH_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Master Data ${table} lookup (${field}) returned HTTP ${response.status}`);
+  }
+
+  const rows = await response.json();
+  if (!Array.isArray(rows)) return null;
+
+  return rows.find((row) => normalizeMasterdataValue(row[field], caseInsensitive) === want) || null;
+}
+
 // Looks up whether `email` belongs to KMUTT staff or a student via the
 // Master Data API. Only ever returns the specific fields listed in the
 // return type below — nothing else from the API response (e.g. IDCARD,
@@ -367,25 +421,14 @@ async function lookupKmuttUserType(email) {
   try {
     const token = await getMasterDataToken();
 
-    const staffUrl = new URL(`${config.masterdataBaseUrl}/backend/api/data/DH0002_HR_EmployeeProfile`);
-    staffUrl.searchParams.set('internalemail', email);
-    staffUrl.searchParams.set('page', '1');
-    staffUrl.searchParams.set('pageSize', '1');
-
-    const staffResponse = await fetch(staffUrl, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(MASTERDATA_FETCH_TIMEOUT_MS),
+    // Exact-match on internalemail — the API filter is substring-based, so
+    // fetching + filtering to the exact email is required (see
+    // masterdataFindExact above). Emails compared case-insensitively.
+    const staff = await masterdataFindExact(token, 'DH0002_HR_EmployeeProfile', 'internalemail', email, {
+      caseInsensitive: true,
     });
 
-    if (!staffResponse.ok) {
-      throw new Error(`Master Data staff lookup returned HTTP ${staffResponse.status}`);
-    }
-
-    const staffResults = await staffResponse.json();
-
-    if (Array.isArray(staffResults) && staffResults.length > 0) {
-      const staff = staffResults[0];
+    if (staff) {
       return {
         type: 'staff',
         displayName: buildMasterDataDisplayName(
@@ -399,25 +442,11 @@ async function lookupKmuttUserType(email) {
       };
     }
 
-    const studentUrl = new URL(`${config.masterdataBaseUrl}/backend/api/data/DH0001_STD_MemberProfile`);
-    studentUrl.searchParams.set('KMUTT_EMAIL', email);
-    studentUrl.searchParams.set('page', '1');
-    studentUrl.searchParams.set('pageSize', '1');
-
-    const studentResponse = await fetch(studentUrl, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(MASTERDATA_FETCH_TIMEOUT_MS),
+    const student = await masterdataFindExact(token, 'DH0001_STD_MemberProfile', 'KMUTT_EMAIL', email, {
+      caseInsensitive: true,
     });
 
-    if (!studentResponse.ok) {
-      throw new Error(`Master Data student lookup returned HTTP ${studentResponse.status}`);
-    }
-
-    const studentResults = await studentResponse.json();
-
-    if (Array.isArray(studentResults) && studentResults.length > 0) {
-      const student = studentResults[0];
+    if (student) {
       return {
         type: 'student',
         displayName: buildMasterDataDisplayName(
@@ -457,27 +486,13 @@ async function resolveKmuttApprover(departmentCode, requesterEmployeeId) {
 
   const token = await getMasterDataToken();
 
-  const orgUrl = new URL(`${config.masterdataBaseUrl}/backend/api/data/DH0003_HR_ORG_Structure`);
-  orgUrl.searchParams.set('DEPARTMENTCODE', departmentCode);
-  orgUrl.searchParams.set('page', '1');
-  orgUrl.searchParams.set('pageSize', '1');
-
-  const orgResponse = await fetch(orgUrl, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(MASTERDATA_FETCH_TIMEOUT_MS),
-  });
-
-  if (!orgResponse.ok) {
-    throw new Error(`Master Data org structure lookup returned HTTP ${orgResponse.status}`);
-  }
-
-  const orgResults = await orgResponse.json();
-  if (!Array.isArray(orgResults) || orgResults.length === 0) {
+  // Exact-match on DEPARTMENTCODE — the API filter is substring-based, so a
+  // department code that is a substring of another code would otherwise pick
+  // the wrong org row (and thus the wrong approver). See masterdataFindExact.
+  const org = await masterdataFindExact(token, 'DH0003_HR_ORG_Structure', 'DEPARTMENTCODE', departmentCode);
+  if (!org) {
     return null;
   }
-
-  const org = orgResults[0];
 
   // Walk from the most immediate management level (2) up to the most senior
   // (6), picking the first level that both has a named position AND is held
@@ -506,27 +521,12 @@ async function resolveKmuttApprover(departmentCode, requesterEmployeeId) {
   const positionTitle = org[`ADMINPOS0${matchedLevel}_NAME`];
   const empId = org[`ADMINPOS0${matchedLevel}_EMP`];
 
-  const empUrl = new URL(`${config.masterdataBaseUrl}/backend/api/data/DH0002_HR_EmployeeProfile`);
-  empUrl.searchParams.set('employeeid', empId);
-  empUrl.searchParams.set('page', '1');
-  empUrl.searchParams.set('pageSize', '1');
-
-  const empResponse = await fetch(empUrl, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(MASTERDATA_FETCH_TIMEOUT_MS),
-  });
-
-  if (!empResponse.ok) {
-    throw new Error(`Master Data approver employee lookup returned HTTP ${empResponse.status}`);
-  }
-
-  const empResults = await empResponse.json();
-  if (!Array.isArray(empResults) || empResults.length === 0) {
+  // Exact-match on employeeid (substring-filter API — a shorter id that is a
+  // substring of a longer one would otherwise resolve to the wrong person).
+  const emp = await masterdataFindExact(token, 'DH0002_HR_EmployeeProfile', 'employeeid', empId);
+  if (!emp) {
     return null;
   }
-
-  const emp = empResults[0];
 
   const resolvedName = buildMasterDataDisplayName(
     `${emp.titleshortth2 || ''}${emp.firstnameth || ''}`,
@@ -574,26 +574,14 @@ async function lookupKmuttRequesterProfile(email) {
   try {
     const token = await getMasterDataToken();
 
-    const staffUrl = new URL(`${config.masterdataBaseUrl}/backend/api/data/DH0002_HR_EmployeeProfile`);
-    staffUrl.searchParams.set('internalemail', email);
-    staffUrl.searchParams.set('page', '1');
-    staffUrl.searchParams.set('pageSize', '1');
-
-    const staffResponse = await fetch(staffUrl, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(MASTERDATA_FETCH_TIMEOUT_MS),
+    // Exact-match on internalemail (substring-filter API — see
+    // masterdataFindExact). This is the lookup that previously returned a
+    // different person's profile than the one who logged in.
+    const staff = await masterdataFindExact(token, 'DH0002_HR_EmployeeProfile', 'internalemail', email, {
+      caseInsensitive: true,
     });
 
-    if (!staffResponse.ok) {
-      throw new Error(`Master Data staff lookup returned HTTP ${staffResponse.status}`);
-    }
-
-    const staffResults = await staffResponse.json();
-
-    if (Array.isArray(staffResults) && staffResults.length > 0) {
-      const staff = staffResults[0];
-
+    if (staff) {
       const name = buildMasterDataDisplayName(
         `${staff.titleshortth2 || ''}${staff.firstnameth || ''}`,
         staff.lastnameth,
@@ -622,26 +610,11 @@ async function lookupKmuttRequesterProfile(email) {
       return { type: 'staff', requester, approver };
     }
 
-    const studentUrl = new URL(`${config.masterdataBaseUrl}/backend/api/data/DH0001_STD_MemberProfile`);
-    studentUrl.searchParams.set('KMUTT_EMAIL', email);
-    studentUrl.searchParams.set('page', '1');
-    studentUrl.searchParams.set('pageSize', '1');
-
-    const studentResponse = await fetch(studentUrl, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(MASTERDATA_FETCH_TIMEOUT_MS),
+    const student = await masterdataFindExact(token, 'DH0001_STD_MemberProfile', 'KMUTT_EMAIL', email, {
+      caseInsensitive: true,
     });
 
-    if (!studentResponse.ok) {
-      throw new Error(`Master Data student lookup returned HTTP ${studentResponse.status}`);
-    }
-
-    const studentResults = await studentResponse.json();
-
-    if (Array.isArray(studentResults) && studentResults.length > 0) {
-      const student = studentResults[0];
-
+    if (student) {
       const name = buildMasterDataDisplayName(
         `${student.PRIFIXNAME_TH || ''}${student.FNAME_TH || ''}`,
         student.LNAME_TH,
@@ -737,7 +710,12 @@ function renderErrorPage({ title, message, retryHref = '/login' }) {
 // them to an external login domain. Loads the same CSS design tokens
 // (--ci-orange etc.) as the gated app itself, via the already-public
 // /css/styles.css route, so it looks native rather than bolted-on.
-function renderLoginLandingPage() {
+function renderLoginLandingPage({ expired = false } = {}) {
+  const expiredNotice = expired
+    ? `<div class="alert alert-warning py-2 mb-3" role="alert" style="font-size:.95rem;">
+      <i class="bi bi-clock-history me-1"></i>เซสชันหมดอายุ (ครบ 60 นาที) กรุณาเข้าสู่ระบบใหม่
+    </div>`
+    : '';
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -782,17 +760,18 @@ function renderLoginLandingPage() {
 </head>
 <body>
   <div class="login-card">
+    ${expiredNotice}
     <div class="login-icon"><i class="bi bi-building"></i></div>
     <h4 class="fw-bold text-ci-orange mb-2">ระบบกระบวนงาน (Workflow)</h4>
     <p class="text-ci-bluegrey mb-4">
-      การให้บริการของกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน<br>
+      การให้บริการของ<br>กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน<br>
       กรุณาเลือกประเภทผู้ใช้งานเพื่อเริ่มยื่นคำขอ
     </p>
     <a href="/login" class="btn btn-ci-orange btn-lg w-100 fw-bold mb-2">
-      <i class="bi bi-box-arrow-in-right me-2"></i>บุคลากร / นักศึกษา
+      <i class="bi bi-box-arrow-in-right me-2"></i>Login with KMUTT Account<br>(บุคลากร / นักศึกษา)
     </a>
     <a href="/external" class="btn btn-ci-bluegrey btn-lg w-100 fw-bold">
-      <i class="bi bi-people-fill me-2"></i>บุคคลภายนอก (ThaiD)
+      <i class="bi bi-people-fill me-2"></i>Login with ThaiD<br>(เฉพาะบุคคลภายนอกเท่านั้น)
     </a>
   </div>
 </body>
@@ -823,6 +802,17 @@ const app = express();
 // cookie's `secure` flag and for the HTTPS/HTTP boot choice below.
 const hasTlsCert = fs.existsSync(config.tlsCertPath) && fs.existsSync(config.tlsKeyPath);
 
+// Absolute session lifetime: 60 minutes from login, regardless of activity.
+// This is an ABSOLUTE cap, not an idle timeout — a user is logged out 60
+// minutes after they authenticate even if they were active the whole time.
+// Enforced in two layers: (1) the cookie's maxAge below, so the browser stops
+// sending the cookie after 60 min (and `rolling` is left at its default false
+// so this window is NOT extended on each request); (2) a server-side
+// `absoluteExpiry` timestamp stamped on the session at login and checked in
+// requireLogin/requireAnyLogin, so an expired session is rejected even if a
+// client ignores the cookie expiry.
+const SESSION_MAX_AGE_MS = 60 * 60 * 1000;
+
 app.use(
   session({
     name: 'bpuu_workflow_sid',
@@ -833,6 +823,7 @@ app.use(
       httpOnly: true,
       sameSite: 'lax',
       secure: hasTlsCert, // cookie is only sent over HTTPS once we're actually serving HTTPS
+      maxAge: SESSION_MAX_AGE_MS,
     },
     // NOTE: this is the default in-memory session store. It is acceptable
     // for this dev phase, but it does not survive a process restart and
@@ -867,13 +858,31 @@ function noStore(res) {
 
 const INDEX_HTML_PATH = path.join(__dirname, 'index.html');
 
+// Enforce the absolute 60-minute session cap (see SESSION_MAX_AGE_MS). If the
+// session is past its absoluteExpiry, drop the authenticated identity so the
+// caller is treated as logged out — the gates below then render the login
+// page. Returns true if it just expired the session (so the caller can show
+// the "session expired" notice). A session with no absoluteExpiry (shouldn't
+// happen for a real login, but be safe) is never treated as expired here.
+function expireSessionIfNeeded(req) {
+  const exp = req.session.absoluteExpiry;
+  if (typeof exp === 'number' && Date.now() >= exp && (req.session.user || req.session.externalUser)) {
+    delete req.session.user;
+    delete req.session.externalUser;
+    delete req.session.absoluteExpiry;
+    return true;
+  }
+  return false;
+}
+
 function requireLogin(req, res, next) {
+  const justExpired = expireSessionIfNeeded(req);
   if (!req.session.user) {
     // Stash the originally-requested path now, before showing the landing
     // page, so clicking through to /login still returns here afterward.
     req.session.redirectAfterLogin = req.originalUrl;
     noStore(res);
-    res.status(200).send(renderLoginLandingPage());
+    res.status(200).send(renderLoginLandingPage({ expired: justExpired }));
     return;
   }
   next();
@@ -885,10 +894,25 @@ function requireLogin(req, res, next) {
 // the university's requirement was "must authenticate before approving,"
 // not "must be KMUTT staff" — ThaID still ties the click to a real person.
 function requireAnyLogin(req, res, next) {
+  const justExpired = expireSessionIfNeeded(req);
   if (!req.session.user && !req.session.externalUser) {
+    // Two separate stash keys, not one shared one — see the bug this fixes:
+    // requireLogin ('/','/admin', ADFS-only) also stashes into
+    // redirectAfterLogin, which the ADFS '/redirect' callback reads. If the
+    // ThaID '/callback' read that SAME key, a plain visit to '/' earlier in
+    // the session (which always stashes redirectAfterLogin='/') would leak
+    // into a later, unrelated ThaID login and send the user to '/' —  a
+    // route only an ADFS session can ever satisfy — instead of '/external'.
+    // The user would land back on the login page with no obvious error, and
+    // only a second click (now that externalUser is already set) would
+    // reach the menu. Keeping ThaID's own stash in a distinct key makes
+    // that leak structurally impossible while still letting a deliberate
+    // deep link like /approve-gate correctly return here after EITHER
+    // identity provider.
     req.session.redirectAfterLogin = req.originalUrl;
+    req.session.thaidRedirectAfterLogin = req.originalUrl;
     noStore(res);
-    res.status(200).send(renderLoginLandingPage());
+    res.status(200).send(renderLoginLandingPage({ expired: justExpired }));
     return;
   }
   next();
@@ -1275,7 +1299,20 @@ app.get(
     // so anything stashed pre-regenerate (e.g. by requireAnyLogin when
     // /approve-gate sent the user through here) would otherwise be lost,
     // and this route would always land back on the hardcoded '/external'.
-    const stashedRedirect = req.session.redirectAfterLogin;
+    //
+    // Deliberately its OWN key (thaidRedirectAfterLogin), NOT the shared
+    // redirectAfterLogin that requireLogin ('/', '/admin' — ADFS-only) also
+    // writes to. Reading the shared key here was the actual bug: visiting
+    // '/' while logged out always stashes redirectAfterLogin='/' (via
+    // requireLogin), and nothing clears that when the user then goes to
+    // /external instead — so a successful ThaID login would redirect back
+    // to '/', a route only an ADFS session can ever satisfy, stranding the
+    // user on the login page with no visible error. A second click (now
+    // that externalUser is already set) would then reach the menu, which is
+    // exactly the reported symptom. requireAnyLogin (/approve-gate) sets
+    // both keys, so that deep-link case still works correctly for either
+    // identity provider.
+    const stashedRedirect = req.session.thaidRedirectAfterLogin;
 
     // Regenerate the session ID on successful login so a session ID observed
     // or fixed before authentication cannot be reused as an authenticated
@@ -1302,6 +1339,8 @@ app.get(
         name,
         verifiedAt: new Date().toISOString(),
       };
+      // Absolute 60-minute session cap — see SESSION_MAX_AGE_MS.
+      req.session.absoluteExpiry = Date.now() + SESSION_MAX_AGE_MS;
 
       delete req.session.thaid_state;
       delete req.session.thaid_nonce;
@@ -1552,6 +1591,8 @@ app.get(
       // lookupKmuttRequesterProfile above) — only the allowlisted fields it
       // returns ever end up here, never the raw Master Data record.
       req.session.user.kmuttRequesterProfile = kmuttRequesterProfile;
+      // Absolute 60-minute session cap — see SESSION_MAX_AGE_MS.
+      req.session.absoluteExpiry = Date.now() + SESSION_MAX_AGE_MS;
 
       let redirectTo = '/';
       if (
@@ -1608,6 +1649,9 @@ app.get(
   '/api/me',
   asyncHandler(async (req, res) => {
     noStore(res);
+    // Honor the absolute 60-minute cap here too (defense in depth), so a
+    // client that ignores the cookie's maxAge can't keep reading identity.
+    expireSessionIfNeeded(req);
     if (req.session.user) {
       // Dev preview override (see /api/kmutt-dev-preview below): only ever
       // set when this real session's OWN kmuttUserType/kmuttRequesterProfile
@@ -1724,7 +1768,32 @@ function resolveApprovalIdentityLabel(req) {
 // Do not reintroduce a server-side completion path without a way to
 // verify JotForm's side actually changed, not just that the HTTP call
 // returned 200.
-function renderApprovalConfirmPage({ id, outcomeLabel, target, upn }) {
+// Reads ONE submission's current สถานะดำเนินการ (q68) straight from JotForm.
+// This is what makes the in-page (iframe) approval trustworthy: instead of
+// assuming success from an iframe load event — the same mistake the reverted
+// server-side fetch made — the client polls this and only reports success
+// once JotForm's OWN data shows the status actually changed. Returns null
+// when JotForm isn't configured or the submission can't be read.
+async function fetchJotformSubmissionStatus(submissionId) {
+  if (!isJotformConfigured() || !submissionId) return null;
+
+  const url = new URL(`${config.jotformApiBaseUrl}/submission/${encodeURIComponent(submissionId)}`);
+  url.searchParams.set('apiKey', config.jotformApiKey);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    signal: AbortSignal.timeout(JOTFORM_FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`JotForm submission lookup returned HTTP ${response.status}`);
+  }
+
+  const body = await response.json();
+  const answers = (body.content && body.content.answers) || {};
+  return jotformAnswer(answers, '68');
+}
+
+function renderApprovalConfirmPage({ id, outcomeLabel, target, upn, beforeStatus }) {
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -1738,8 +1807,17 @@ function renderApprovalConfirmPage({ id, outcomeLabel, target, upn }) {
     h1 { font-size: 1.2rem; margin: 0 0 12px; }
     p { margin: 8px 0; color: #444; }
     .meta { font-size: 0.9rem; color: #667; margin-top: 4px; }
-    a.button { display: inline-block; margin-top: 20px; background: #ea580c; color: #fff; text-decoration: none;
-      padding: 12px 28px; border-radius: 6px; font-weight: 600; }
+    button.button, a.button { display: inline-block; margin-top: 20px; background: #ea580c; color: #fff; text-decoration: none;
+      padding: 12px 28px; border-radius: 6px; font-weight: 600; border: none; font-size: 1rem; cursor: pointer;
+      font-family: inherit; }
+    .icon { width: 56px; height: 56px; line-height: 56px; margin: 0 auto 12px; border-radius: 50%;
+      background: #e6f4ea; color: #1e7e34; font-size: 1.6rem; font-weight: 700; }
+    .spinner { width: 34px; height: 34px; margin: 14px auto 6px; border: 3px solid #e6e9ee;
+      border-top-color: #ea580c; border-radius: 50%; animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .warn { color: #b26a00; font-size: 0.92rem; }
+    .fallback { font-size: 0.9rem; margin-top: 14px; }
+    .fallback a { color: #ea580c; }
     @media (prefers-color-scheme: dark) {
       body { background: #14161a; color: #e7e9ee; }
       .card { background: #1d2026; border-color: #2c313a; }
@@ -1749,12 +1827,117 @@ function renderApprovalConfirmPage({ id, outcomeLabel, target, upn }) {
 </head>
 <body>
   <div class="card">
-    <h1>ยืนยันผลการพิจารณา</h1>
-    <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
-    <p>ท่านกำลังจะบันทึกผล: <strong>${escapeHtml(outcomeLabel)}</strong></p>
-    <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
-    <a class="button" href="${escapeHtml(target)}">ยืนยัน — ${escapeHtml(outcomeLabel)}</a>
+    <div id="stepConfirm">
+      <h1>ยืนยันผลการพิจารณา</h1>
+      <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
+      <p>ท่านกำลังจะบันทึกผล: <strong>${escapeHtml(outcomeLabel)}</strong></p>
+      <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
+      <button type="button" id="confirmBtn" class="button">ยืนยัน — ${escapeHtml(outcomeLabel)}</button>
+    </div>
+
+    <div id="stepWorking" style="display:none">
+      <h1>กำลังบันทึกผลการพิจารณา</h1>
+      <div class="spinner"></div>
+      <p id="workingMsg">กรุณารอสักครู่ อย่าปิดหน้าต่างนี้…</p>
+    </div>
+
+    <div id="stepDone" style="display:none">
+      <div class="icon">✓</div>
+      <h1>บันทึกผลเรียบร้อยแล้ว</h1>
+      <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
+      <p>ผลการพิจารณา: <strong>${escapeHtml(outcomeLabel)}</strong></p>
+      <p class="meta" id="doneStatus"></p>
+      <button type="button" class="button" onclick="window.close()">ปิดหน้าต่างนี้</button>
+      <p class="meta">หากกดแล้วหน้าต่างไม่ปิด ท่านสามารถปิดแท็บนี้ได้เอง</p>
+    </div>
+
+    <div id="stepUnknown" style="display:none">
+      <h1>ส่งผลการพิจารณาแล้ว</h1>
+      <p class="warn" id="unknownMsg"></p>
+      <div class="fallback">
+        หากสถานะยังไม่เปลี่ยน กรุณาดำเนินการอีกครั้งที่
+        <a id="fallbackLink" href="#" target="_blank" rel="noopener">หน้าระบบพิจารณา</a>
+      </div>
+    </div>
   </div>
+
+  <script>
+    // The approval is completed by loading JotForm's own deeplink inside a
+    // HIDDEN iframe: it runs in the real browser (cookies/JS/redirects), so
+    // unlike the previously-reverted server-side fetch it genuinely advances
+    // the workflow — and the approver never sees a JotForm URL.
+    //
+    // The iframe is cross-origin, so its load event proves nothing about
+    // whether the approval succeeded. Success is therefore confirmed ONLY by
+    // polling our own endpoint, which reads the submission's สถานะดำเนินการ
+    // (q68) back from JotForm and compares it to the value captured before
+    // the click. No status change -> we say so honestly and offer the direct
+    // link, rather than claiming a success we cannot prove.
+    const TARGET = ${toScriptJson(target)};
+    const SUBMISSION_ID = ${toScriptJson(id || '')};
+    const BEFORE_STATUS = ${toScriptJson(beforeStatus === null || beforeStatus === undefined ? null : beforeStatus)};
+
+    const show = (which) => {
+      for (const s of ['stepConfirm', 'stepWorking', 'stepDone', 'stepUnknown']) {
+        document.getElementById(s).style.display = s === which ? 'block' : 'none';
+      }
+    };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    async function pollForStatusChange() {
+      // Up to ~24s — the workflow needs a moment to write the new status.
+      for (let i = 0; i < 12; i++) {
+        await sleep(2000);
+        try {
+          const res = await fetch('/api/approve-gate/status?id=' + encodeURIComponent(SUBMISSION_ID), {
+            headers: { Accept: 'application/json' },
+          });
+          const data = await res.json();
+          if (data && data.verifiable && data.status && data.status !== BEFORE_STATUS) return data.status;
+        } catch (err) { /* keep polling */ }
+      }
+      return null;
+    }
+
+    document.getElementById('confirmBtn').addEventListener('click', async () => {
+      show('stepWorking');
+
+      const frame = document.createElement('iframe');
+      frame.style.display = 'none';
+      frame.setAttribute('referrerpolicy', 'no-referrer');
+      frame.src = TARGET;
+      document.body.appendChild(frame);
+
+      // Give the framed page a chance to load (cap the wait — a cross-origin
+      // load event may never fire on some redirect chains).
+      await Promise.race([
+        new Promise((r) => frame.addEventListener('load', r, { once: true })),
+        sleep(12000),
+      ]);
+
+      const canVerify = Boolean(SUBMISSION_ID) && BEFORE_STATUS !== null;
+      if (!canVerify) {
+        document.getElementById('unknownMsg').textContent =
+          'ระบบส่งผลการพิจารณาแล้ว แต่ไม่สามารถตรวจสอบสถานะอัตโนมัติได้ กรุณาตรวจสอบสถานะคำขออีกครั้ง';
+        document.getElementById('fallbackLink').href = TARGET;
+        show('stepUnknown');
+        return;
+      }
+
+      document.getElementById('workingMsg').textContent = 'กำลังตรวจสอบสถานะกับระบบ…';
+      const newStatus = await pollForStatusChange();
+
+      if (newStatus) {
+        document.getElementById('doneStatus').textContent = 'สถานะล่าสุด: ' + newStatus;
+        show('stepDone');
+      } else {
+        document.getElementById('unknownMsg').textContent =
+          'ยังตรวจไม่พบการเปลี่ยนสถานะของคำขอนี้ อาจใช้เวลาสักครู่ หรือการบันทึกยังไม่สำเร็จ';
+        document.getElementById('fallbackLink').href = TARGET;
+        show('stepUnknown');
+      }
+    });
+  </script>
 </body>
 </html>`;
 }
@@ -1785,13 +1968,56 @@ app.get(
     const outcomeLabel = outcomeToLabel(outcome);
     const identityLabel = resolveApprovalIdentityLabel(req);
 
+    // Capture the submission's status BEFORE the approver acts, so the page
+    // can later prove the approval landed by detecting a change. Never fatal:
+    // if this can't be read, the page degrades to "sent, but unverified"
+    // rather than claiming an unproven success.
+    let beforeStatus = null;
+    try {
+      beforeStatus = await fetchJotformSubmissionStatus(id);
+    } catch (err) {
+      console.warn(`[bpuu-workflow] approval gate: could not read pre-approval status: ${err.message}`);
+    }
+
     console.log(
-      `[bpuu-workflow] approval gate: identity=${identityLabel} id=${id || '(none)'} outcome=${outcome || '(none)'} -> confirm screen`
+      `[bpuu-workflow] approval gate: identity=${identityLabel} id=${id || '(none)'} outcome=${outcome || '(none)'} beforeStatus=${
+        beforeStatus === null ? '(unknown)' : beforeStatus
+      } -> confirm screen`
     );
 
     res.status(200).send(
-      renderApprovalConfirmPage({ id, outcomeLabel, target: targetStr, upn: identityLabel })
+      renderApprovalConfirmPage({ id, outcomeLabel, target: targetStr, upn: identityLabel, beforeStatus })
     );
+  })
+);
+
+// Status probe used by the confirm page to VERIFY that the in-page (iframe)
+// approval actually advanced the workflow, rather than trusting a
+// cross-origin load event. Returns the submission's current q68 value.
+// `verifiable:false` tells the client it cannot prove success and must say so.
+app.get(
+  '/api/approve-gate/status',
+  requireAnyLogin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+
+    const id = req.query.id;
+    if (!id) {
+      res.status(400).json({ verifiable: false, error: 'id is required' });
+      return;
+    }
+    if (!isJotformConfigured()) {
+      res.status(200).json({ verifiable: false, status: null });
+      return;
+    }
+
+    try {
+      const status = await fetchJotformSubmissionStatus(String(id));
+      res.status(200).json({ verifiable: true, status });
+    } catch (err) {
+      console.warn(`[bpuu-workflow] approval status probe failed: ${err.message}`);
+      res.status(200).json({ verifiable: false, status: null });
+    }
   })
 );
 
