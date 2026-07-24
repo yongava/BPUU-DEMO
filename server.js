@@ -1069,21 +1069,68 @@ function getSessionRole(req) {
   return entry ? entry.role : null;
 }
 
+// A calm, non-alarming "you don't have access yet" page — deliberately NOT
+// the red renderErrorPage: being un-allowlisted is a normal state for most
+// KMUTT staff who happen to open /admin, not a system fault. Shows the
+// signed-in address so the user can quote it when asking for access.
+function renderNoAccessPage(email) {
+  return `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ยังไม่มีสิทธิ์เข้าถึง — ระบบกระบวนงาน BPUU</title>
+  <style>
+    body { font-family: "Sarabun", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f2f4f7; color: #1f2933; margin: 0; padding: 56px 16px; line-height: 1.7; }
+    .card { max-width: 520px; margin: 0 auto; background: #fff; border: 1px solid #e3e6ea;
+      border-radius: 14px; padding: 32px 30px; text-align: center; }
+    .icon { width: 62px; height: 62px; line-height: 62px; margin: 0 auto 16px; border-radius: 50%;
+      background: #fff4e5; color: #b26a00; font-size: 1.8rem; }
+    h1 { font-size: 1.25rem; margin: 0 0 10px; font-weight: 800; }
+    p { margin: 8px 0; color: #55606d; }
+    .who { display: inline-block; margin-top: 6px; background: #f6f8fa; border: 1px solid #e3e6ea;
+      border-radius: 999px; padding: 6px 16px; font-size: .92rem; color: #1f2933; }
+    .actions { margin-top: 24px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    a.btn { display: inline-block; text-decoration: none; padding: 10px 22px; border-radius: 8px; font-weight: 700; font-size: .95rem; }
+    a.primary { background: #FA4616; color: #fff; }
+    a.ghost { background: #fff; color: #55606d; border: 1px solid #dde1e7; }
+    .hint { margin-top: 22px; font-size: .88rem; color: #7a828d; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🔒</div>
+    <h1>ยังไม่มีสิทธิ์เข้าถึงหน้าผู้ดูแลระบบ</h1>
+    <p>บัญชีนี้ยังไม่อยู่ในรายชื่อผู้มีสิทธิ์เข้าใช้งานหน้าผู้ดูแลระบบ</p>
+    <div class="who">เข้าสู่ระบบเป็น: ${escapeHtml(email || '-')}</div>
+    <div class="actions">
+      <a class="btn primary" href="/">กลับหน้าหลัก</a>
+      <a class="btn ghost" href="mailto:bpuu@kmutt.ac.th?subject=${encodeURIComponent('ขอสิทธิ์เข้าใช้งานหน้าผู้ดูแลระบบ BPUU')}">ขอสิทธิ์เข้าใช้งาน</a>
+    </div>
+    <div class="hint">หากต้องการสิทธิ์ กรุณาแจ้งผู้ดูแลระบบเพื่อเพิ่มอีเมลข้างต้นในรายชื่อที่อนุญาต</div>
+  </div>
+</body>
+</html>`;
+}
+
 // Gate for /admin and its APIs — ANY allowlisted role (admin or staff) may
 // reach the page. Assumes requireLogin ran first (so there IS a KMUTT
-// session); this only adds the allowlist check on top. Not-allowlisted gets
-// an explicit 403, never a redirect loop.
+// session); this only adds the allowlist check on top.
+//
+// Content-negotiated: the JSON APIs under /api/ get a JSON 403 (their
+// fetch()-based callers parse the body), while a browser hitting /admin gets
+// the friendly notice page above instead of a red error screen.
 function requireAdmin(req, res, next) {
   if (!getSessionRole(req)) {
     noStore(res);
-    res.status(403).send(
-      renderErrorPage({
-        title: 'ไม่มีสิทธิ์เข้าถึง',
-        message:
-          'บัญชีของท่านไม่มีสิทธิ์เข้าถึงหน้าผู้ดูแลระบบ หากต้องการสิทธิ์ กรุณาติดต่อผู้ดูแลระบบเพื่อเพิ่มอีเมลของท่านในรายชื่อที่อนุญาต',
-        retryHref: '/',
-      })
-    );
+    const wantsJson =
+      req.path.startsWith('/api/') || String(req.get('accept') || '').includes('application/json');
+    if (wantsJson) {
+      res.status(403).json({ error: 'บัญชีของท่านยังไม่มีสิทธิ์เข้าถึงหน้าผู้ดูแลระบบ' });
+    } else {
+      res.status(403).send(renderNoAccessPage(getSessionAdminEmail(req)));
+    }
     return;
   }
   next();
@@ -1114,17 +1161,46 @@ const LOCATIONS_PATH = process.env.LOCATIONS_PATH || path.join(__dirname, 'data'
 
 let locationsCache = null;
 
+// Field set mirrors the "Area Master (Company)" master sheet:
+// CampusCode/CampusName, BuildingCode/BuildingName, BusinessTypeCode/
+// BusinessTypeName, CompanyCode/CompanyName, plus two area-manager
+// contacts (name + email each). companyName is the required key — every row
+// in the master sheet has one, while buildingName can legitimately be blank
+// (e.g. the KX city campus rows).
+const LOCATION_TEXT_FIELDS = [
+  'campusCode',
+  'campusName',
+  'buildingCode',
+  'buildingName',
+  'businessTypeCode',
+  'businessTypeName',
+  'companyCode',
+  'companyName',
+  'manager1Name',
+  'manager1Email',
+  'manager2Name',
+  'manager2Email',
+];
+
+// Fields that must look like an email if present at all — same discipline
+// already applied to admin allowlist entries via looksLikeEmail(). Invalid
+// values are dropped (field cleared), not rejected outright, since these are
+// optional contact fields on an otherwise-valid location; that keeps this
+// forgiving for hand-edited/imported data while still stopping a bad or
+// garbage value from being persisted as if it were a real, usable address.
+const LOCATION_EMAIL_FIELDS = ['manager1Email', 'manager2Email'];
+
 function normalizeLocation(item) {
   if (!item || typeof item !== 'object') return null;
-  const name = String(item.name == null ? '' : item.name).trim();
-  if (!name) return null;
-  return {
-    id: String(item.id == null ? '' : item.id).trim() || null,
-    name,
-    code: String(item.code == null ? '' : item.code).trim(),
-    zone: String(item.zone == null ? '' : item.zone).trim(),
-    active: item.active === undefined ? true : Boolean(item.active),
-  };
+  const out = { id: String(item.id == null ? '' : item.id).trim() || null };
+  for (const f of LOCATION_TEXT_FIELDS) {
+    out[f] = String(item[f] == null ? '' : item[f]).trim();
+  }
+  for (const f of LOCATION_EMAIL_FIELDS) {
+    if (out[f] && !looksLikeEmail(out[f])) out[f] = '';
+  }
+  if (!out.companyName) return null;
+  return out;
 }
 
 function loadLocations() {
@@ -1887,21 +1963,25 @@ function resolveApprovalIdentityLabel(req) {
 // auto-crawl links in incoming email, which would silently auto-approve
 // requests if the gate redirected immediately instead of requiring a click.
 //
-// This is a plain browser navigation to JotForm's real deeplink — a prior
-// attempt replaced this with a server-side fetch() to hide the jump
-// entirely, but that's confirmed NOT to work (2026-07-22 testing): the
-// fetch reported success while JotForm's own workflow never actually
-// advanced, almost certainly because completing it needs a real browser
-// context (cookies/JS/redirect chain) that Node's fetch doesn't reproduce.
-// Do not reintroduce a server-side completion path without a way to
-// verify JotForm's side actually changed, not just that the HTTP call
-// returned 200.
+// HOW THE APPROVAL IS COMPLETED — settled by real end-to-end testing:
+//   1. Server-side fetch() of the deeplink (2026-07-22): DOES NOT WORK.
+//      Reported HTTP 200 while the workflow never advanced. Node's fetch has
+//      no browser context (cookies across the redirect chain, JS).
+//   2. Hidden iframe (2026-07-23): WORKS — confirmed end-to-end by the user.
+//      JotForm sets no X-Frame-Options/CSP and no frame-busting, and the
+//      approval really does land. This is what we use, because it keeps the
+//      approver on our own domain and never exposes a JotForm URL.
+//
+// CAUTION about verifying it: q68 (สถานะดำเนินการ) is NOT updated by the
+// approval step itself — on a real approved request it stayed "รอพิจารณา"
+// with updated_at unchanged. The workflow only writes q68 at a later node.
+// An earlier version treated "q68 unchanged" as failure and wrongly told
+// approvers their approval had not gone through. So q68 may only ever be
+// used as a *bonus* confirmation when it happens to change — never as
+// evidence of failure.
+//
 // Reads ONE submission's current สถานะดำเนินการ (q68) straight from JotForm.
-// This is what makes the in-page (iframe) approval trustworthy: instead of
-// assuming success from an iframe load event — the same mistake the reverted
-// server-side fetch made — the client polls this and only reports success
-// once JotForm's OWN data shows the status actually changed. Returns null
-// when JotForm isn't configured or the submission can't be read.
+// Returns null when JotForm isn't configured or the submission can't be read.
 async function fetchJotformSubmissionStatus(submissionId) {
   if (!isJotformConfigured() || !submissionId) return null;
 
@@ -1977,54 +2057,51 @@ function renderApprovalConfirmPage({ id, outcomeLabel, target, upn, beforeStatus
       <p class="meta" id="doneStatus"></p>
       <button type="button" class="button" onclick="window.close()">ปิดหน้าต่างนี้</button>
       <p class="meta">หากกดแล้วหน้าต่างไม่ปิด ท่านสามารถปิดแท็บนี้ได้เอง</p>
-    </div>
-
-    <div id="stepUnknown" style="display:none">
-      <h1>ส่งผลการพิจารณาแล้ว</h1>
-      <p class="warn" id="unknownMsg"></p>
       <div class="fallback">
-        หากสถานะยังไม่เปลี่ยน กรุณาดำเนินการอีกครั้งที่
-        <a id="fallbackLink" href="#" target="_blank" rel="noopener">หน้าระบบพิจารณา</a>
+        หากพบปัญหา กรุณาติดต่อกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)<br>
+        โทร. 02-470-8320-3 &middot; <a href="mailto:bpuu@kmutt.ac.th">bpuu@kmutt.ac.th</a>
       </div>
     </div>
   </div>
 
   <script>
-    // The approval is completed by loading JotForm's own deeplink inside a
-    // HIDDEN iframe: it runs in the real browser (cookies/JS/redirects), so
-    // unlike the previously-reverted server-side fetch it genuinely advances
-    // the workflow — and the approver never sees a JotForm URL.
+    // The approval is completed by loading JotForm's own deeplink in a HIDDEN
+    // iframe — confirmed working end-to-end. The approver stays on this page
+    // and never sees a JotForm URL.
     //
-    // The iframe is cross-origin, so its load event proves nothing about
-    // whether the approval succeeded. Success is therefore confirmed ONLY by
-    // polling our own endpoint, which reads the submission's สถานะดำเนินการ
-    // (q68) back from JotForm and compares it to the value captured before
-    // the click. No status change -> we say so honestly and offer the direct
-    // link, rather than claiming a success we cannot prove.
+    // Verification note: q68 is NOT written by the approval step (see the
+    // renderer comment above), so it is polled only in the BACKGROUND as a
+    // bonus. "q68 didn't change" must never be presented as failure — an
+    // earlier version did that and wrongly told approvers it hadn't worked.
     const TARGET = ${toScriptJson(target)};
     const SUBMISSION_ID = ${toScriptJson(id || '')};
     const BEFORE_STATUS = ${toScriptJson(beforeStatus === null || beforeStatus === undefined ? null : beforeStatus)};
 
     const show = (which) => {
-      for (const s of ['stepConfirm', 'stepWorking', 'stepDone', 'stepUnknown']) {
+      for (const s of ['stepConfirm', 'stepWorking', 'stepDone']) {
         document.getElementById(s).style.display = s === which ? 'block' : 'none';
       }
     };
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-    async function pollForStatusChange() {
-      // Up to ~24s — the workflow needs a moment to write the new status.
-      for (let i = 0; i < 12; i++) {
-        await sleep(2000);
+    // Runs AFTER the result screen is already shown, so it never delays the
+    // approver. Only ever upgrades the message; never downgrades it.
+    async function watchStatusInBackground() {
+      if (!SUBMISSION_ID || BEFORE_STATUS === null) return;
+      const delays = [2000, 3000, 5000, 5000, 8000, 10000, 15000, 20000];
+      for (const d of delays) {
+        await sleep(d);
         try {
           const res = await fetch('/api/approve-gate/status?id=' + encodeURIComponent(SUBMISSION_ID), {
             headers: { Accept: 'application/json' },
           });
           const data = await res.json();
-          if (data && data.verifiable && data.status && data.status !== BEFORE_STATUS) return data.status;
-        } catch (err) { /* keep polling */ }
+          if (data && data.verifiable && data.status && data.status !== BEFORE_STATUS) {
+            document.getElementById('doneStatus').textContent = 'สถานะล่าสุดในระบบ: ' + data.status;
+            return;
+          }
+        } catch (err) { /* keep watching quietly */ }
       }
-      return null;
     }
 
     document.getElementById('confirmBtn').addEventListener('click', async () => {
@@ -2036,34 +2113,18 @@ function renderApprovalConfirmPage({ id, outcomeLabel, target, upn, beforeStatus
       frame.src = TARGET;
       document.body.appendChild(frame);
 
-      // Give the framed page a chance to load (cap the wait — a cross-origin
-      // load event may never fire on some redirect chains).
+      // React as soon as the framed page loads; the cap is only a safety net
+      // so a redirect chain that never fires 'load' can't hang the screen.
       await Promise.race([
         new Promise((r) => frame.addEventListener('load', r, { once: true })),
-        sleep(12000),
+        sleep(8000),
       ]);
 
-      const canVerify = Boolean(SUBMISSION_ID) && BEFORE_STATUS !== null;
-      if (!canVerify) {
-        document.getElementById('unknownMsg').textContent =
-          'ระบบส่งผลการพิจารณาแล้ว แต่ไม่สามารถตรวจสอบสถานะอัตโนมัติได้ กรุณาตรวจสอบสถานะคำขออีกครั้ง';
-        document.getElementById('fallbackLink').href = TARGET;
-        show('stepUnknown');
-        return;
-      }
+      document.getElementById('doneStatus').textContent =
+        'ระบบกำลังอัปเดตสถานะ อาจใช้เวลาสักครู่';
+      show('stepDone');
 
-      document.getElementById('workingMsg').textContent = 'กำลังตรวจสอบสถานะกับระบบ…';
-      const newStatus = await pollForStatusChange();
-
-      if (newStatus) {
-        document.getElementById('doneStatus').textContent = 'สถานะล่าสุด: ' + newStatus;
-        show('stepDone');
-      } else {
-        document.getElementById('unknownMsg').textContent =
-          'ยังตรวจไม่พบการเปลี่ยนสถานะของคำขอนี้ อาจใช้เวลาสักครู่ หรือการบันทึกยังไม่สำเร็จ';
-        document.getElementById('fallbackLink').href = TARGET;
-        show('stepUnknown');
-      }
+      watchStatusInBackground();
     });
   </script>
 </body>
@@ -2192,11 +2253,9 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
     .admin-header .sub { font-size: 12px; letter-spacing: .4px; opacity: .95; }
     .admin-header .title { font-size: 20px; font-weight: 800; }
     .panel { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; }
-    .panel-head { padding: 16px 20px; border-bottom: 1px solid #eef0f3; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .panel-head { padding: 16px 20px; border-bottom: 1px solid #eef0f3; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .panel-head h2 { font-size: 1.05rem; font-weight: 700; margin: 0; }
     .panel-body { padding: 16px 20px; }
-    table.req { font-size: 0.9rem; }
-    table.req td, table.req th { vertical-align: middle; }
     .status-badge { font-size: 0.8rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; display: inline-block; white-space: nowrap; }
     .status-wait { background: #fff4e5; color: #b26a00; }
     .status-ok { background: #e6f4ea; color: #1e7e34; }
@@ -2204,7 +2263,6 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
     .status-neutral { background: #eef0f3; color: #55606d; }
     .muted { color: #7a828d; }
     .state-msg { padding: 24px; text-align: center; color: #7a828d; }
-    /* role badge + nav menu */
     .role-badge { display: inline-block; font-size: .72rem; font-weight: 800; letter-spacing: .3px;
       padding: 2px 9px; border-radius: 999px; background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.55); }
     .nav-menu { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -2213,13 +2271,20 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
     .nav-menu button.active { background: #FA4616; border-color: #FA4616; color: #fff; }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
-    /* role pill in the permission table */
-    .role-pill { font-size: .78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
-    .role-admin { background: #fdecea; color: #c0392b; }
-    .role-staff { background: #eef0f3; color: #55606d; }
-    table.tbl { font-size: .9rem; }
+    table.tbl { font-size: .88rem; }
     table.tbl td, table.tbl th { vertical-align: middle; }
-    .inactive-row td { opacity: .55; }
+    /* sortable headers */
+    table.tbl thead th.sortable { cursor: pointer; white-space: nowrap; user-select: none; }
+    table.tbl thead th.sortable:hover { color: #FA4616; }
+    table.tbl thead th .arrow { opacity: .35; font-size: .8em; margin-left: 3px; }
+    table.tbl thead th.sorted .arrow { opacity: 1; color: #FA4616; }
+    /* group header row */
+    tr.group-row td { background: #fff4ef; font-weight: 800; color: #a4400f; border-top: 2px solid #ffd2bd; }
+    tr.group-row .count { font-weight: 600; color: #b98a76; font-size: .85rem; margin-left: 6px; }
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .toolbar input, .toolbar select { font-size: .88rem; }
+    .toolbar .form-control, .toolbar .form-select { height: 34px; padding-top: 2px; padding-bottom: 2px; }
+    .result-count { font-size: .84rem; color: #7a828d; white-space: nowrap; }
   </style>
 </head>
 <body>
@@ -2240,68 +2305,86 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
   </div>
 
   <div class="container py-4">
-    <!-- Menu: the permission tab is rendered ONLY for role 'admin'. The
-         server also rejects permission writes from 'staff' (requireRoleAdmin),
-         so hiding it here is presentation, not the security boundary. -->
+    <!-- The permission tab is rendered ONLY for role 'admin'. The server also
+         rejects permission writes from 'staff' (requireRoleAdmin), so hiding
+         it here is presentation, not the security boundary. -->
     <nav class="nav-menu">
       <button type="button" class="active" data-tab="requests"><i class="bi bi-inbox"></i> รายการคำขอ</button>
       <button type="button" data-tab="locations"><i class="bi bi-geo-alt"></i> จัดการสถานที่</button>
       ${isRoleAdmin ? '<button type="button" data-tab="permissions"><i class="bi bi-shield-lock"></i> สิทธิ์การเข้าถึง</button>' : ''}
     </nav>
 
-    <!-- Requests panel -->
+    <!-- Requests -->
     <div class="tab-panel active" id="tab-requests">
       <div class="panel">
         <div class="panel-head">
           <h2><i class="bi bi-inbox text-ci-orange"></i> รายการคำขอ &amp; สถานะ</h2>
-          <button id="refreshBtn" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-clockwise"></i> รีเฟรช</button>
+          <div class="toolbar">
+            <input id="reqSearch" class="form-control form-control-sm" style="width:190px" placeholder="ค้นหา…">
+            <select id="reqGroup" class="form-select form-select-sm" style="width:180px">
+              <option value="">ไม่จัดกลุ่ม</option>
+              <option value="requestType">กลุ่ม: ประเภทบริการ</option>
+              <option value="status">กลุ่ม: สถานะ</option>
+              <option value="requester">กลุ่ม: ผู้ขอ</option>
+              <option value="approver">กลุ่ม: ผู้อนุมัติ</option>
+            </select>
+            <span class="result-count" id="reqCount"></span>
+            <button id="refreshBtn" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-clockwise"></i></button>
+          </div>
         </div>
         <div class="panel-body">
           <div class="table-responsive">
-            <table class="table table-hover req align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Ref</th><th>วันที่</th><th>ผู้ขอ</th><th>ประเภทบริการ</th>
-                  <th>ผู้อนุมัติ</th><th class="text-end">ยอด (บาท)</th><th>สถานะ</th>
-                </tr>
-              </thead>
-              <tbody id="reqBody">
-                <tr><td colspan="7" class="state-msg">กำลังโหลด…</td></tr>
-              </tbody>
+            <table class="table table-hover tbl align-middle mb-0">
+              <thead class="table-light"><tr id="reqHead"></tr></thead>
+              <tbody id="reqBody"><tr><td colspan="7" class="state-msg">กำลังโหลด…</td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Location manager panel -->
+    <!-- Locations -->
     <div class="tab-panel" id="tab-locations">
       <div class="panel">
         <div class="panel-head">
-          <h2><i class="bi bi-geo-alt text-ci-orange"></i> จัดการข้อมูลสถานที่ (Location Manager)</h2>
+          <h2><i class="bi bi-geo-alt text-ci-orange"></i> จัดการข้อมูลสถานที่ (Area Master)</h2>
+          <div class="toolbar">
+            <input id="locSearch" class="form-control form-control-sm" style="width:190px" placeholder="ค้นหา…">
+            <select id="locGroup" class="form-select form-select-sm" style="width:200px">
+              <option value="">ไม่จัดกลุ่ม</option>
+              <option value="campusName">กลุ่ม: พื้นที่การศึกษา</option>
+              <option value="buildingName">กลุ่ม: อาคาร</option>
+              <option value="businessTypeName">กลุ่ม: ประเภทธุรกิจ</option>
+              <option value="companyName">กลุ่ม: บริษัท</option>
+            </select>
+            <span class="result-count" id="locCount"></span>
+          </div>
         </div>
         <div class="panel-body">
-          <p class="muted mb-3">รายการสถานที่ที่ใช้อ้างอิงในระบบ เช่น อาคารจอดรถ S2 หรือ โรงอาหาร S14</p>
           <div class="table-responsive mb-3">
             <table class="table table-hover tbl align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th style="width:26%">ชื่อสถานที่</th><th style="width:16%">รหัส/อาคาร</th>
-                  <th style="width:22%">โซน/ประเภท</th><th style="width:14%">สถานะ</th>
-                  <th style="width:22%" class="text-end">จัดการ</th>
-                </tr>
-              </thead>
-              <tbody id="locBody">
-                <tr><td colspan="5" class="state-msg">กำลังโหลด…</td></tr>
-              </tbody>
+              <thead class="table-light"><tr id="locHead"></tr></thead>
+              <tbody id="locBody"><tr><td colspan="8" class="state-msg">กำลังโหลด…</td></tr></tbody>
             </table>
           </div>
-          <form id="locAddForm" class="row g-2 align-items-center">
-            <div class="col-12 col-md-3"><input id="locName" class="form-control form-control-sm" placeholder="ชื่อสถานที่ *" required></div>
-            <div class="col-6 col-md-2"><input id="locCode" class="form-control form-control-sm" placeholder="รหัส/อาคาร"></div>
-            <div class="col-6 col-md-3"><input id="locZone" class="form-control form-control-sm" placeholder="โซน/ประเภท"></div>
-            <div class="col-auto"><button type="submit" class="btn btn-sm btn-ci-orange fw-bold"><i class="bi bi-plus-lg"></i> เพิ่มสถานที่</button></div>
-          </form>
+          <details>
+            <summary class="fw-bold" style="cursor:pointer">+ เพิ่มข้อมูลสถานที่</summary>
+            <form id="locAddForm" class="row g-2 mt-2">
+              <div class="col-6 col-md-2"><input id="f_campusCode" class="form-control form-control-sm" placeholder="รหัสพื้นที่"></div>
+              <div class="col-6 col-md-3"><input id="f_campusName" class="form-control form-control-sm" placeholder="พื้นที่การศึกษา"></div>
+              <div class="col-6 col-md-2"><input id="f_buildingCode" class="form-control form-control-sm" placeholder="รหัสอาคาร"></div>
+              <div class="col-6 col-md-5"><input id="f_buildingName" class="form-control form-control-sm" placeholder="อาคาร"></div>
+              <div class="col-6 col-md-2"><input id="f_businessTypeCode" class="form-control form-control-sm" placeholder="รหัสประเภทธุรกิจ"></div>
+              <div class="col-6 col-md-3"><input id="f_businessTypeName" class="form-control form-control-sm" placeholder="ประเภทธุรกิจ"></div>
+              <div class="col-6 col-md-2"><input id="f_companyCode" class="form-control form-control-sm" placeholder="รหัสบริษัท"></div>
+              <div class="col-6 col-md-5"><input id="f_companyName" class="form-control form-control-sm" placeholder="ชื่อบริษัท *" required></div>
+              <div class="col-6 col-md-3"><input id="f_manager1Name" class="form-control form-control-sm" placeholder="ผู้ดูแลพื้นที่ 1"></div>
+              <div class="col-6 col-md-3"><input id="f_manager1Email" class="form-control form-control-sm" placeholder="อีเมลผู้ดูแล 1"></div>
+              <div class="col-6 col-md-3"><input id="f_manager2Name" class="form-control form-control-sm" placeholder="ผู้ดูแลพื้นที่ 2"></div>
+              <div class="col-6 col-md-3"><input id="f_manager2Email" class="form-control form-control-sm" placeholder="อีเมลผู้ดูแล 2"></div>
+              <div class="col-12"><button type="submit" class="btn btn-sm btn-ci-orange fw-bold"><i class="bi bi-plus-lg"></i> เพิ่มสถานที่</button></div>
+            </form>
+          </details>
           <div id="locMsg" class="mt-2" style="font-size:.9rem;"></div>
         </div>
       </div>
@@ -2309,12 +2392,10 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
 
     ${
       isRoleAdmin
-        ? `<!-- Settings / permission panel (admin only) -->
+        ? `<!-- Permissions (admin only) -->
     <div class="tab-panel" id="tab-permissions">
       <div class="panel">
-        <div class="panel-head">
-          <h2><i class="bi bi-shield-lock text-ci-orange"></i> สิทธิ์การเข้าถึงหน้าผู้ดูแล</h2>
-        </div>
+        <div class="panel-head"><h2><i class="bi bi-shield-lock text-ci-orange"></i> สิทธิ์การเข้าถึงหน้าผู้ดูแล</h2></div>
         <div class="panel-body">
           <p class="muted mb-1">เฉพาะอีเมลในรายการนี้เท่านั้นที่เข้าหน้าผู้ดูแลระบบได้ (บัญชี KMUTT/ADFS เท่านั้น)</p>
           <p class="muted mb-3" style="font-size:.86rem;">
@@ -2326,9 +2407,7 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
               <thead class="table-light">
                 <tr><th style="width:52%">อีเมล</th><th style="width:26%">สิทธิ์ (Role)</th><th style="width:22%" class="text-end">จัดการ</th></tr>
               </thead>
-              <tbody id="permBody">
-                <tr><td colspan="3" class="state-msg">กำลังโหลด…</td></tr>
-              </tbody>
+              <tbody id="permBody"><tr><td colspan="3" class="state-msg">กำลังโหลด…</td></tr></tbody>
             </table>
           </div>
           <form id="addForm" class="row g-2 align-items-center" style="max-width:640px;">
@@ -2350,7 +2429,6 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
   </div>
 
   <script>
-    const JOTFORM_CONFIGURED = ${jotformConfigured ? 'true' : 'false'};
     const CURRENT_EMAIL = ${toScriptJson(currentEmail)};
     const IS_ROLE_ADMIN = ${isRoleAdmin ? 'true' : 'false'};
 
@@ -2365,25 +2443,159 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
       });
     });
 
-    function cell(text, className) {
-      const td = document.createElement('td');
-      td.textContent = text == null || text === '' ? '—' : String(text);
-      if (className) td.className = className;
-      return td;
-    }
-    function stateRowIn(tbodyId, cols, text) {
-      const body = document.getElementById(tbodyId);
-      body.replaceChildren();
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.colSpan = cols; td.className = 'state-msg'; td.textContent = text;
-      tr.appendChild(td); body.appendChild(tr);
-    }
     function showMsg(id, text, ok) {
       const el = document.getElementById(id);
       if (!el) return;
       el.textContent = text;
       el.style.color = ok ? '#1e7e34' : '#c0392b';
+    }
+
+    // -----------------------------------------------------------------
+    // Generic sortable / filterable / groupable table.
+    // columns: [{ key, label, width?, align?, cell?(row) }]
+    //   - key doubles as the sort key and the value read for grouping.
+    //   - cell() returns a <td> for custom rendering (status badge, buttons).
+    // Sorting is Thai-aware via localeCompare; numeric-looking values compare
+    // numerically so amounts/ids don't sort as strings.
+    // -----------------------------------------------------------------
+    function createTable(opts) {
+      const state = { rows: [], sortKey: null, sortDir: 1, filter: '', groupBy: '' };
+
+      function val(row, key) {
+        const v = row[key];
+        return v == null ? '' : String(v);
+      }
+      function cmp(a, b, key) {
+        const av = val(a, key), bv = val(b, key);
+        const an = Number(String(av).replace(/,/g, '')), bn = Number(String(bv).replace(/,/g, ''));
+        if (av !== '' && bv !== '' && Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+        if (av === '' && bv !== '') return 1;   // blanks last
+        if (bv === '' && av !== '') return -1;
+        return av.localeCompare(bv, 'th');
+      }
+
+      function buildHead() {
+        const tr = document.getElementById(opts.headId);
+        tr.replaceChildren();
+        for (const col of opts.columns) {
+          const th = document.createElement('th');
+          if (col.width) th.style.width = col.width;
+          if (col.align) th.className = 'text-' + col.align;
+          if (col.sortable === false) {
+            th.textContent = col.label;
+          } else {
+            th.classList.add('sortable');
+            if (state.sortKey === col.key) th.classList.add('sorted');
+            th.textContent = col.label;
+            const arrow = document.createElement('span');
+            arrow.className = 'arrow';
+            arrow.textContent = state.sortKey === col.key ? (state.sortDir === 1 ? '▲' : '▼') : '↕';
+            th.appendChild(arrow);
+            th.addEventListener('click', () => {
+              if (state.sortKey === col.key) state.sortDir = -state.sortDir;
+              else { state.sortKey = col.key; state.sortDir = 1; }
+              render();
+            });
+          }
+          tr.appendChild(th);
+        }
+      }
+
+      function stateRow(text) {
+        const body = document.getElementById(opts.bodyId);
+        body.replaceChildren();
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = opts.columns.length;
+        td.className = 'state-msg';
+        td.textContent = text;
+        tr.appendChild(td);
+        body.appendChild(tr);
+      }
+
+      function makeRow(row) {
+        const tr = document.createElement('tr');
+        for (const col of opts.columns) {
+          if (col.cell) { tr.appendChild(col.cell(row)); continue; }
+          const td = document.createElement('td');
+          const v = val(row, col.key);
+          td.textContent = v === '' ? '—' : v;
+          if (col.align) td.className = 'text-' + col.align;
+          tr.appendChild(td);
+        }
+        return tr;
+      }
+
+      function render() {
+        buildHead();
+        const body = document.getElementById(opts.bodyId);
+        const q = state.filter.trim().toLowerCase();
+        let rows = state.rows;
+        if (q) {
+          rows = rows.filter((r) =>
+            opts.columns.some((c) => val(r, c.key).toLowerCase().includes(q)) ||
+            (opts.searchKeys || []).some((k) => val(r, k).toLowerCase().includes(q))
+          );
+        }
+        if (state.sortKey) {
+          rows = rows.slice().sort((a, b) => cmp(a, b, state.sortKey) * state.sortDir);
+        }
+        const countEl = document.getElementById(opts.countId);
+        if (countEl) countEl.textContent = rows.length + ' รายการ';
+
+        if (!rows.length) { stateRow(opts.emptyText || 'ไม่พบข้อมูล'); return; }
+
+        body.replaceChildren();
+        if (!state.groupBy) {
+          for (const r of rows) body.appendChild(makeRow(r));
+          return;
+        }
+        // group: bucket by value, groups sorted alphabetically, blanks last
+        const groups = new Map();
+        for (const r of rows) {
+          const k = val(r, state.groupBy) || '(ไม่ระบุ)';
+          if (!groups.has(k)) groups.set(k, []);
+          groups.get(k).push(r);
+        }
+        const keys = [...groups.keys()].sort((a, b) => {
+          if (a === '(ไม่ระบุ)') return 1;
+          if (b === '(ไม่ระบุ)') return -1;
+          return a.localeCompare(b, 'th');
+        });
+        for (const k of keys) {
+          const tr = document.createElement('tr');
+          tr.className = 'group-row';
+          const td = document.createElement('td');
+          td.colSpan = opts.columns.length;
+          td.textContent = k;
+          const c = document.createElement('span');
+          c.className = 'count';
+          c.textContent = '(' + groups.get(k).length + ')';
+          td.appendChild(c);
+          tr.appendChild(td);
+          body.appendChild(tr);
+          for (const r of groups.get(k)) body.appendChild(makeRow(r));
+        }
+      }
+
+      // wire toolbar
+      const search = document.getElementById(opts.searchId);
+      if (search) search.addEventListener('input', () => { state.filter = search.value; render(); });
+      const group = document.getElementById(opts.groupId);
+      if (group) group.addEventListener('change', () => { state.groupBy = group.value; render(); });
+
+      return {
+        setRows(rows) { state.rows = rows || []; render(); },
+        loading(text) { buildHead(); stateRow(text || 'กำลังโหลด…'); },
+        message(text) { buildHead(); stateRow(text); },
+      };
+    }
+
+    function textCell(value, align) {
+      const td = document.createElement('td');
+      td.textContent = value == null || value === '' ? '—' : String(value);
+      if (align) td.className = 'text-' + align;
+      return td;
     }
 
     // ---- requests ----
@@ -2395,108 +2607,125 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
       return 'status-neutral';
     }
 
-    function renderRequests(requests) {
-      const body = document.getElementById('reqBody');
-      body.replaceChildren();
-      if (!requests.length) { stateRowIn('reqBody', 7, 'ยังไม่มีคำขอ'); return; }
-      for (const r of requests) {
-        const tr = document.createElement('tr');
-        tr.appendChild(cell(r.id));
-        tr.appendChild(cell(r.createdAt));
-        tr.appendChild(cell(r.requester));
-        tr.appendChild(cell(r.requestType));
-        tr.appendChild(cell(r.approver || r.approverEmail));
-        tr.appendChild(cell(r.amount, 'text-end'));
-        const st = document.createElement('td');
-        const badge = document.createElement('span');
-        badge.className = 'status-badge ' + statusClass(r.status);
-        badge.textContent = r.status && r.status !== '' ? r.status : 'ไม่ระบุ';
-        st.appendChild(badge);
-        tr.appendChild(st);
-        body.appendChild(tr);
-      }
-    }
+    const reqTable = createTable({
+      headId: 'reqHead', bodyId: 'reqBody', searchId: 'reqSearch', groupId: 'reqGroup', countId: 'reqCount',
+      emptyText: 'ยังไม่มีคำขอ',
+      searchKeys: ['requesterEmail', 'approverEmail'],
+      columns: [
+        { key: 'id', label: 'Ref' },
+        { key: 'createdAt', label: 'วันที่' },
+        { key: 'requester', label: 'ผู้ขอ' },
+        { key: 'requestType', label: 'ประเภทบริการ' },
+        { key: 'approver', label: 'ผู้อนุมัติ', cell: (r) => textCell(r.approver || r.approverEmail) },
+        { key: 'amount', label: 'ยอด (บาท)', align: 'end', cell: (r) => textCell(r.amount, 'end') },
+        {
+          key: 'status', label: 'สถานะ',
+          cell: (r) => {
+            const td = document.createElement('td');
+            const b = document.createElement('span');
+            b.className = 'status-badge ' + statusClass(r.status);
+            b.textContent = r.status && r.status !== '' ? r.status : 'ไม่ระบุ';
+            td.appendChild(b);
+            return td;
+          },
+        },
+      ],
+    });
 
     async function loadRequests() {
-      stateRowIn('reqBody', 7, 'กำลังโหลด…');
+      reqTable.loading();
       try {
         const res = await fetch('/api/admin/requests', { headers: { 'Accept': 'application/json' } });
         const data = await res.json();
         if (data.configured === false) {
-          stateRowIn('reqBody', 7, 'ยังไม่ได้ตั้งค่า JotForm API key — เพิ่ม JOTFORM_API_KEY ใน .env เพื่อดูรายการคำขอ');
+          reqTable.message('ยังไม่ได้ตั้งค่า JotForm API key — เพิ่ม JOTFORM_API_KEY ใน .env เพื่อดูรายการคำขอ');
           return;
         }
-        if (data.error) { stateRowIn('reqBody', 7, data.error); return; }
-        renderRequests(data.requests || []);
+        if (data.error) { reqTable.message(data.error); return; }
+        reqTable.setRows(data.requests || []);
       } catch (err) {
-        stateRowIn('reqBody', 7, 'เกิดข้อผิดพลาดในการโหลดรายการคำขอ');
+        reqTable.message('เกิดข้อผิดพลาดในการโหลดรายการคำขอ');
       }
     }
 
     // ---- locations ----
-    function renderLocations(list) {
-      const body = document.getElementById('locBody');
-      body.replaceChildren();
-      if (!list.length) { stateRowIn('locBody', 5, 'ยังไม่มีข้อมูลสถานที่'); return; }
-      for (const l of list) {
-        const tr = document.createElement('tr');
-        if (!l.active) tr.className = 'inactive-row';
-        tr.appendChild(cell(l.name));
-        tr.appendChild(cell(l.code));
-        tr.appendChild(cell(l.zone));
-        const st = document.createElement('td');
-        const badge = document.createElement('span');
-        badge.className = 'status-badge ' + (l.active ? 'status-ok' : 'status-neutral');
-        badge.textContent = l.active ? 'ใช้งาน' : 'ปิดใช้งาน';
-        st.appendChild(badge);
-        tr.appendChild(st);
+    const LOC_FIELDS = ['campusCode','campusName','buildingCode','buildingName','businessTypeCode',
+      'businessTypeName','companyCode','companyName','manager1Name','manager1Email','manager2Name','manager2Email'];
+    const LOC_LABELS = {
+      campusCode: 'รหัสพื้นที่', campusName: 'พื้นที่การศึกษา', buildingCode: 'รหัสอาคาร', buildingName: 'อาคาร',
+      businessTypeCode: 'รหัสประเภทธุรกิจ', businessTypeName: 'ประเภทธุรกิจ', companyCode: 'รหัสบริษัท',
+      companyName: 'ชื่อบริษัท', manager1Name: 'ผู้ดูแลพื้นที่ 1', manager1Email: 'อีเมลผู้ดูแล 1',
+      manager2Name: 'ผู้ดูแลพื้นที่ 2', manager2Email: 'อีเมลผู้ดูแล 2',
+    };
 
-        const act = document.createElement('td');
-        act.className = 'text-end';
-        const editBtn = document.createElement('button');
-        editBtn.type = 'button';
-        editBtn.className = 'btn btn-sm btn-outline-secondary me-1';
-        editBtn.textContent = 'แก้ไข';
-        editBtn.addEventListener('click', () => editLocation(l));
-        const toggleBtn = document.createElement('button');
-        toggleBtn.type = 'button';
-        toggleBtn.className = 'btn btn-sm btn-outline-secondary me-1';
-        toggleBtn.textContent = l.active ? 'ปิด' : 'เปิด';
-        toggleBtn.addEventListener('click', () => mutateLocation({ action: 'update', id: l.id, active: !l.active }, 'อัปเดตแล้ว'));
-        const delBtn = document.createElement('button');
-        delBtn.type = 'button';
-        delBtn.className = 'btn btn-sm btn-outline-danger';
-        delBtn.textContent = 'ลบ';
-        delBtn.addEventListener('click', () => {
-          if (!confirm('ลบสถานที่ "' + l.name + '" ?')) return;
-          mutateLocation({ action: 'remove', id: l.id }, 'ลบแล้ว');
-        });
-        act.appendChild(editBtn); act.appendChild(toggleBtn); act.appendChild(delBtn);
-        tr.appendChild(act);
-        body.appendChild(tr);
+    function managerCell(name, email) {
+      const td = document.createElement('td');
+      if (!name && !email) { td.textContent = '—'; return td; }
+      const n = document.createElement('div');
+      n.textContent = name || '—';
+      td.appendChild(n);
+      if (email) {
+        const e = document.createElement('div');
+        e.className = 'muted';
+        e.style.fontSize = '.82rem';
+        e.textContent = email;
+        td.appendChild(e);
       }
+      return td;
     }
 
-    function editLocation(l) {
-      const name = prompt('ชื่อสถานที่', l.name);
-      if (name === null) return;
-      const code = prompt('รหัส/อาคาร', l.code || '');
-      if (code === null) return;
-      const zone = prompt('โซน/ประเภท', l.zone || '');
-      if (zone === null) return;
-      mutateLocation({ action: 'update', id: l.id, name: name, code: code, zone: zone }, 'บันทึกแล้ว');
+    const locTable = createTable({
+      headId: 'locHead', bodyId: 'locBody', searchId: 'locSearch', groupId: 'locGroup', countId: 'locCount',
+      emptyText: 'ยังไม่มีข้อมูลสถานที่',
+      searchKeys: LOC_FIELDS,
+      columns: [
+        { key: 'campusName', label: 'พื้นที่การศึกษา', width: '12%' },
+        { key: 'buildingCode', label: 'รหัสอาคาร', width: '7%' },
+        { key: 'buildingName', label: 'อาคาร', width: '19%' },
+        { key: 'businessTypeName', label: 'ประเภทธุรกิจ', width: '10%' },
+        { key: 'companyName', label: 'ชื่อบริษัท', width: '19%' },
+        { key: 'manager1Name', label: 'ผู้ดูแลพื้นที่ 1', width: '11%', cell: (r) => managerCell(r.manager1Name, r.manager1Email) },
+        { key: 'manager2Name', label: 'ผู้ดูแลพื้นที่ 2', width: '11%', cell: (r) => managerCell(r.manager2Name, r.manager2Email) },
+        {
+          key: '_actions', label: 'จัดการ', width: '11%', align: 'end', sortable: false,
+          cell: (r) => {
+            const td = document.createElement('td');
+            td.className = 'text-end';
+            td.style.whiteSpace = 'nowrap';
+            const edit = document.createElement('button');
+            edit.type = 'button'; edit.className = 'btn btn-sm btn-outline-secondary me-1'; edit.textContent = 'แก้ไข';
+            edit.addEventListener('click', () => editLocation(r));
+            const del = document.createElement('button');
+            del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger'; del.textContent = 'ลบ';
+            del.addEventListener('click', () => {
+              if (!confirm('ลบ "' + r.companyName + '" ที่ ' + (r.buildingName || r.campusName || '-') + ' ?')) return;
+              mutateLocation({ action: 'remove', id: r.id }, 'ลบแล้ว');
+            });
+            td.appendChild(edit); td.appendChild(del);
+            return td;
+          },
+        },
+      ],
+    });
+
+    function editLocation(row) {
+      const patch = { action: 'update', id: row.id };
+      for (const f of LOC_FIELDS) {
+        const v = prompt(LOC_LABELS[f] + (f === 'companyName' ? ' *' : ''), row[f] || '');
+        if (v === null) return; // cancelled
+        patch[f] = v;
+      }
+      mutateLocation(patch, 'บันทึกแล้ว');
     }
 
     async function mutateLocation(payload, okText) {
       try {
         const res = await fetch('/api/admin/locations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (!res.ok) { showMsg('locMsg', data.error || 'ดำเนินการไม่สำเร็จ', false); return false; }
-        renderLocations(data.locations || []);
+        locTable.setRows(data.locations || []);
         showMsg('locMsg', okText, true);
         return true;
       } catch (err) {
@@ -2506,30 +2735,29 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
     }
 
     async function loadLocations() {
-      stateRowIn('locBody', 5, 'กำลังโหลด…');
+      locTable.loading();
       try {
         const res = await fetch('/api/admin/locations', { headers: { 'Accept': 'application/json' } });
         const data = await res.json();
-        renderLocations(data.locations || []);
+        locTable.setRows(data.locations || []);
       } catch (err) {
-        stateRowIn('locBody', 5, 'โหลดข้อมูลสถานที่ไม่สำเร็จ');
+        locTable.message('โหลดข้อมูลสถานที่ไม่สำเร็จ');
       }
     }
 
     document.getElementById('locAddForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const name = document.getElementById('locName').value.trim();
-      if (!name) return;
-      const ok = await mutateLocation({
-        action: 'add',
-        name: name,
-        code: document.getElementById('locCode').value.trim(),
-        zone: document.getElementById('locZone').value.trim(),
-      }, 'เพิ่ม "' + name + '" แล้ว');
-      if (ok) {
-        document.getElementById('locName').value = '';
-        document.getElementById('locCode').value = '';
-        document.getElementById('locZone').value = '';
+      const payload = { action: 'add' };
+      for (const f of LOC_FIELDS) {
+        const el = document.getElementById('f_' + f);
+        payload[f] = el ? el.value.trim() : '';
+      }
+      if (!payload.companyName) { showMsg('locMsg', 'กรุณาระบุชื่อบริษัท', false); return; }
+      if (await mutateLocation(payload, 'เพิ่ม "' + payload.companyName + '" แล้ว')) {
+        for (const f of LOC_FIELDS) {
+          const el = document.getElementById('f_' + f);
+          if (el) el.value = '';
+        }
       }
     });
 
@@ -2538,11 +2766,15 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
       const body = document.getElementById('permBody');
       if (!body) return;
       body.replaceChildren();
-      if (!entries.length) { stateRowIn('permBody', 3, 'ยังไม่มีรายชื่อ'); return; }
+      if (!entries.length) {
+        const tr = document.createElement('tr'); const td = document.createElement('td');
+        td.colSpan = 3; td.className = 'state-msg'; td.textContent = 'ยังไม่มีรายชื่อ';
+        tr.appendChild(td); body.appendChild(tr); return;
+      }
       const adminCount = entries.filter((e) => e.role === 'admin').length;
       for (const entry of entries) {
         const tr = document.createElement('tr');
-        tr.appendChild(cell(entry.email + (entry.email === CURRENT_EMAIL ? ' (คุณ)' : '')));
+        tr.appendChild(textCell(entry.email + (entry.email === CURRENT_EMAIL ? ' (คุณ)' : '')));
 
         const roleTd = document.createElement('td');
         const sel = document.createElement('select');
@@ -2554,7 +2786,6 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
           if (entry.role === r) opt.selected = true;
           sel.appendChild(opt);
         }
-        // Guard in the UI too: the only remaining admin cannot be demoted.
         if (entry.role === 'admin' && adminCount <= 1) sel.disabled = true;
         sel.addEventListener('change', () => mutateAllowlist('setRole', entry.email, sel.value));
         roleTd.appendChild(sel);
@@ -2563,9 +2794,7 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
         const act = document.createElement('td');
         act.className = 'text-end';
         const del = document.createElement('button');
-        del.type = 'button';
-        del.className = 'btn btn-sm btn-outline-danger';
-        del.textContent = 'ลบ';
+        del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger'; del.textContent = 'ลบ';
         del.disabled = entry.role === 'admin' && adminCount <= 1;
         del.addEventListener('click', () => {
           if (!confirm('ลบสิทธิ์ของ ' + entry.email + ' ?')) return;
@@ -2583,9 +2812,7 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
         const res = await fetch('/api/admin/allowlist', { headers: { 'Accept': 'application/json' } });
         const data = await res.json();
         renderAllowlist(data.entries || []);
-      } catch (err) {
-        stateRowIn('permBody', 3, 'โหลดรายชื่อไม่สำเร็จ');
-      }
+      } catch (err) { showMsg('settingsMsg', 'โหลดรายชื่อไม่สำเร็จ', false); }
     }
 
     async function mutateAllowlist(action, email, role) {
@@ -2593,9 +2820,7 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
       if (role) payload.role = role;
       try {
         const res = await fetch('/api/admin/allowlist', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         });
         const data = await res.json();
         if (!res.ok) { showMsg('settingsMsg', data.error || 'ดำเนินการไม่สำเร็จ', false); await loadAllowlist(); return false; }
@@ -2898,10 +3123,10 @@ app.post(
     if (action === 'add') {
       const candidate = normalizeLocation({ ...body, id: nextLocationId(current) });
       if (!candidate) {
-        res.status(400).json({ error: 'กรุณาระบุชื่อสถานที่' });
+        res.status(400).json({ error: 'กรุณาระบุชื่อบริษัท (CompanyName)' });
         return;
       }
-      const updated = persist([...current, candidate], `added location "${candidate.name}"`);
+      const updated = persist([...current, candidate], `added location "${candidate.companyName}"`);
       if (updated) res.status(200).json({ locations: updated });
       return;
     }
@@ -2918,7 +3143,7 @@ app.post(
     }
 
     if (action === 'remove') {
-      const updated = persist(current.filter((l) => String(l.id) !== id), `removed location "${existing.name}"`);
+      const updated = persist(current.filter((l) => String(l.id) !== id), `removed location "${existing.companyName}"`);
       if (updated) res.status(200).json({ locations: updated });
       return;
     }
@@ -2926,12 +3151,12 @@ app.post(
     // action === 'update'
     const merged = normalizeLocation({ ...existing, ...body, id: existing.id });
     if (!merged) {
-      res.status(400).json({ error: 'กรุณาระบุชื่อสถานที่' });
+      res.status(400).json({ error: 'กรุณาระบุชื่อบริษัท (CompanyName)' });
       return;
     }
     const updated = persist(
       current.map((l) => (String(l.id) === id ? merged : l)),
-      `updated location "${merged.name}"`
+      `updated location "${merged.companyName}"`
     );
     if (updated) res.status(200).json({ locations: updated });
   })
