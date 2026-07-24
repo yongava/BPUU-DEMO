@@ -949,9 +949,45 @@ function normalizeEmail(value) {
     .toLowerCase();
 }
 
-// In-memory cache of the normalized allowlist, loaded once at first use and
-// kept in sync on every save. null until first load.
+// Two roles, in descending privilege. 'admin' sees every panel on /admin,
+// including the permission-management one; 'staff' sees everything EXCEPT
+// permission management (they can work the request list and locations but
+// cannot grant/revoke access). Anything not in this set is rejected.
+const ADMIN_ROLES = ['admin', 'staff'];
+const DEFAULT_ROLE = 'staff';
+
+function normalizeRole(value) {
+  const r = String(value == null ? '' : value).trim().toLowerCase();
+  return ADMIN_ROLES.includes(r) ? r : null;
+}
+
+// In-memory cache of the normalized allowlist ([{ email, role }]), loaded
+// once at first use and kept in sync on every save. null until first load.
 let adminAllowlistCache = null;
+
+// Accepts both the current shape ([{email, role}]) and the LEGACY shape
+// (a plain array of email strings, before roles existed). Legacy entries are
+// migrated to role 'admin' — the people already on the list had full access,
+// so silently demoting them to 'staff' would revoke permission management
+// from everyone, potentially locking the last admin out of the role UI.
+function parseAllowlistEntries(parsed) {
+  if (!Array.isArray(parsed)) return null;
+  const out = [];
+  for (const item of parsed) {
+    if (typeof item === 'string') {
+      const email = normalizeEmail(item);
+      if (email) out.push({ email, role: 'admin' });
+      continue;
+    }
+    if (item && typeof item === 'object') {
+      const email = normalizeEmail(item.email);
+      if (email) out.push({ email, role: normalizeRole(item.role) || DEFAULT_ROLE });
+    }
+  }
+  // De-duplicate by email, first occurrence wins.
+  const seen = new Set();
+  return out.filter((e) => (seen.has(e.email) ? false : (seen.add(e.email), true)));
+}
 
 function loadAdminAllowlist() {
   if (adminAllowlistCache) return adminAllowlistCache;
@@ -959,10 +995,8 @@ function loadAdminAllowlist() {
   let list = null;
   try {
     const raw = fs.readFileSync(ADMIN_ALLOWLIST_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      list = parsed.map(normalizeEmail).filter(Boolean);
-    } else {
+    list = parseAllowlistEntries(JSON.parse(raw));
+    if (!list) {
       console.warn('[bpuu-workflow] admin-allowlist.json is not a JSON array — ignoring and reseeding');
     }
   } catch (err) {
@@ -976,7 +1010,7 @@ function loadAdminAllowlist() {
 
   if (!list || list.length === 0) {
     const seed = normalizeEmail(config.adminSeedEmail);
-    list = seed ? [seed] : [];
+    list = seed ? [{ email: seed, role: 'admin' }] : [];
     // Best-effort seed write; if the disk is read-only the app still works
     // in-memory for this run, it just won't persist across a restart.
     try {
@@ -997,12 +1031,23 @@ function loadAdminAllowlist() {
 // respond with a clear error rather than letting it hit the generic error
 // middleware, which historically returned an HTML page instead of JSON to
 // this route's fetch()-based client code.
-function saveAdminAllowlist(list) {
-  const normalized = Array.from(new Set(list.map(normalizeEmail).filter(Boolean)));
+function saveAdminAllowlist(entries) {
+  const seen = new Set();
+  const normalized = [];
+  for (const e of entries) {
+    const email = normalizeEmail(e && e.email);
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    normalized.push({ email, role: normalizeRole(e && e.role) || DEFAULT_ROLE });
+  }
   fs.mkdirSync(path.dirname(ADMIN_ALLOWLIST_PATH), { recursive: true });
   fs.writeFileSync(ADMIN_ALLOWLIST_PATH, JSON.stringify(normalized, null, 2) + '\n', 'utf8');
   adminAllowlistCache = normalized;
   return normalized;
+}
+
+function countAdmins(entries) {
+  return entries.filter((e) => e.role === 'admin').length;
 }
 
 // The KMUTT email of the currently logged-in ADFS user, normalized. ThaID
@@ -1016,16 +1061,20 @@ function getSessionAdminEmail(req) {
   return normalizeEmail(claims.upn || claims.email || claims.preferred_username || '');
 }
 
-function isAdmin(req) {
+// 'admin' | 'staff' | null (null = not on the allowlist at all).
+function getSessionRole(req) {
   const email = getSessionAdminEmail(req);
-  return Boolean(email) && loadAdminAllowlist().includes(email);
+  if (!email) return null;
+  const entry = loadAdminAllowlist().find((e) => e.email === email);
+  return entry ? entry.role : null;
 }
 
-// Gate for /admin and its APIs. Assumes requireLogin ran first (so there IS
-// a KMUTT session); this only adds the allowlist check on top. Not-an-admin
-// gets an explicit 403, never a redirect loop.
+// Gate for /admin and its APIs — ANY allowlisted role (admin or staff) may
+// reach the page. Assumes requireLogin ran first (so there IS a KMUTT
+// session); this only adds the allowlist check on top. Not-allowlisted gets
+// an explicit 403, never a redirect loop.
 function requireAdmin(req, res, next) {
-  if (!isAdmin(req)) {
+  if (!getSessionRole(req)) {
     noStore(res);
     res.status(403).send(
       renderErrorPage({
@@ -1038,6 +1087,85 @@ function requireAdmin(req, res, next) {
     return;
   }
   next();
+}
+
+// Stricter gate: only role 'admin'. Guards permission management — a 'staff'
+// user must never be able to grant themselves (or anyone) access, so this is
+// enforced SERVER-SIDE here, not merely by hiding the panel in the UI.
+// Responds JSON (not an HTML error page) because every route behind it is a
+// fetch()-based JSON API.
+function requireRoleAdmin(req, res, next) {
+  if (getSessionRole(req) !== 'admin') {
+    noStore(res);
+    res.status(403).json({ error: 'เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่จัดการสิทธิ์ได้' });
+    return;
+  }
+  next();
+}
+
+// ---------------------------------------------------------------------------
+// Location manager storage — the list of places the workflow can reference
+// (e.g. อาคารจอดรถ S2, โรงอาหาร S14). Same file-backed pattern, same
+// data/ directory (writable in the Docker image), same override-by-env
+// escape hatch as the allowlist above.
+// ---------------------------------------------------------------------------
+
+const LOCATIONS_PATH = process.env.LOCATIONS_PATH || path.join(__dirname, 'data', 'locations.json');
+
+let locationsCache = null;
+
+function normalizeLocation(item) {
+  if (!item || typeof item !== 'object') return null;
+  const name = String(item.name == null ? '' : item.name).trim();
+  if (!name) return null;
+  return {
+    id: String(item.id == null ? '' : item.id).trim() || null,
+    name,
+    code: String(item.code == null ? '' : item.code).trim(),
+    zone: String(item.zone == null ? '' : item.zone).trim(),
+    active: item.active === undefined ? true : Boolean(item.active),
+  };
+}
+
+function loadLocations() {
+  if (locationsCache) return locationsCache;
+  let list = [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(LOCATIONS_PATH, 'utf8'));
+    if (Array.isArray(parsed)) list = parsed.map(normalizeLocation).filter(Boolean);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error(`[bpuu-workflow] could not read locations.json (${err.message}) — starting empty`);
+    }
+  }
+  // Backfill ids for any hand-edited entry that omitted one.
+  let maxId = 0;
+  for (const l of list) {
+    const n = Number(l.id);
+    if (Number.isFinite(n) && n > maxId) maxId = n;
+  }
+  for (const l of list) {
+    if (!l.id) l.id = String(++maxId);
+  }
+  locationsCache = list;
+  return locationsCache;
+}
+
+function saveLocations(list) {
+  const normalized = list.map(normalizeLocation).filter(Boolean);
+  fs.mkdirSync(path.dirname(LOCATIONS_PATH), { recursive: true });
+  fs.writeFileSync(LOCATIONS_PATH, JSON.stringify(normalized, null, 2) + '\n', 'utf8');
+  locationsCache = normalized;
+  return normalized;
+}
+
+function nextLocationId(list) {
+  let max = 0;
+  for (const l of list) {
+    const n = Number(l.id);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return String(max + 1);
 }
 
 app.get(
@@ -2047,7 +2175,8 @@ function toScriptJson(value) {
 // builds the tables/lists with textContent — never innerHTML on the fetched
 // values — so JotForm submission content and allowlist emails can't inject
 // markup into this page.
-function renderAdminPage({ currentEmail, jotformConfigured }) {
+function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
+  const isRoleAdmin = currentRole === 'admin';
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -2073,12 +2202,24 @@ function renderAdminPage({ currentEmail, jotformConfigured }) {
     .status-ok { background: #e6f4ea; color: #1e7e34; }
     .status-reject { background: #fdecea; color: #c0392b; }
     .status-neutral { background: #eef0f3; color: #55606d; }
-    .email-chip { display: inline-flex; align-items: center; gap: 8px; background: #f6f8fa; border: 1px solid #e3e6ea; border-radius: 999px; padding: 6px 8px 6px 14px; margin: 0 8px 8px 0; font-size: 0.9rem; }
-    .email-chip.is-you { border-color: #FA4616; }
-    .email-chip button { border: none; background: transparent; color: #c0392b; cursor: pointer; line-height: 1; padding: 2px 4px; border-radius: 50%; }
-    .email-chip button:disabled { color: #c3c8cf; cursor: not-allowed; }
     .muted { color: #7a828d; }
     .state-msg { padding: 24px; text-align: center; color: #7a828d; }
+    /* role badge + nav menu */
+    .role-badge { display: inline-block; font-size: .72rem; font-weight: 800; letter-spacing: .3px;
+      padding: 2px 9px; border-radius: 999px; background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.55); }
+    .nav-menu { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+    .nav-menu button { border: 1px solid #e3e6ea; background: #fff; color: #55606d; font-weight: 700;
+      font-size: .92rem; padding: 9px 18px; border-radius: 10px; cursor: pointer; font-family: inherit; }
+    .nav-menu button.active { background: #FA4616; border-color: #FA4616; color: #fff; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* role pill in the permission table */
+    .role-pill { font-size: .78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+    .role-admin { background: #fdecea; color: #c0392b; }
+    .role-staff { background: #eef0f3; color: #55606d; }
+    table.tbl { font-size: .9rem; }
+    table.tbl td, table.tbl th { vertical-align: middle; }
+    .inactive-row td { opacity: .55; }
   </style>
 </head>
 <body>
@@ -2089,61 +2230,163 @@ function renderAdminPage({ currentEmail, jotformConfigured }) {
         <div class="title">ผู้ดูแลระบบ · ระบบกระบวนงาน BPUU</div>
       </div>
       <div class="text-end">
-        <div style="font-size:.85rem;opacity:.95;">${escapeHtml(currentEmail)}</div>
+        <div style="font-size:.85rem;opacity:.95;">
+          ${escapeHtml(currentEmail)}
+          <span class="role-badge ms-1">${isRoleAdmin ? 'ADMIN' : 'STAFF'}</span>
+        </div>
         <a href="/logout" class="text-white" style="font-size:.85rem;"><i class="bi bi-box-arrow-right"></i> ออกจากระบบ</a>
       </div>
     </div>
   </div>
 
   <div class="container py-4">
+    <!-- Menu: the permission tab is rendered ONLY for role 'admin'. The
+         server also rejects permission writes from 'staff' (requireRoleAdmin),
+         so hiding it here is presentation, not the security boundary. -->
+    <nav class="nav-menu">
+      <button type="button" class="active" data-tab="requests"><i class="bi bi-inbox"></i> รายการคำขอ</button>
+      <button type="button" data-tab="locations"><i class="bi bi-geo-alt"></i> จัดการสถานที่</button>
+      ${isRoleAdmin ? '<button type="button" data-tab="permissions"><i class="bi bi-shield-lock"></i> สิทธิ์การเข้าถึง</button>' : ''}
+    </nav>
+
     <!-- Requests panel -->
-    <div class="panel mb-4">
-      <div class="panel-head">
-        <h2><i class="bi bi-inbox text-ci-orange"></i> รายการคำขอ &amp; สถานะ</h2>
-        <button id="refreshBtn" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-clockwise"></i> รีเฟรช</button>
-      </div>
-      <div class="panel-body">
-        <div class="table-responsive">
-          <table class="table table-hover req align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Ref</th><th>วันที่</th><th>ผู้ขอ</th><th>ประเภทบริการ</th>
-                <th>ผู้อนุมัติ</th><th class="text-end">ยอด (บาท)</th><th>สถานะ</th>
-              </tr>
-            </thead>
-            <tbody id="reqBody">
-              <tr><td colspan="7" class="state-msg">กำลังโหลด…</td></tr>
-            </tbody>
-          </table>
+    <div class="tab-panel active" id="tab-requests">
+      <div class="panel">
+        <div class="panel-head">
+          <h2><i class="bi bi-inbox text-ci-orange"></i> รายการคำขอ &amp; สถานะ</h2>
+          <button id="refreshBtn" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-clockwise"></i> รีเฟรช</button>
+        </div>
+        <div class="panel-body">
+          <div class="table-responsive">
+            <table class="table table-hover req align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Ref</th><th>วันที่</th><th>ผู้ขอ</th><th>ประเภทบริการ</th>
+                  <th>ผู้อนุมัติ</th><th class="text-end">ยอด (บาท)</th><th>สถานะ</th>
+                </tr>
+              </thead>
+              <tbody id="reqBody">
+                <tr><td colspan="7" class="state-msg">กำลังโหลด…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Settings / permission panel -->
-    <div class="panel">
-      <div class="panel-head">
-        <h2><i class="bi bi-shield-lock text-ci-orange"></i> สิทธิ์การเข้าถึงหน้าผู้ดูแล</h2>
-      </div>
-      <div class="panel-body">
-        <p class="muted mb-3">เฉพาะอีเมลในรายการนี้เท่านั้นที่เข้าหน้าผู้ดูแลระบบได้ (บัญชี KMUTT/ADFS เท่านั้น)</p>
-        <div id="allowlist" class="mb-3"><span class="muted">กำลังโหลด…</span></div>
-        <form id="addForm" class="row g-2 align-items-center" style="max-width:520px;">
-          <div class="col-auto flex-grow-1">
-            <input type="email" id="addEmail" class="form-control form-control-sm" placeholder="email@kmutt.ac.th" required>
+    <!-- Location manager panel -->
+    <div class="tab-panel" id="tab-locations">
+      <div class="panel">
+        <div class="panel-head">
+          <h2><i class="bi bi-geo-alt text-ci-orange"></i> จัดการข้อมูลสถานที่ (Location Manager)</h2>
+        </div>
+        <div class="panel-body">
+          <p class="muted mb-3">รายการสถานที่ที่ใช้อ้างอิงในระบบ เช่น อาคารจอดรถ S2 หรือ โรงอาหาร S14</p>
+          <div class="table-responsive mb-3">
+            <table class="table table-hover tbl align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:26%">ชื่อสถานที่</th><th style="width:16%">รหัส/อาคาร</th>
+                  <th style="width:22%">โซน/ประเภท</th><th style="width:14%">สถานะ</th>
+                  <th style="width:22%" class="text-end">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody id="locBody">
+                <tr><td colspan="5" class="state-msg">กำลังโหลด…</td></tr>
+              </tbody>
+            </table>
           </div>
-          <div class="col-auto">
-            <button type="submit" class="btn btn-sm btn-ci-orange fw-bold"><i class="bi bi-plus-lg"></i> เพิ่มอีเมล</button>
-          </div>
-        </form>
-        <div id="settingsMsg" class="mt-2" style="font-size:.9rem;"></div>
+          <form id="locAddForm" class="row g-2 align-items-center">
+            <div class="col-12 col-md-3"><input id="locName" class="form-control form-control-sm" placeholder="ชื่อสถานที่ *" required></div>
+            <div class="col-6 col-md-2"><input id="locCode" class="form-control form-control-sm" placeholder="รหัส/อาคาร"></div>
+            <div class="col-6 col-md-3"><input id="locZone" class="form-control form-control-sm" placeholder="โซน/ประเภท"></div>
+            <div class="col-auto"><button type="submit" class="btn btn-sm btn-ci-orange fw-bold"><i class="bi bi-plus-lg"></i> เพิ่มสถานที่</button></div>
+          </form>
+          <div id="locMsg" class="mt-2" style="font-size:.9rem;"></div>
+        </div>
       </div>
     </div>
+
+    ${
+      isRoleAdmin
+        ? `<!-- Settings / permission panel (admin only) -->
+    <div class="tab-panel" id="tab-permissions">
+      <div class="panel">
+        <div class="panel-head">
+          <h2><i class="bi bi-shield-lock text-ci-orange"></i> สิทธิ์การเข้าถึงหน้าผู้ดูแล</h2>
+        </div>
+        <div class="panel-body">
+          <p class="muted mb-1">เฉพาะอีเมลในรายการนี้เท่านั้นที่เข้าหน้าผู้ดูแลระบบได้ (บัญชี KMUTT/ADFS เท่านั้น)</p>
+          <p class="muted mb-3" style="font-size:.86rem;">
+            <strong>Admin</strong> = เห็นทุกเมนู รวมถึงจัดการสิทธิ์ ·
+            <strong>Staff</strong> = เห็นทุกเมนู ยกเว้นเมนูจัดการสิทธิ์
+          </p>
+          <div class="table-responsive mb-3">
+            <table class="table table-hover tbl align-middle mb-0">
+              <thead class="table-light">
+                <tr><th style="width:52%">อีเมล</th><th style="width:26%">สิทธิ์ (Role)</th><th style="width:22%" class="text-end">จัดการ</th></tr>
+              </thead>
+              <tbody id="permBody">
+                <tr><td colspan="3" class="state-msg">กำลังโหลด…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <form id="addForm" class="row g-2 align-items-center" style="max-width:640px;">
+            <div class="col-12 col-md-6"><input type="email" id="addEmail" class="form-control form-control-sm" placeholder="email@kmutt.ac.th" required></div>
+            <div class="col-auto">
+              <select id="addRole" class="form-select form-select-sm">
+                <option value="staff" selected>Staff</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div class="col-auto"><button type="submit" class="btn btn-sm btn-ci-orange fw-bold"><i class="bi bi-plus-lg"></i> เพิ่มอีเมล</button></div>
+          </form>
+          <div id="settingsMsg" class="mt-2" style="font-size:.9rem;"></div>
+        </div>
+      </div>
+    </div>`
+        : ''
+    }
   </div>
 
   <script>
     const JOTFORM_CONFIGURED = ${jotformConfigured ? 'true' : 'false'};
     const CURRENT_EMAIL = ${toScriptJson(currentEmail)};
+    const IS_ROLE_ADMIN = ${isRoleAdmin ? 'true' : 'false'};
 
+    // ---- menu / tabs ----
+    document.querySelectorAll('.nav-menu button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-menu button').forEach((b) => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+        btn.classList.add('active');
+        const panel = document.getElementById('tab-' + btn.dataset.tab);
+        if (panel) panel.classList.add('active');
+      });
+    });
+
+    function cell(text, className) {
+      const td = document.createElement('td');
+      td.textContent = text == null || text === '' ? '—' : String(text);
+      if (className) td.className = className;
+      return td;
+    }
+    function stateRowIn(tbodyId, cols, text) {
+      const body = document.getElementById(tbodyId);
+      body.replaceChildren();
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = cols; td.className = 'state-msg'; td.textContent = text;
+      tr.appendChild(td); body.appendChild(tr);
+    }
+    function showMsg(id, text, ok) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = text;
+      el.style.color = ok ? '#1e7e34' : '#c0392b';
+    }
+
+    // ---- requests ----
     function statusClass(status) {
       const s = String(status || '');
       if (/อนุมัติ|สำเร็จ|เสร็จ|เรียบร้อย|ผ่าน/.test(s) && !/ไม่อนุมัติ/.test(s)) return 'status-ok';
@@ -2152,22 +2395,10 @@ function renderAdminPage({ currentEmail, jotformConfigured }) {
       return 'status-neutral';
     }
 
-    function cell(text) {
-      const td = document.createElement('td');
-      td.textContent = text == null || text === '' ? '—' : String(text);
-      return td;
-    }
-
     function renderRequests(requests) {
       const body = document.getElementById('reqBody');
       body.replaceChildren();
-      if (!requests.length) {
-        const tr = document.createElement('tr');
-        const td = document.createElement('td');
-        td.colSpan = 7; td.className = 'state-msg'; td.textContent = 'ยังไม่มีคำขอ';
-        tr.appendChild(td); body.appendChild(tr);
-        return;
-      }
+      if (!requests.length) { stateRowIn('reqBody', 7, 'ยังไม่มีคำขอ'); return; }
       for (const r of requests) {
         const tr = document.createElement('tr');
         tr.appendChild(cell(r.id));
@@ -2175,9 +2406,7 @@ function renderAdminPage({ currentEmail, jotformConfigured }) {
         tr.appendChild(cell(r.requester));
         tr.appendChild(cell(r.requestType));
         tr.appendChild(cell(r.approver || r.approverEmail));
-        const amount = cell(r.amount);
-        amount.className = 'text-end';
-        tr.appendChild(amount);
+        tr.appendChild(cell(r.amount, 'text-end'));
         const st = document.createElement('td');
         const badge = document.createElement('span');
         badge.className = 'status-badge ' + statusClass(r.status);
@@ -2188,96 +2417,216 @@ function renderAdminPage({ currentEmail, jotformConfigured }) {
       }
     }
 
-    function stateRow(text) {
-      const body = document.getElementById('reqBody');
-      body.replaceChildren();
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.colSpan = 7; td.className = 'state-msg'; td.textContent = text;
-      tr.appendChild(td); body.appendChild(tr);
-    }
-
     async function loadRequests() {
-      stateRow('กำลังโหลด…');
+      stateRowIn('reqBody', 7, 'กำลังโหลด…');
       try {
         const res = await fetch('/api/admin/requests', { headers: { 'Accept': 'application/json' } });
         const data = await res.json();
         if (data.configured === false) {
-          stateRow('ยังไม่ได้ตั้งค่า JotForm API key — เพิ่ม JOTFORM_API_KEY ใน .env เพื่อดูรายการคำขอ');
+          stateRowIn('reqBody', 7, 'ยังไม่ได้ตั้งค่า JotForm API key — เพิ่ม JOTFORM_API_KEY ใน .env เพื่อดูรายการคำขอ');
           return;
         }
-        if (data.error) { stateRow(data.error); return; }
+        if (data.error) { stateRowIn('reqBody', 7, data.error); return; }
         renderRequests(data.requests || []);
       } catch (err) {
-        stateRow('เกิดข้อผิดพลาดในการโหลดรายการคำขอ');
+        stateRowIn('reqBody', 7, 'เกิดข้อผิดพลาดในการโหลดรายการคำขอ');
       }
     }
 
-    function renderAllowlist(emails) {
-      const box = document.getElementById('allowlist');
-      box.replaceChildren();
-      const onlyOne = emails.length <= 1;
-      for (const email of emails) {
-        const chip = document.createElement('span');
-        chip.className = 'email-chip' + (email === CURRENT_EMAIL ? ' is-you' : '');
-        const label = document.createElement('span');
-        label.textContent = email + (email === CURRENT_EMAIL ? ' (คุณ)' : '');
-        chip.appendChild(label);
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.title = 'ลบ';
-        btn.innerHTML = '<i class="bi bi-x-lg"></i>';
-        btn.disabled = onlyOne;
-        btn.addEventListener('click', () => removeEmail(email));
-        chip.appendChild(btn);
-        box.appendChild(chip);
+    // ---- locations ----
+    function renderLocations(list) {
+      const body = document.getElementById('locBody');
+      body.replaceChildren();
+      if (!list.length) { stateRowIn('locBody', 5, 'ยังไม่มีข้อมูลสถานที่'); return; }
+      for (const l of list) {
+        const tr = document.createElement('tr');
+        if (!l.active) tr.className = 'inactive-row';
+        tr.appendChild(cell(l.name));
+        tr.appendChild(cell(l.code));
+        tr.appendChild(cell(l.zone));
+        const st = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = 'status-badge ' + (l.active ? 'status-ok' : 'status-neutral');
+        badge.textContent = l.active ? 'ใช้งาน' : 'ปิดใช้งาน';
+        st.appendChild(badge);
+        tr.appendChild(st);
+
+        const act = document.createElement('td');
+        act.className = 'text-end';
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'btn btn-sm btn-outline-secondary me-1';
+        editBtn.textContent = 'แก้ไข';
+        editBtn.addEventListener('click', () => editLocation(l));
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'btn btn-sm btn-outline-secondary me-1';
+        toggleBtn.textContent = l.active ? 'ปิด' : 'เปิด';
+        toggleBtn.addEventListener('click', () => mutateLocation({ action: 'update', id: l.id, active: !l.active }, 'อัปเดตแล้ว'));
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-sm btn-outline-danger';
+        delBtn.textContent = 'ลบ';
+        delBtn.addEventListener('click', () => {
+          if (!confirm('ลบสถานที่ "' + l.name + '" ?')) return;
+          mutateLocation({ action: 'remove', id: l.id }, 'ลบแล้ว');
+        });
+        act.appendChild(editBtn); act.appendChild(toggleBtn); act.appendChild(delBtn);
+        tr.appendChild(act);
+        body.appendChild(tr);
+      }
+    }
+
+    function editLocation(l) {
+      const name = prompt('ชื่อสถานที่', l.name);
+      if (name === null) return;
+      const code = prompt('รหัส/อาคาร', l.code || '');
+      if (code === null) return;
+      const zone = prompt('โซน/ประเภท', l.zone || '');
+      if (zone === null) return;
+      mutateLocation({ action: 'update', id: l.id, name: name, code: code, zone: zone }, 'บันทึกแล้ว');
+    }
+
+    async function mutateLocation(payload, okText) {
+      try {
+        const res = await fetch('/api/admin/locations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) { showMsg('locMsg', data.error || 'ดำเนินการไม่สำเร็จ', false); return false; }
+        renderLocations(data.locations || []);
+        showMsg('locMsg', okText, true);
+        return true;
+      } catch (err) {
+        showMsg('locMsg', 'เกิดข้อผิดพลาด', false);
+        return false;
+      }
+    }
+
+    async function loadLocations() {
+      stateRowIn('locBody', 5, 'กำลังโหลด…');
+      try {
+        const res = await fetch('/api/admin/locations', { headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+        renderLocations(data.locations || []);
+      } catch (err) {
+        stateRowIn('locBody', 5, 'โหลดข้อมูลสถานที่ไม่สำเร็จ');
+      }
+    }
+
+    document.getElementById('locAddForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('locName').value.trim();
+      if (!name) return;
+      const ok = await mutateLocation({
+        action: 'add',
+        name: name,
+        code: document.getElementById('locCode').value.trim(),
+        zone: document.getElementById('locZone').value.trim(),
+      }, 'เพิ่ม "' + name + '" แล้ว');
+      if (ok) {
+        document.getElementById('locName').value = '';
+        document.getElementById('locCode').value = '';
+        document.getElementById('locZone').value = '';
+      }
+    });
+
+    // ---- permissions (admin only) ----
+    function renderAllowlist(entries) {
+      const body = document.getElementById('permBody');
+      if (!body) return;
+      body.replaceChildren();
+      if (!entries.length) { stateRowIn('permBody', 3, 'ยังไม่มีรายชื่อ'); return; }
+      const adminCount = entries.filter((e) => e.role === 'admin').length;
+      for (const entry of entries) {
+        const tr = document.createElement('tr');
+        tr.appendChild(cell(entry.email + (entry.email === CURRENT_EMAIL ? ' (คุณ)' : '')));
+
+        const roleTd = document.createElement('td');
+        const sel = document.createElement('select');
+        sel.className = 'form-select form-select-sm';
+        sel.style.maxWidth = '150px';
+        for (const r of ['staff', 'admin']) {
+          const opt = document.createElement('option');
+          opt.value = r; opt.textContent = r === 'admin' ? 'Admin' : 'Staff';
+          if (entry.role === r) opt.selected = true;
+          sel.appendChild(opt);
+        }
+        // Guard in the UI too: the only remaining admin cannot be demoted.
+        if (entry.role === 'admin' && adminCount <= 1) sel.disabled = true;
+        sel.addEventListener('change', () => mutateAllowlist('setRole', entry.email, sel.value));
+        roleTd.appendChild(sel);
+        tr.appendChild(roleTd);
+
+        const act = document.createElement('td');
+        act.className = 'text-end';
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn btn-sm btn-outline-danger';
+        del.textContent = 'ลบ';
+        del.disabled = entry.role === 'admin' && adminCount <= 1;
+        del.addEventListener('click', () => {
+          if (!confirm('ลบสิทธิ์ของ ' + entry.email + ' ?')) return;
+          mutateAllowlist('remove', entry.email);
+        });
+        act.appendChild(del);
+        tr.appendChild(act);
+        body.appendChild(tr);
       }
     }
 
     async function loadAllowlist() {
+      if (!IS_ROLE_ADMIN) return;
       try {
         const res = await fetch('/api/admin/allowlist', { headers: { 'Accept': 'application/json' } });
         const data = await res.json();
-        renderAllowlist(data.emails || []);
+        renderAllowlist(data.entries || []);
       } catch (err) {
-        document.getElementById('allowlist').textContent = 'โหลดรายชื่อไม่สำเร็จ';
+        stateRowIn('permBody', 3, 'โหลดรายชื่อไม่สำเร็จ');
       }
     }
 
-    function showSettingsMsg(text, ok) {
-      const el = document.getElementById('settingsMsg');
-      el.textContent = text;
-      el.style.color = ok ? '#1e7e34' : '#c0392b';
+    async function mutateAllowlist(action, email, role) {
+      const payload = { action: action, email: email };
+      if (role) payload.role = role;
+      try {
+        const res = await fetch('/api/admin/allowlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) { showMsg('settingsMsg', data.error || 'ดำเนินการไม่สำเร็จ', false); await loadAllowlist(); return false; }
+        renderAllowlist(data.entries || []);
+        showMsg('settingsMsg', 'บันทึกแล้ว', true);
+        return true;
+      } catch (err) {
+        showMsg('settingsMsg', 'เกิดข้อผิดพลาด', false);
+        return false;
+      }
     }
 
-    async function mutateAllowlist(action, email) {
-      const res = await fetch('/api/admin/allowlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, email }),
+    const addForm = document.getElementById('addForm');
+    if (addForm) {
+      addForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = document.getElementById('addEmail');
+        const email = input.value.trim();
+        if (!email) return;
+        const role = document.getElementById('addRole').value;
+        if (await mutateAllowlist('add', email, role)) {
+          showMsg('settingsMsg', 'เพิ่ม ' + email + ' (' + role + ') แล้ว', true);
+          input.value = '';
+        }
       });
-      const data = await res.json();
-      if (!res.ok) { showSettingsMsg(data.error || 'ดำเนินการไม่สำเร็จ', false); return false; }
-      renderAllowlist(data.emails || []);
-      return true;
     }
-
-    async function removeEmail(email) {
-      if (!confirm('ลบสิทธิ์ของ ' + email + ' ?')) return;
-      if (await mutateAllowlist('remove', email)) showSettingsMsg('ลบ ' + email + ' แล้ว', true);
-    }
-
-    document.getElementById('addForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const input = document.getElementById('addEmail');
-      const email = input.value.trim();
-      if (!email) return;
-      if (await mutateAllowlist('add', email)) { showSettingsMsg('เพิ่ม ' + email + ' แล้ว', true); input.value = ''; }
-    });
 
     document.getElementById('refreshBtn').addEventListener('click', loadRequests);
 
     loadRequests();
+    loadLocations();
     loadAllowlist();
   </script>
 </body>
@@ -2357,6 +2706,7 @@ app.get(
     res.status(200).send(
       renderAdminPage({
         currentEmail: getSessionAdminEmail(req),
+        currentRole: getSessionRole(req),
         jotformConfigured: isJotformConfigured(),
       })
     );
@@ -2385,6 +2735,8 @@ app.get(
   })
 );
 
+// Readable by any allowlisted role so the page can show who has access, but
+// only role 'admin' may CHANGE it (see the POST below).
 app.get(
   '/api/admin/allowlist',
   requireLogin,
@@ -2392,28 +2744,32 @@ app.get(
   asyncHandler(async (req, res) => {
     noStore(res);
     res.status(200).json({
-      emails: loadAdminAllowlist(),
+      entries: loadAdminAllowlist(),
       currentEmail: getSessionAdminEmail(req),
+      currentRole: getSessionRole(req),
     });
   })
 );
 
-// Add/remove an admin email. State-changing, so POST (not GET): SameSite=Lax
-// on the session cookie keeps a cross-site POST from carrying the admin's
-// session, matching the CSRF posture the existing /api/kmutt-dev-preview/
-// clear route already relies on.
+// Add / remove / change-role. State-changing, so POST (not GET): SameSite=Lax
+// on the session cookie keeps a cross-site POST from carrying the session,
+// matching the CSRF posture the existing /api/kmutt-dev-preview/clear route
+// already relies on. requireRoleAdmin enforces admin-only SERVER-SIDE — a
+// 'staff' user is not merely hidden from this UI, they are rejected here.
 app.post(
   '/api/admin/allowlist',
   requireLogin,
   requireAdmin,
+  requireRoleAdmin,
   asyncHandler(async (req, res) => {
     noStore(res);
 
     const action = req.body && req.body.action;
     const email = normalizeEmail(req.body && req.body.email);
+    const requestedRole = normalizeRole(req.body && req.body.role);
 
-    if (action !== 'add' && action !== 'remove') {
-      res.status(400).json({ error: 'action must be "add" or "remove"' });
+    if (!['add', 'remove', 'setRole'].includes(action)) {
+      res.status(400).json({ error: 'action must be "add", "remove" or "setRole"' });
       return;
     }
     if (!email) {
@@ -2424,48 +2780,160 @@ app.post(
       res.status(400).json({ error: 'อีเมลไม่ถูกต้อง' });
       return;
     }
+    if ((action === 'add' || action === 'setRole') && req.body.role !== undefined && !requestedRole) {
+      res.status(400).json({ error: 'role ต้องเป็น admin หรือ staff' });
+      return;
+    }
 
     const current = loadAdminAllowlist();
+    const existing = current.find((e) => e.email === email);
+    const actor = getSessionAdminEmail(req);
 
-    if (action === 'add') {
-      if (current.includes(email)) {
-        res.status(200).json({ emails: current, unchanged: true });
-        return;
-      }
+    const persist = (next, logLine) => {
       let updated;
       try {
-        updated = saveAdminAllowlist([...current, email]);
+        updated = saveAdminAllowlist(next);
       } catch (err) {
         console.error(`[bpuu-workflow] could not persist admin-allowlist.json (${err.message})`);
         res.status(500).json({ error: 'บันทึกรายชื่อผู้ดูแลระบบไม่สำเร็จ กรุณาลองใหม่ภายหลัง' });
+        return null;
+      }
+      console.log(`[bpuu-workflow] admin allowlist: ${actor} ${logLine}`);
+      return updated;
+    };
+
+    if (action === 'add') {
+      if (existing) {
+        res.status(200).json({ entries: current, unchanged: true });
         return;
       }
-      console.log(`[bpuu-workflow] admin allowlist: ${getSessionAdminEmail(req)} added ${email}`);
-      res.status(200).json({ emails: updated });
+      const role = requestedRole || DEFAULT_ROLE;
+      const updated = persist([...current, { email, role }], `added ${email} as ${role}`);
+      if (updated) res.status(200).json({ entries: updated });
+      return;
+    }
+
+    if (action === 'setRole') {
+      if (!existing) {
+        res.status(404).json({ error: 'ไม่พบอีเมลนี้ในรายชื่อ' });
+        return;
+      }
+      const role = requestedRole || DEFAULT_ROLE;
+      if (existing.role === role) {
+        res.status(200).json({ entries: current, unchanged: true });
+        return;
+      }
+      // Demoting the last admin would leave nobody able to manage roles.
+      if (existing.role === 'admin' && role !== 'admin' && countAdmins(current) <= 1) {
+        res.status(409).json({ error: 'ต้องมีผู้ดูแลระบบ (Admin) อย่างน้อย 1 คน' });
+        return;
+      }
+      const next = current.map((e) => (e.email === email ? { email, role } : e));
+      const updated = persist(next, `set ${email} role to ${role}`);
+      if (updated) res.status(200).json({ entries: updated });
       return;
     }
 
     // action === 'remove'
-    if (!current.includes(email)) {
-      res.status(200).json({ emails: current, unchanged: true });
+    if (!existing) {
+      res.status(200).json({ entries: current, unchanged: true });
       return;
     }
-    // Never let the list be emptied — that would lock everyone out with no
-    // way back in through the UI. The last remaining admin cannot be removed.
-    if (current.length <= 1) {
-      res.status(409).json({ error: 'ไม่สามารถลบผู้ดูแลระบบคนสุดท้ายได้' });
+    // Never let the last admin be removed — that would leave the system with
+    // no one able to grant access again through the UI.
+    if (existing.role === 'admin' && countAdmins(current) <= 1) {
+      res.status(409).json({ error: 'ไม่สามารถลบผู้ดูแลระบบ (Admin) คนสุดท้ายได้' });
       return;
     }
-    let updated;
-    try {
-      updated = saveAdminAllowlist(current.filter((e) => e !== email));
-    } catch (err) {
-      console.error(`[bpuu-workflow] could not persist admin-allowlist.json (${err.message})`);
-      res.status(500).json({ error: 'บันทึกรายชื่อผู้ดูแลระบบไม่สำเร็จ กรุณาลองใหม่ภายหลัง' });
+    const updated = persist(current.filter((e) => e.email !== email), `removed ${email}`);
+    if (updated) res.status(200).json({ entries: updated });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Location manager — data maintenance, available to BOTH roles (only the
+// permission panel is admin-only).
+// ---------------------------------------------------------------------------
+
+app.get(
+  '/api/admin/locations',
+  requireLogin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+    res.status(200).json({ locations: loadLocations() });
+  })
+);
+
+app.post(
+  '/api/admin/locations',
+  requireLogin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+
+    const body = req.body || {};
+    const action = body.action;
+    if (!['add', 'update', 'remove'].includes(action)) {
+      res.status(400).json({ error: 'action must be "add", "update" or "remove"' });
       return;
     }
-    console.log(`[bpuu-workflow] admin allowlist: ${getSessionAdminEmail(req)} removed ${email}`);
-    res.status(200).json({ emails: updated });
+
+    const current = loadLocations();
+    const actor = getSessionAdminEmail(req);
+
+    const persist = (next, logLine) => {
+      let updated;
+      try {
+        updated = saveLocations(next);
+      } catch (err) {
+        console.error(`[bpuu-workflow] could not persist locations.json (${err.message})`);
+        res.status(500).json({ error: 'บันทึกข้อมูลสถานที่ไม่สำเร็จ กรุณาลองใหม่ภายหลัง' });
+        return null;
+      }
+      console.log(`[bpuu-workflow] locations: ${actor} ${logLine}`);
+      return updated;
+    };
+
+    if (action === 'add') {
+      const candidate = normalizeLocation({ ...body, id: nextLocationId(current) });
+      if (!candidate) {
+        res.status(400).json({ error: 'กรุณาระบุชื่อสถานที่' });
+        return;
+      }
+      const updated = persist([...current, candidate], `added location "${candidate.name}"`);
+      if (updated) res.status(200).json({ locations: updated });
+      return;
+    }
+
+    const id = String(body.id == null ? '' : body.id).trim();
+    if (!id) {
+      res.status(400).json({ error: 'id is required' });
+      return;
+    }
+    const existing = current.find((l) => String(l.id) === id);
+    if (!existing) {
+      res.status(404).json({ error: 'ไม่พบสถานที่นี้' });
+      return;
+    }
+
+    if (action === 'remove') {
+      const updated = persist(current.filter((l) => String(l.id) !== id), `removed location "${existing.name}"`);
+      if (updated) res.status(200).json({ locations: updated });
+      return;
+    }
+
+    // action === 'update'
+    const merged = normalizeLocation({ ...existing, ...body, id: existing.id });
+    if (!merged) {
+      res.status(400).json({ error: 'กรุณาระบุชื่อสถานที่' });
+      return;
+    }
+    const updated = persist(
+      current.map((l) => (String(l.id) === id ? merged : l)),
+      `updated location "${merged.name}"`
+    );
+    if (updated) res.status(200).json({ locations: updated });
   })
 );
 
