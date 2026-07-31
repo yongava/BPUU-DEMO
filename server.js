@@ -888,6 +888,21 @@ function requireLogin(req, res, next) {
   next();
 }
 
+// JSON variant of requireLogin for fetch()-based admin APIs: an absent or
+// expired session gets a plain 401 the client script can detect, instead of
+// the 200 HTML login page (which a res.json() caller misreads as success and
+// then crashes on). Deliberately does NOT stash req.originalUrl — an API path
+// must never become a post-login redirect target.
+function requireLoginJson(req, res, next) {
+  expireSessionIfNeeded(req);
+  if (!req.session.user) {
+    noStore(res);
+    res.status(401).json({ error: 'unauthenticated' });
+    return;
+  }
+  next();
+}
+
 // Like requireLogin, but accepts EITHER identity (KMUTT/ADFS or ThaID) —
 // used by /approve-gate. Unlike '/', which is deliberately KMUTT-only,
 // approving here just needs *some* identified login for the audit trail;
@@ -913,6 +928,23 @@ function requireAnyLogin(req, res, next) {
     req.session.thaidRedirectAfterLogin = req.originalUrl;
     noStore(res);
     res.status(200).send(renderLoginLandingPage({ expired: justExpired }));
+    return;
+  }
+  next();
+}
+
+// requireAnyLogin renders an HTML login-landing page (status 200) for
+// unauthenticated requests — right for pages, wrong for JSON APIs: a
+// fetch() caller would see a "successful" response whose body isn't JSON.
+// The /api/approve-gate/* endpoints use this variant, which answers an
+// expired/absent session with a plain 401 the client script can react to
+// (and deliberately does NOT stash req.originalUrl — an API path must never
+// become a post-login redirect target).
+function requireAnyLoginJson(req, res, next) {
+  expireSessionIfNeeded(req);
+  if (!req.session.user && !req.session.externalUser) {
+    noStore(res);
+    res.status(401).json({ error: 'unauthenticated' });
     return;
   }
   next();
@@ -1242,6 +1274,61 @@ function nextLocationId(list) {
     if (Number.isFinite(n) && n > max) max = n;
   }
   return String(max + 1);
+}
+
+// ---------------------------------------------------------------------------
+// Per-request admin notes (หมายเหตุ)
+// JotForm owns the request data and is read-only from here, so notes live in
+// a local file keyed by JotForm submission id — same load/save/cache pattern
+// as the allowlist and locations stores. Lives in data/ so it rides the same
+// /app/data docker volume and survives restarts.
+const REQUEST_NOTES_PATH =
+  process.env.REQUEST_NOTES_PATH || path.join(__dirname, 'data', 'request-notes.json');
+const REQUEST_NOTE_MAX_LENGTH = 1000;
+
+let requestNotesCache = null;
+
+function loadRequestNotes() {
+  if (requestNotesCache) return requestNotesCache;
+  let notes = {};
+  try {
+    const raw = fs.readFileSync(REQUEST_NOTES_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) notes = parsed;
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error(`[bpuu-workflow] request notes file unreadable (${err.message}) — starting empty`);
+      // Notes are hand-authored and can't be regenerated from JotForm — park
+      // the unreadable file aside for hand-recovery so the next save can't
+      // overwrite it with a near-empty store.
+      try {
+        fs.renameSync(REQUEST_NOTES_PATH, `${REQUEST_NOTES_PATH}.corrupt-${Date.now()}`);
+      } catch (renameErr) {
+        console.error(`[bpuu-workflow] could not preserve corrupt notes file: ${renameErr.message}`);
+      }
+    }
+  }
+  requestNotesCache = notes;
+  return requestNotesCache;
+}
+
+function saveRequestNote(id, note, editorEmail) {
+  const notes = { ...loadRequestNotes() };
+  if (note === '') {
+    // Clearing the text removes the entry entirely so the file doesn't
+    // accumulate empty records.
+    delete notes[id];
+  } else {
+    notes[id] = { note, updatedAt: new Date().toISOString(), updatedBy: editorEmail || '' };
+  }
+  fs.mkdirSync(path.dirname(REQUEST_NOTES_PATH), { recursive: true });
+  // Write-then-rename so a crash mid-write can never leave a truncated
+  // notes file behind (rename within the same directory is atomic).
+  const tmpPath = `${REQUEST_NOTES_PATH}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(notes, null, 2) + '\n', 'utf8');
+  fs.renameSync(tmpPath, REQUEST_NOTES_PATH);
+  requestNotesCache = notes;
+  return notes[id] || null;
 }
 
 app.get(
@@ -1915,12 +2002,16 @@ app.get(
 // Only ever forward to JotForm's own domain. `target` is attacker-influenced
 // input (it's echoed out of a query string an attacker could edit before
 // clicking) — without this allowlist, this route would be an open redirect.
-const JOTFORM_APPROVAL_TARGET_HOSTS = new Set(['www.jotform.com', 'submit.jotform.com', 'jotform.com']);
-
-function isAllowedApprovalTarget(rawTarget) {
+// Shared by /approve-gate and /form-gate — both forward to JotForm URLs.
+// Any *.jotform.com host qualifies (www/submit for deeplinks, form.jotform.com
+// for {formLink} form URLs) — still strictly JotForm-owned, never elsewhere.
+function isAllowedJotformTarget(rawTarget) {
   try {
     const parsed = new URL(rawTarget);
-    return parsed.protocol === 'https:' && JOTFORM_APPROVAL_TARGET_HOSTS.has(parsed.hostname);
+    return (
+      parsed.protocol === 'https:' &&
+      (parsed.hostname === 'jotform.com' || parsed.hostname.endsWith('.jotform.com'))
+    );
   } catch (err) {
     return false;
   }
@@ -1941,8 +2032,35 @@ function extractRawTarget(originalUrl) {
   return match ? match[1] : '';
 }
 
+// 'special' covers boxes with a non-binary decision (e.g. จอดรถรายเดือน's
+// "กรณีพิเศษ" button alongside the usual accept/reject) — same deeplink+
+// iframe completion mechanism as accept/reject, just a third recorded label.
+// 'invalid_code' / 'budget_insufficient' / 'other' cover the รหัสตัดงบประมาณ
+// box's three distinct non-accept reasons — recorded and labeled separately
+// (rather than lumped under 'reject') so the confirm screen and the audit
+// trail in approval-decisions.json show which one was actually clicked.
+// 'needs_edit' covers the นัดหมาย box's "แก้ไขข้อมูลนัดหมาย" button — a
+// request to correct the appointment details, not a rejection of the
+// request itself, hence its own outcome (and amber, not red, in the email).
+const VALID_APPROVAL_OUTCOMES = new Set([
+  'accept',
+  'reject',
+  'special',
+  'invalid_code',
+  'budget_insufficient',
+  'other',
+  'needs_edit',
+]);
+
 function outcomeToLabel(outcome) {
-  return outcome === 'reject' ? 'ไม่อนุมัติ' : outcome === 'accept' ? 'อนุมัติ' : String(outcome || '-');
+  if (outcome === 'reject') return 'ไม่อนุมัติ';
+  if (outcome === 'accept') return 'อนุมัติ';
+  if (outcome === 'special') return 'กรณีพิเศษ';
+  if (outcome === 'invalid_code') return 'รหัสงบประมาณไม่ถูกต้อง';
+  if (outcome === 'budget_insufficient') return 'งบประมาณคงเหลือไม่เพียงพอ';
+  if (outcome === 'other') return 'อื่น ๆ';
+  if (outcome === 'needs_edit') return 'แก้ไขข้อมูลนัดหมาย';
+  return String(outcome || '-');
 }
 
 // requireAnyLogin accepts either identity — this builds the audit-trail
@@ -1980,9 +2098,9 @@ function resolveApprovalIdentityLabel(req) {
 // used as a *bonus* confirmation when it happens to change — never as
 // evidence of failure.
 //
-// Reads ONE submission's current สถานะดำเนินการ (q68) straight from JotForm.
-// Returns null when JotForm isn't configured or the submission can't be read.
-async function fetchJotformSubmissionStatus(submissionId) {
+// Reads ONE full submission straight from JotForm. Returns null when JotForm
+// isn't configured or submissionId is missing; throws on API failure.
+async function fetchJotformSubmission(submissionId) {
   if (!isJotformConfigured() || !submissionId) return null;
 
   const url = new URL(`${config.jotformApiBaseUrl}/submission/${encodeURIComponent(submissionId)}`);
@@ -1997,21 +2115,206 @@ async function fetchJotformSubmissionStatus(submissionId) {
   }
 
   const body = await response.json();
-  const answers = (body.content && body.content.answers) || {};
-  return jotformAnswer(answers, '68');
+  return body.content || null;
 }
 
-function renderApprovalConfirmPage({ id, outcomeLabel, target, upn, beforeStatus }) {
-  return `<!doctype html>
-<html lang="th">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ยืนยันการพิจารณาคำขอ — ระบบกระบวนงาน BPUU</title>
-  <style>
+// Reads ONE submission's current สถานะดำเนินการ (q68) straight from JotForm.
+// Returns null when JotForm isn't configured or the submission can't be read.
+async function fetchJotformSubmissionStatus(submissionId) {
+  const content = await fetchJotformSubmission(submissionId);
+  if (!content) return null;
+  return jotformAnswer(content.answers || {}, '68');
+}
+
+// Layout/UI controls and other elements that carry no user-entered request
+// data — excluded from the detail table on the approval confirm screen.
+const JOTFORM_NON_DATA_TYPES = new Set([
+  'control_head',
+  'control_button',
+  'control_pagebreak',
+  'control_divider',
+  'control_text',
+  'control_image',
+  'control_captcha',
+]);
+
+// A single answer entry → display string. prettyFormat (when JotForm
+// provides one) is preferred because composite fields (name, date, matrix)
+// render as readable text there; it can contain JotForm-generated HTML, so
+// reduce it to plain text here — escapeHtml happens at render time.
+function jotformAnswerDisplayValue(entry) {
+  let value =
+    entry.prettyFormat !== undefined && entry.prettyFormat !== null && entry.prettyFormat !== ''
+      ? entry.prettyFormat
+      : entry.answer;
+  if (value === undefined || value === null) return '';
+  if (Array.isArray(value)) {
+    value = value.filter((v) => v !== null && v !== undefined && v !== '').join(', ');
+  } else if (typeof value === 'object') {
+    value = Object.values(value)
+      .filter((v) => typeof v === 'string' && v.trim() !== '')
+      .join(' ');
+  }
+  return String(value)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .trim();
+}
+
+// Builds the "รายละเอียดคำขอ" rows for the approval screens from a full
+// submission — every answered data field, in form order, same information
+// the approver already sees in the notification email's submission table.
+function submissionDetailRows(content) {
+  const answers = (content && content.answers) || {};
+  const rows = [];
+  for (const [qid, entry] of Object.entries(answers)) {
+    if (!entry || JOTFORM_NON_DATA_TYPES.has(entry.type)) continue;
+    // q68 (สถานะดำเนินการ) is written by a LATER workflow node, not the
+    // approval step (see the doctrine above) — showing its stale value under
+    // an approval screen misleads; it already has its own caveated channel.
+    if (qid === '68') continue;
+    const label = typeof entry.text === 'string' ? entry.text.trim() : '';
+    if (!label) continue;
+    const value = jotformAnswerDisplayValue(entry);
+    if (!value) continue;
+    rows.push({ order: Number(entry.order) || Number(qid) || 0, label, value });
+  }
+  rows.sort((a, b) => a.order - b.order);
+  return rows.map(({ label, value }) => ({ label, value }));
+}
+
+// ---------------------------------------------------------------------------
+// Double-approval guard.
+//
+// JotForm's deeplink happily completes the same approval step again (or the
+// opposite outcome, from the other link in the same email) — nothing on the
+// JotForm side stops a second click, and q68 explicitly cannot be trusted to
+// reflect the approval step (see the renderer comment above). So this app
+// keeps its own record of confirmed decisions, and later /approve-gate
+// visits for the same step get the "already decided" screen instead of a
+// confirm button. Persistence pattern (and directory/volume) mirrors
+// admin-allowlist.json — and like it, WITHOUT a mounted volume the record
+// only lasts until the next restart.
+//
+// The record is keyed per APPROVAL STEP, not per submission: one submission
+// flows through several approval nodes (department manager → BPUU manager →
+// …), each with its own email but all carrying the same submission id —
+// keying on the id alone would deadlock every request at its second stage.
+// One node = one {approvalDeeplink}; the accept/reject buttons within one
+// email share that deeplink and differ only in ?outcomeID=N. So the step
+// identity is the target minus its outcomeID: the same email's buttons
+// collide (desired), the next stage's email does not (desired). A side
+// benefit: because the key is derived from the real deeplink, a logged-in
+// user cannot pre-poison the record for a step whose deeplink they don't
+// possess — and someone who does possess the deeplink can already approve
+// on JotForm directly, so the guard's residual exposure is unchanged.
+// ---------------------------------------------------------------------------
+
+const APPROVAL_DECISIONS_PATH =
+  process.env.APPROVAL_DECISIONS_PATH ||
+  path.join(path.dirname(ADMIN_ALLOWLIST_PATH), 'approval-decisions.json');
+
+// Submission ids are numeric today; keep the accepted charset slightly wider
+// but bounded, so a hostile id can't smuggle path/JSON/prototype tricks into
+// the store ('__proto__' fails this test).
+function isPlausibleSubmissionId(id) {
+  return typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id) && id !== '__proto__';
+}
+
+function approvalStepKey(submissionId, target) {
+  let normalized = String(target || '');
+  let outcomeId = '';
+  try {
+    const u = new URL(normalized);
+    outcomeId = u.searchParams.get('outcomeID') || '';
+    u.searchParams.delete('outcomeID');
+    normalized = u.toString();
+  } catch (err) {
+    // Not URL-parseable — hash the raw string; still deterministic.
+  }
+  const hash = crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 16);
+  return { key: `${submissionId}:${hash}`, outcomeId };
+}
+
+// Re-read on every call — the file is tiny and consulted at most a couple of
+// times per approval click, and skipping a cache means a decision cleared by
+// hand (delete the entry, or the whole file) takes effect without a restart.
+// Entries are rehosted onto a null-prototype object so a key like
+// 'constructor' can never alias Object.prototype.
+function loadApprovalDecisions() {
+  let raw = null;
+  try {
+    raw = fs.readFileSync(APPROVAL_DECISIONS_PATH, 'utf8');
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error(`[bpuu-workflow] could not read approval-decisions.json (${err.message}) — treating as empty`);
+    }
+    return Object.create(null);
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return Object.assign(Object.create(null), parsed);
+    }
+    console.warn('[bpuu-workflow] approval-decisions.json is not a JSON object — quarantining');
+  } catch (err) {
+    console.error(`[bpuu-workflow] approval-decisions.json is corrupt (${err.message}) — quarantining`);
+  }
+  // Malformed content: move it aside (never overwrite it on the next write —
+  // it may be hand-recoverable) and start empty rather than taking the gate
+  // down. JotForm's own approval history remains the audit backstop.
+  try {
+    fs.renameSync(APPROVAL_DECISIONS_PATH, `${APPROVAL_DECISIONS_PATH}.corrupt.${Date.now()}`);
+  } catch (renameErr) {
+    console.error(`[bpuu-workflow] could not quarantine approval-decisions.json: ${renameErr.message}`);
+  }
+  return Object.create(null);
+}
+
+function getRecordedApprovalDecision(stepKey) {
+  const map = loadApprovalDecisions();
+  const record = Object.hasOwn(map, stepKey) ? map[stepKey] : null;
+  return record && typeof record === 'object' ? record : null;
+}
+
+// Atomic write (tmp + rename) so a crash mid-write can truncate only the
+// tmp file, never the record itself. Callers treat a throw as "guard could
+// not persist" and log it rather than blocking the approval.
+function recordApprovalDecision(stepKey, record) {
+  const map = loadApprovalDecisions();
+  map[stepKey] = record;
+  fs.mkdirSync(path.dirname(APPROVAL_DECISIONS_PATH), { recursive: true });
+  const tmpPath = `${APPROVAL_DECISIONS_PATH}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(map, null, 2) + '\n', 'utf8');
+  fs.renameSync(tmpPath, APPROVAL_DECISIONS_PATH);
+}
+
+// Surface a missing/unwritable data directory at boot instead of at the
+// first approval click: without it the double-approval guard silently
+// degrades to per-run memory (see DEPLOY.md — mount a volume at /app/data).
+try {
+  fs.mkdirSync(path.dirname(APPROVAL_DECISIONS_PATH), { recursive: true });
+  fs.accessSync(path.dirname(APPROVAL_DECISIONS_PATH), fs.constants.W_OK);
+} catch (err) {
+  console.warn(
+    `[bpuu-workflow] WARNING: ${path.dirname(APPROVAL_DECISIONS_PATH)} is not writable (${err.message}) — approval decisions will NOT survive a restart`
+  );
+}
+
+function formatThaiTimestamp(isoString) {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return String(isoString || '-');
+  return date.toLocaleString('th-TH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Bangkok',
+  });
+}
+
+const APPROVAL_PAGE_STYLE = `
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sarabun", Roboto, Helvetica, Arial, sans-serif;
       background: #f2f4f7; color: #1f2430; margin: 0; padding: 48px 16px; line-height: 1.6; }
-    .card { max-width: 480px; margin: 0 auto; background: #fff; border: 1px solid #dde1e7; border-radius: 10px; padding: 28px; text-align: center; }
+    .card { max-width: 620px; margin: 0 auto; background: #fff; border: 1px solid #dde1e7; border-radius: 10px; padding: 28px; text-align: center; }
     h1 { font-size: 1.2rem; margin: 0 0 12px; }
     p { margin: 8px 0; color: #444; }
     .meta { font-size: 0.9rem; color: #667; margin-top: 4px; }
@@ -2020,18 +2323,134 @@ function renderApprovalConfirmPage({ id, outcomeLabel, target, upn, beforeStatus
       font-family: inherit; }
     .icon { width: 56px; height: 56px; line-height: 56px; margin: 0 auto 12px; border-radius: 50%;
       background: #e6f4ea; color: #1e7e34; font-size: 1.6rem; font-weight: 700; }
+    .icon.decided { background: #fff4e5; color: #b26a00; }
     .spinner { width: 34px; height: 34px; margin: 14px auto 6px; border: 3px solid #e6e9ee;
       border-top-color: #ea580c; border-radius: 50%; animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .warn { color: #b26a00; font-size: 0.92rem; }
     .fallback { font-size: 0.9rem; margin-top: 14px; }
     .fallback a { color: #ea580c; }
+    .details { text-align: left; margin-top: 18px; border: 1px solid #e3e6ea; border-radius: 8px; overflow: hidden; }
+    .details-title { padding: 10px 14px; background: #f7f8fa; border-bottom: 1px solid #e3e6ea;
+      font-weight: 700; font-size: 0.95rem; }
+    .details-scroll { max-height: 340px; overflow-y: auto; }
+    .details table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .details th, .details td { padding: 7px 14px; border-top: 1px solid #eef0f3; vertical-align: top; text-align: left; overflow-wrap: anywhere; }
+    .details tr:first-child th, .details tr:first-child td { border-top: none; }
+    .details th { width: 42%; color: #667; font-weight: 600; }
+    @media (max-width: 480px) { .details th { width: 36%; } }
     @media (prefers-color-scheme: dark) {
       body { background: #14161a; color: #e7e9ee; }
       .card { background: #1d2026; border-color: #2c313a; }
       p { color: #b7bfcc; }
+      .meta { color: #98a0ae; }
+      .warn { color: #e8a13d; }
+      .details, .details th, .details td { border-color: #2c313a; }
+      .details th { color: #9aa3b2; }
+      .details-title { background: #23262d; border-color: #2c313a; }
     }
-  </style>
+`;
+
+// The "รายละเอียดคำขอ" table shared by the confirm and already-decided
+// screens. detailRows === null means the lookup failed (or JotForm isn't
+// configured) — say so instead of silently showing nothing, so the approver
+// knows to double-check the email before confirming. 'restricted' means the
+// viewer's identity doesn't get to see submission contents (ThaID sessions:
+// the submission is full of requester PII, and external identities have no
+// business reading it — they can still complete the approval they were
+// emailed, the details are in that same email).
+function renderApprovalDetailsHtml(detailRows) {
+  if (detailRows === 'restricted') {
+    return '<p class="meta">รายละเอียดคำขอแสดงเฉพาะผู้ใช้งาน KMUTT — ท่านสามารถตรวจสอบรายละเอียดได้จากอีเมลแจ้งเตือน</p>';
+  }
+  if (detailRows === null) {
+    return '<p class="warn">ไม่สามารถโหลดรายละเอียดคำขอได้ในขณะนี้ กรุณาตรวจสอบรายละเอียดจากอีเมลแจ้งเตือนก่อนยืนยัน</p>';
+  }
+  if (!detailRows.length) return '';
+  const rows = detailRows
+    .map(
+      (r) =>
+        `<tr><th>${escapeHtml(r.label)}</th><td>${escapeHtml(r.value).replace(/\n/g, '<br>')}</td></tr>`
+    )
+    .join('');
+  return `<div class="details"><div class="details-title">รายละเอียดคำขอ</div><div class="details-scroll"><table>${rows}</table></div></div>`;
+}
+
+const APPROVAL_FALLBACK_CONTACT_HTML = `<div class="fallback">
+        หากพบปัญหา กรุณาติดต่อกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)<br>
+        โทร. 02-470-8320-3 &middot; <a href="mailto:bpuu@kmutt.ac.th">bpuu@kmutt.ac.th</a>
+      </div>`;
+
+// Shown instead of the confirm screen once a decision for this approval
+// step has already been recorded through this gate — the double-approval
+// guard's user-facing half. No confirm button; nothing here can record a
+// NEW decision. The one deliberate exception: when the person looking at
+// the page is the SAME identity that recorded the SAME outcome, a "resend"
+// button re-fires the JotForm deeplink without touching the record — the
+// escape hatch for a first delivery that never reached JotForm (network
+// blip mid-iframe); for that pair it is a pure retry, never a new decision.
+function renderApprovalDecidedPage({ id, decided, upn, detailRows, resendTarget }) {
+  const resendHtml = resendTarget
+    ? `<div id="resendWrap">
+      <p class="meta">หากผลการพิจารณายังไม่ปรากฏในระบบ ท่านสามารถส่งผลเดิมซ้ำได้</p>
+      <button type="button" id="resendBtn" class="button">ส่งผล &ldquo;${escapeHtml(decided.outcomeLabel || outcomeToLabel(decided.outcome))}&rdquo; อีกครั้ง</button>
+    </div>
+    <div id="resendDone" style="display:none">
+      <div class="spinner" id="resendSpinner"></div>
+      <p class="meta" id="resendMsg">กำลังส่งผลไปยังระบบ…</p>
+    </div>
+    <script>
+      const RESEND_TARGET = ${toScriptJson(resendTarget)};
+      document.getElementById('resendBtn').addEventListener('click', async () => {
+        document.getElementById('resendWrap').style.display = 'none';
+        document.getElementById('resendDone').style.display = 'block';
+        const frame = document.createElement('iframe');
+        frame.style.display = 'none';
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.src = RESEND_TARGET;
+        document.body.appendChild(frame);
+        await Promise.race([
+          new Promise((r) => frame.addEventListener('load', r, { once: true })),
+          new Promise((r) => setTimeout(r, 8000)),
+        ]);
+        document.getElementById('resendSpinner').style.display = 'none';
+        document.getElementById('resendMsg').textContent = 'ส่งผลไปยังระบบแล้ว ระบบอาจใช้เวลาสักครู่ในการอัปเดตสถานะ';
+      });
+    </script>`
+    : '';
+  return `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>คำขอนี้ได้รับการพิจารณาแล้ว — ระบบกระบวนงาน BPUU</title>
+  <style>${APPROVAL_PAGE_STYLE}</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon decided">!</div>
+    <h1>ขั้นตอนการพิจารณานี้ได้รับการบันทึกผลไปแล้ว</h1>
+    <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
+    <p>ผลที่บันทึกไว้: <strong>${escapeHtml(decided.outcomeLabel || outcomeToLabel(decided.outcome))}</strong></p>
+    <p class="meta">บันทึกโดย: ${escapeHtml(decided.identity || '-')} &middot; เมื่อ ${escapeHtml(formatThaiTimestamp(decided.at))}</p>
+    <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
+    <p class="warn">ระบบไม่เปิดให้บันทึกผลซ้ำ หากต้องการเปลี่ยนแปลงผลการพิจารณา กรุณาติดต่อเจ้าหน้าที่</p>
+    ${resendHtml}
+    ${renderApprovalDetailsHtml(detailRows)}
+    ${APPROVAL_FALLBACK_CONTACT_HTML}
+  </div>
+</body>
+</html>`;
+}
+
+function renderApprovalConfirmPage({ id, outcome, outcomeLabel, target, upn, beforeStatus, detailRows }) {
+  return `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ยืนยันการพิจารณาคำขอ — ระบบกระบวนงาน BPUU</title>
+  <style>${APPROVAL_PAGE_STYLE}</style>
 </head>
 <body>
   <div class="card">
@@ -2040,6 +2459,7 @@ function renderApprovalConfirmPage({ id, outcomeLabel, target, upn, beforeStatus
       <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
       <p>ท่านกำลังจะบันทึกผล: <strong>${escapeHtml(outcomeLabel)}</strong></p>
       <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
+      ${renderApprovalDetailsHtml(detailRows)}
       <button type="button" id="confirmBtn" class="button">ยืนยัน — ${escapeHtml(outcomeLabel)}</button>
     </div>
 
@@ -2057,10 +2477,7 @@ function renderApprovalConfirmPage({ id, outcomeLabel, target, upn, beforeStatus
       <p class="meta" id="doneStatus"></p>
       <button type="button" class="button" onclick="window.close()">ปิดหน้าต่างนี้</button>
       <p class="meta">หากกดแล้วหน้าต่างไม่ปิด ท่านสามารถปิดแท็บนี้ได้เอง</p>
-      <div class="fallback">
-        หากพบปัญหา กรุณาติดต่อกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน (BPUU)<br>
-        โทร. 02-470-8320-3 &middot; <a href="mailto:bpuu@kmutt.ac.th">bpuu@kmutt.ac.th</a>
-      </div>
+      ${APPROVAL_FALLBACK_CONTACT_HTML}
     </div>
   </div>
 
@@ -2075,6 +2492,7 @@ function renderApprovalConfirmPage({ id, outcomeLabel, target, upn, beforeStatus
     // earlier version did that and wrongly told approvers it hadn't worked.
     const TARGET = ${toScriptJson(target)};
     const SUBMISSION_ID = ${toScriptJson(id || '')};
+    const OUTCOME = ${toScriptJson(outcome || '')};
     const BEFORE_STATUS = ${toScriptJson(beforeStatus === null || beforeStatus === undefined ? null : beforeStatus)};
 
     const show = (which) => {
@@ -2106,6 +2524,27 @@ function renderApprovalConfirmPage({ id, outcomeLabel, target, upn, beforeStatus
 
     document.getElementById('confirmBtn').addEventListener('click', async () => {
       show('stepWorking');
+
+      // Record the decision FIRST — the double-approval guard. HTTP 409
+      // means a decision for this submission is already on record (e.g. the
+      // other link from the same email, or a second tab): reload so the
+      // server renders the already-decided screen, and do NOT touch JotForm.
+      // HTTP 401 means the session expired while this page sat open: also
+      // reload — the login landing appears, and after re-login the approver
+      // returns here to click again, so no decision ever goes unrecorded.
+      // Only a network-level failure falls through — the record is a guard,
+      // not the approval itself, so that alone must not block the approver.
+      try {
+        const rec = await fetch('/api/approve-gate/record', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ id: SUBMISSION_ID, outcome: OUTCOME, target: TARGET }),
+        });
+        if (rec.status === 409 || rec.status === 401) {
+          window.location.reload();
+          return;
+        }
+      } catch (err) { /* proceed — see comment above */ }
 
       const frame = document.createElement('iframe');
       frame.style.display = 'none';
@@ -2143,7 +2582,23 @@ app.get(
     const { id, outcome } = req.query;
     const targetStr = extractRawTarget(req.originalUrl);
 
-    if (!targetStr || !isAllowedApprovalTarget(targetStr)) {
+    if (!targetStr || !isAllowedJotformTarget(targetStr)) {
+      res.status(400).send(
+        renderErrorPage({
+          title: 'ลิงก์ไม่ถูกต้อง',
+          message: 'ลิงก์อนุมัตินี้ไม่ถูกต้องหรือหมดอายุ กรุณาติดต่อผู้ดูแลระบบ',
+          retryHref: '/',
+        })
+      );
+      return;
+    }
+
+    // The guard can only record what it can validate — so refuse to render a
+    // confirm page for parameters the record endpoint would later reject
+    // (unknown outcome, implausible id). Same failure mode as a bad target:
+    // a link this app never generated. Template drift in the workflow emails
+    // then fails loudly here instead of silently skipping the guard.
+    if (!isPlausibleSubmissionId(typeof id === 'string' ? id : '') || !VALID_APPROVAL_OUTCOMES.has(outcome)) {
       res.status(400).send(
         renderErrorPage({
           title: 'ลิงก์ไม่ถูกต้อง',
@@ -2157,25 +2612,62 @@ app.get(
     const outcomeLabel = outcomeToLabel(outcome);
     const identityLabel = resolveApprovalIdentityLabel(req);
 
-    // Capture the submission's status BEFORE the approver acts, so the page
-    // can later prove the approval landed by detecting a change. Never fatal:
-    // if this can't be read, the page degrades to "sent, but unverified"
-    // rather than claiming an unproven success.
+    // One JotForm read serves two needs: the detail table (the same request
+    // information the approver sees in the notification email) and the
+    // pre-approval q68 snapshot the done-screen watcher compares against.
+    // Never fatal: if this can't be read, the confirm page says the details
+    // couldn't be loaded and the done screen degrades to "sent, but
+    // unverified" rather than claiming an unproven success.
+    //
+    // The submission is requester PII end to end, so the table is rendered
+    // only for KMUTT (ADFS) sessions. A ThaID approver still completes the
+    // approval normally — the same details are in the email they were sent.
+    const isKmuttSession = Boolean(req.session.user);
+    let detailRows = isKmuttSession ? null : 'restricted';
     let beforeStatus = null;
     try {
-      beforeStatus = await fetchJotformSubmissionStatus(id);
+      const submission = await fetchJotformSubmission(id);
+      if (submission) {
+        if (isKmuttSession) detailRows = submissionDetailRows(submission);
+        beforeStatus = jotformAnswer(submission.answers || {}, '68');
+      }
     } catch (err) {
-      console.warn(`[bpuu-workflow] approval gate: could not read pre-approval status: ${err.message}`);
+      console.warn(`[bpuu-workflow] approval gate: could not read submission ${id}: ${err.message}`);
+    }
+
+    // Double-approval guard: once a decision for this approval STEP has been
+    // recorded through this gate, every later visit — either link from the
+    // email, any tab, any login — sees what was recorded instead of another
+    // confirm button. (Step keying: see the guard's header comment.)
+    const { key: stepKey } = approvalStepKey(id, targetStr);
+    const decided = getRecordedApprovalDecision(stepKey);
+    if (decided) {
+      // Retry-of-delivery escape hatch: same identity, same outcome — see
+      // renderApprovalDecidedPage. Anyone/anything else gets no target at all.
+      const canResend = decided.identity === identityLabel && decided.outcome === outcome;
+      console.log(
+        `[bpuu-workflow] approval gate: identity=${identityLabel} id=${id} outcome=${outcome} -> already decided (${decided.outcome} by ${decided.identity} at ${decided.at})${canResend ? ' [resend offered]' : ''}`
+      );
+      res.status(200).send(
+        renderApprovalDecidedPage({
+          id,
+          decided,
+          upn: identityLabel,
+          detailRows,
+          resendTarget: canResend ? targetStr : null,
+        })
+      );
+      return;
     }
 
     console.log(
-      `[bpuu-workflow] approval gate: identity=${identityLabel} id=${id || '(none)'} outcome=${outcome || '(none)'} beforeStatus=${
+      `[bpuu-workflow] approval gate: identity=${identityLabel} id=${id} outcome=${outcome} beforeStatus=${
         beforeStatus === null ? '(unknown)' : beforeStatus
       } -> confirm screen`
     );
 
     res.status(200).send(
-      renderApprovalConfirmPage({ id, outcomeLabel, target: targetStr, upn: identityLabel, beforeStatus })
+      renderApprovalConfirmPage({ id, outcome, outcomeLabel, target: targetStr, upn: identityLabel, beforeStatus, detailRows })
     );
   })
 );
@@ -2186,7 +2678,7 @@ app.get(
 // `verifiable:false` tells the client it cannot prove success and must say so.
 app.get(
   '/api/approve-gate/status',
-  requireAnyLogin,
+  requireAnyLoginJson,
   asyncHandler(async (req, res) => {
     noStore(res);
 
@@ -2207,6 +2699,136 @@ app.get(
       console.warn(`[bpuu-workflow] approval status probe failed: ${err.message}`);
       res.status(200).json({ verifiable: false, status: null });
     }
+  })
+);
+
+// Records a confirmed decision — the write half of the double-approval
+// guard. Called by the confirm page at the moment of the click, BEFORE the
+// JotForm deeplink is loaded. First decision per approval step wins; a 409
+// tells the page a decision already exists so it must not re-approve. The
+// check-and-set below is synchronous end to end (no await between check and
+// write), so two same-instant clicks (two tabs) cannot both pass it.
+//
+// `target` is required and must pass the same allowlist as /approve-gate:
+// the record key is derived from it (see approvalStepKey), which is also
+// what stops a logged-in user from pre-poisoning a step they don't hold the
+// deeplink for. The recorded outcomeID is read from the target itself — the
+// value JotForm will actually act on — so the audit record can always be
+// reconciled even if the display-only `outcome` param ever drifts.
+app.post(
+  '/api/approve-gate/record',
+  requireAnyLoginJson,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+
+    const body = req.body || {};
+    const id = typeof body.id === 'string' ? body.id.trim() : '';
+    const outcome = body.outcome;
+    const target = typeof body.target === 'string' ? body.target : '';
+    if (
+      !isPlausibleSubmissionId(id) ||
+      !VALID_APPROVAL_OUTCOMES.has(outcome) ||
+      !isAllowedJotformTarget(target)
+    ) {
+      res.status(400).json({ error: 'invalid id, outcome, or target' });
+      return;
+    }
+
+    const { key: stepKey, outcomeId } = approvalStepKey(id, target);
+    const existing = getRecordedApprovalDecision(stepKey);
+    if (existing) {
+      res.status(409).json({ decided: existing });
+      return;
+    }
+
+    const record = {
+      submissionId: id,
+      outcome,
+      outcomeLabel: outcomeToLabel(outcome),
+      outcomeId,
+      identity: resolveApprovalIdentityLabel(req),
+      at: new Date().toISOString(),
+    };
+    try {
+      recordApprovalDecision(stepKey, record);
+    } catch (err) {
+      // Losing persistence must not block the actual approval — log loudly;
+      // the decision itself still completes on JotForm's side.
+      console.error(`[bpuu-workflow] could not persist approval decision for ${stepKey}: ${err.message}`);
+    }
+    console.log(
+      `[bpuu-workflow] approval decision recorded: step=${stepKey} outcomeID=${outcomeId || '(none)'} outcome=${outcome} identity=${record.identity}`
+    );
+    res.status(200).json({ ok: true });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Form gate — sits in front of a JotForm form link (e.g. the payment-detail
+// form BPUU staff fill in after an approval that carries a fee), for the
+// same reason /approve-gate sits in front of the approve/deny deeplink:
+// workflow emails only reached whoever the workflow addressed them to, but
+// once that email exists, anyone who gets hold of it (forwarded, shared
+// inbox, left open on a screen) could open the form with no login at all.
+// Emails now link here first instead; this route forces an ADFS/ThaID
+// login, then hands the browser a real link to the JotForm form itself.
+//
+// Deliberately NOT a decision like /approve-gate: opening a form to fill in
+// details is not a one-shot irreversible action (JotForm's own form re-opens
+// fine on a second visit), so this has no double-submission guard and no
+// hidden-iframe auto-submit — the visitor is meant to actually see and use
+// the JotForm page, so this route does a plain navigation to `target`
+// (still gated behind login) rather than acting on the user's behalf.
+// ---------------------------------------------------------------------------
+
+function renderFormGatePage({ id, target, upn }) {
+  return `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>เปิดฟอร์ม — ระบบกระบวนงาน BPUU</title>
+  <style>${APPROVAL_PAGE_STYLE}</style>
+</head>
+<body>
+  <div class="card">
+    <h1>เปิดฟอร์มกรอกรายละเอียด</h1>
+    <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
+    <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
+    <a class="button" href="${escapeHtml(target)}">เปิดฟอร์ม</a>
+    <p class="meta">ลิงก์นี้จะพาท่านไปยังฟอร์มบน JotForm เพื่อกรอกรายละเอียดต่อไป</p>
+    ${APPROVAL_FALLBACK_CONTACT_HTML}
+  </div>
+</body>
+</html>`;
+}
+
+app.get(
+  '/form-gate',
+  requireAnyLogin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+
+    // target is NOT read from req.query — see extractRawTarget() for why
+    // (a raw '&' inside JotForm's own merge value would otherwise truncate).
+    const { id } = req.query;
+    const targetStr = extractRawTarget(req.originalUrl);
+
+    if (!targetStr || !isAllowedJotformTarget(targetStr) || !isPlausibleSubmissionId(typeof id === 'string' ? id : '')) {
+      res.status(400).send(
+        renderErrorPage({
+          title: 'ลิงก์ไม่ถูกต้อง',
+          message: 'ลิงก์เปิดฟอร์มนี้ไม่ถูกต้องหรือหมดอายุ กรุณาติดต่อผู้ดูแลระบบ',
+          retryHref: '/',
+        })
+      );
+      return;
+    }
+
+    const identityLabel = resolveApprovalIdentityLabel(req);
+    console.log(`[bpuu-workflow] form gate: identity=${identityLabel} id=${id} -> form link shown`);
+
+    res.status(200).send(renderFormGatePage({ id, target: targetStr, upn: identityLabel }));
   })
 );
 
@@ -2285,6 +2907,9 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
     .toolbar input, .toolbar select { font-size: .88rem; }
     .toolbar .form-control, .toolbar .form-select { height: 34px; padding-top: 2px; padding-bottom: 2px; }
     .result-count { font-size: .84rem; color: #7a828d; white-space: nowrap; }
+    .note-cell { display: flex; gap: 6px; align-items: center; justify-content: space-between; min-width: 140px; }
+    .note-cell span { white-space: pre-wrap; word-break: break-word; }
+    .note-cell .note-edit { flex: 0 0 auto; padding: 2px 6px; line-height: 1; }
   </style>
 </head>
 <body>
@@ -2336,7 +2961,7 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
           <div class="table-responsive">
             <table class="table table-hover tbl align-middle mb-0">
               <thead class="table-light"><tr id="reqHead"></tr></thead>
-              <tbody id="reqBody"><tr><td colspan="7" class="state-msg">กำลังโหลด…</td></tr></tbody>
+              <tbody id="reqBody"><tr><td colspan="9" class="state-msg">กำลังโหลด…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -2629,8 +3254,65 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
             return td;
           },
         },
+        {
+          key: 'durationDays', label: 'ระยะเวลา (วัน)', align: 'end',
+          cell: (r) => textCell(r.durationDays == null ? '' : r.durationDays, 'end'),
+        },
+        {
+          key: 'note', label: 'หมายเหตุ',
+          cell: (r) => {
+            const td = document.createElement('td');
+            const wrap = document.createElement('div');
+            wrap.className = 'note-cell';
+            const text = document.createElement('span');
+            text.textContent = r.note || '—';
+            if (!r.note) text.className = 'muted';
+            if (r.noteUpdatedBy) {
+              text.title = 'แก้ไขโดย ' + r.noteUpdatedBy + (r.noteUpdatedAt ? ' เมื่อ ' + r.noteUpdatedAt : '');
+            }
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-sm btn-outline-secondary note-edit';
+            btn.title = 'แก้ไขหมายเหตุ';
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-pencil';
+            btn.appendChild(icon);
+            btn.addEventListener('click', () => editNote(r));
+            wrap.appendChild(text);
+            wrap.appendChild(btn);
+            td.appendChild(wrap);
+            return td;
+          },
+        },
       ],
     });
+
+    let requestRows = [];
+
+    async function editNote(row) {
+      const input = prompt('หมายเหตุสำหรับคำขอ Ref ' + row.id + ' (เว้นว่างเพื่อลบหมายเหตุ)', row.note || '');
+      if (input === null) return; // ยกเลิก
+      try {
+        const res = await fetch('/api/admin/request-note', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ id: row.id, note: input }),
+        });
+        if (res.status === 401) {
+          alert('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+          window.location.reload();
+          return;
+        }
+        const data = await res.json();
+        if (!res.ok) { alert(data.error || 'บันทึกหมายเหตุไม่สำเร็จ'); return; }
+        row.note = data.note || '';
+        row.noteUpdatedAt = data.noteUpdatedAt || '';
+        row.noteUpdatedBy = data.noteUpdatedBy || '';
+        reqTable.setRows(requestRows);
+      } catch (err) {
+        alert('บันทึกหมายเหตุไม่สำเร็จ');
+      }
+    }
 
     async function loadRequests() {
       reqTable.loading();
@@ -2642,7 +3324,8 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
           return;
         }
         if (data.error) { reqTable.message(data.error); return; }
-        reqTable.setRows(data.requests || []);
+        requestRows = data.requests || [];
+        reqTable.setRows(requestRows);
       } catch (err) {
         reqTable.message('เกิดข้อผิดพลาดในการโหลดรายการคำขอ');
       }
@@ -2862,7 +3545,7 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
 // to the compact record the admin table needs. qid → meaning comes from
 // js/app.js buildJotformSubmissionFields(): 15=ประเภทคำขอ, 16=ประเภทผู้ใช้,
 // 19=ชื่อผู้ขอ, 20=อีเมลผู้ขอ, 22=หน่วยงาน, 28=ชื่อผู้อนุมัติ, 30=อีเมลผู้อนุมัติ,
-// 67=ยอดค่าบริการประเมิน, 68=สถานะดำเนินการ.
+// 36=วันที่เริ่มต้น, 37=วันที่สิ้นสุด, 67=ยอดค่าบริการประเมิน, 68=สถานะดำเนินการ.
 function jotformAnswer(answers, qid) {
   const entry = answers && answers[qid];
   if (!entry) return '';
@@ -2872,6 +3555,52 @@ function jotformAnswer(answers, qid) {
   const value = entry.answer !== undefined ? entry.answer : entry.prettyFormat;
   if (value === undefined || value === null) return '';
   return typeof value === 'string' ? value : String(value);
+}
+
+// JotForm DATE fields (q36 วันที่เริ่มต้น, q37 วันที่สิ้นสุด) expose .answer as an
+// OBJECT of sub-fields ({ year, month, day, datetime }) — jotformAnswer()'s
+// String() would render "[object Object]". Extract a comparable YYYY-MM-DD
+// string, or '' when absent (several request types carry no dates at all).
+function jotformDateAnswer(answers, qid) {
+  const entry = answers && answers[qid];
+  const a = entry && entry.answer;
+  if (a && typeof a === 'object' && a.year && a.month && a.day) {
+    const pad = (v) => String(v).padStart(2, '0');
+    return `${a.year}-${pad(a.month)}-${pad(a.day)}`;
+  }
+  // Defensive fallbacks in case JotForm ever returns a plain string here:
+  // "YYYY-MM-DD ..." or the DD-MM-YYYY prettyFormat this form uses.
+  const s =
+    typeof a === 'string' ? a
+    : typeof (entry && entry.prettyFormat) === 'string' ? entry.prettyFormat
+    : '';
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return '';
+}
+
+// สถานะที่ถือว่า "จบ flow แล้ว" — เกณฑ์คำเดียวกับ statusClass ของหน้า admin:
+// จบแบบสำเร็จ (อนุมัติ/สำเร็จ/เสร็จ/เรียบร้อย/ผ่าน) หรือจบแบบปฏิเสธ
+// (ไม่อนุมัติ/ปฏิเสธ/ยกเลิก/ไม่ผ่าน). สถานะ รอ/กำลังดำเนินการ = ยังไม่จบ.
+function isRequestFlowEnded(status) {
+  const s = String(status || '');
+  if (/ไม่อนุมัติ|ปฏิเสธ|ยกเลิก|ไม่ผ่าน/.test(s)) return true;
+  return /อนุมัติ|สำเร็จ|เสร็จ|เรียบร้อย|ผ่าน/.test(s);
+}
+
+// จำนวนวันดำเนินการ = วันที่จบ flow − วันที่ขอ (นับเป็นวัน). JotForm ไม่มี
+// timestamp "จบงาน" โดยตรง — ตัวแทนที่ใกล้ที่สุดคือ updated_at ของ submission
+// ซึ่งขยับเมื่อโหนดท้ายของ workflow เขียนสถานะ (q68) ลงฟอร์ม (ดูหมายเหตุที่
+// fetchJotformSubmissionStatus: q68 ถูกเขียนโดย workflow ทีหลัง ไม่ใช่ตอนกด
+// อนุมัติ). คำขอที่ยังไม่จบ flow → null = แสดงเป็นช่องว่าง.
+function requestDurationDays(createdAt, updatedAt, status) {
+  if (!isRequestFlowEnded(status)) return null;
+  const start = Date.parse(`${String(createdAt).slice(0, 10)}T00:00:00Z`);
+  const end = Date.parse(`${String(updatedAt).slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return Math.round((end - start) / 86400000);
 }
 
 async function fetchJotformRequests() {
@@ -2891,11 +3620,15 @@ async function fetchJotformRequests() {
   const body = await response.json();
   const content = Array.isArray(body.content) ? body.content : [];
 
+  const notes = loadRequestNotes();
   const requests = content.map((sub) => {
     const answers = sub.answers || {};
+    const status = jotformAnswer(answers, '68');
+    const noteEntry = notes[sub.id] || null;
     return {
       id: sub.id,
       createdAt: sub.created_at || '',
+      updatedAt: sub.updated_at || '',
       requester: jotformAnswer(answers, '19'),
       requesterEmail: jotformAnswer(answers, '20'),
       requestType: jotformAnswer(answers, '15'),
@@ -2904,7 +3637,13 @@ async function fetchJotformRequests() {
       approver: jotformAnswer(answers, '28'),
       approverEmail: jotformAnswer(answers, '30'),
       amount: jotformAnswer(answers, '67'),
-      status: jotformAnswer(answers, '68'),
+      status,
+      startDate: jotformDateAnswer(answers, '36'),
+      endDate: jotformDateAnswer(answers, '37'),
+      durationDays: requestDurationDays(sub.created_at, sub.updated_at, status),
+      note: noteEntry ? noteEntry.note : '',
+      noteUpdatedAt: noteEntry ? noteEntry.updatedAt : '',
+      noteUpdatedBy: noteEntry ? noteEntry.updatedBy : '',
     };
   });
 
@@ -2956,6 +3695,43 @@ app.get(
     } catch (err) {
       console.error(`[bpuu-workflow] admin requests fetch failed: ${err.message}`);
       res.status(502).json({ configured: true, error: 'ไม่สามารถดึงรายการคำขอจาก JotForm ได้ในขณะนี้' });
+    }
+  })
+);
+
+// Save/clear the admin note (หมายเหตุ) for one request. Deliberately open to
+// BOTH roles — same rationale as locations: notes are day-to-day operational
+// data, not permission management.
+app.post(
+  '/api/admin/request-note',
+  requireLoginJson,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+    const id = typeof req.body.id === 'string' ? req.body.id.trim() : '';
+    // JotForm submission ids are long digit strings — reject anything else so
+    // arbitrary keys can't accumulate in the notes file.
+    if (!/^\d{6,32}$/.test(id)) {
+      res.status(400).json({ error: 'รหัสคำขอไม่ถูกต้อง' });
+      return;
+    }
+    const note = (typeof req.body.note === 'string' ? req.body.note : '').trim();
+    if (note.length > REQUEST_NOTE_MAX_LENGTH) {
+      res.status(400).json({ error: `หมายเหตุยาวเกินกำหนด (ไม่เกิน ${REQUEST_NOTE_MAX_LENGTH} ตัวอักษร)` });
+      return;
+    }
+    try {
+      const saved = saveRequestNote(id, note, getSessionAdminEmail(req));
+      res.status(200).json({
+        ok: true,
+        id,
+        note: saved ? saved.note : '',
+        noteUpdatedAt: saved ? saved.updatedAt : '',
+        noteUpdatedBy: saved ? saved.updatedBy : '',
+      });
+    } catch (err) {
+      console.error(`[bpuu-workflow] request note persist failed: ${err.message}`);
+      res.status(500).json({ error: 'บันทึกหมายเหตุไม่สำเร็จ (เขียนไฟล์ไม่ได้)' });
     }
   })
 );
@@ -3344,6 +4120,318 @@ app.post(
     res.status(200).json({ ok: true });
   })
 );
+
+// ---------------------------------------------------------------------------
+// KMUTT-hosted attachments (แทนการฝากไฟล์แนบไว้กับ JotForm)
+//
+// The request form no longer submits file bytes to JotForm. The browser
+// uploads each file here first (POST /api/attachments, login-gated), gets
+// back a signed expiring /files/<token> URL served from THIS server, and
+// submits only those URLs to JotForm inside q32_summary. Files live under
+// ATTACHMENTS_PATH (same /app/data volume as the admin allowlist), so KMUTT
+// keeps the bytes and email recipients need no JotForm account — the token
+// in the link IS the credential, valid for FILE_LINK_TTL_DAYS. After expiry
+// a link with a genuine signature degrades to requiring a KMUTT/ThaID login
+// instead of going public-forever or dying outright.
+// ---------------------------------------------------------------------------
+
+const ATTACHMENTS_PATH =
+  process.env.ATTACHMENTS_PATH || path.join(path.dirname(ADMIN_ALLOWLIST_PATH), 'attachments');
+
+const FILE_LINK_TTL_DAYS = Math.max(1, parseInt(process.env.FILE_LINK_TTL_DAYS, 10) || 60);
+
+// Dedicated signing secret so rotating SESSION_SECRET doesn't invalidate
+// every attachment link already sitting in submitted requests and sent
+// emails. Falls back to SESSION_SECRET (with a warning) so existing env
+// files keep working.
+const fileLinkSecret = process.env.FILE_LINK_SECRET || config.sessionSecret;
+if (!process.env.FILE_LINK_SECRET) {
+  console.warn(
+    '[bpuu-workflow] FILE_LINK_SECRET is not set — attachment links are signed with SESSION_SECRET. ' +
+      'Set FILE_LINK_SECRET so links survive a session-secret rotation.'
+  );
+}
+
+// Links are minted absolute so they work inside JotForm emails. Base
+// priority: FILE_LINK_BASE_URL env > origin of POST_LOGOUT_REDIRECT_URI
+// (already this deployment's public URL in every env file).
+function fileLinkBaseUrl() {
+  if (process.env.FILE_LINK_BASE_URL) return process.env.FILE_LINK_BASE_URL.replace(/\/+$/, '');
+  try {
+    return new URL(config.postLogoutRedirectUri).origin;
+  } catch (err) {
+    return '';
+  }
+}
+
+const ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+
+// Retention: files are deleted ATTACHMENT_RETENTION_DAYS after upload — this
+// makes the error page's 'อาจถูกลบตามรอบการจัดเก็บ' true and bounds disk
+// growth (orphans from abandoned submissions included). Never shorter than
+// the link TTL, so a live link never points at a swept file.
+const ATTACHMENT_RETENTION_DAYS = Math.max(
+  FILE_LINK_TTL_DAYS,
+  parseInt(process.env.ATTACHMENT_RETENTION_DAYS, 10) || FILE_LINK_TTL_DAYS + 30
+);
+
+function sweepExpiredAttachments() {
+  let sidecars = [];
+  try {
+    sidecars = fs.readdirSync(ATTACHMENTS_PATH).filter((f) => f.endsWith('.json'));
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error(`[bpuu-workflow] attachment sweep could not list ${ATTACHMENTS_PATH}: ${err.message}`);
+    }
+    return;
+  }
+  const cutoff = Date.now() - ATTACHMENT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  let removed = 0;
+  for (const sidecarName of sidecars) {
+    const id = sidecarName.slice(0, -5);
+    if (!/^[0-9a-f]{32}$/.test(id)) continue;
+    const meta = readAttachmentSidecar(id);
+    const uploadedAt = meta ? Date.parse(meta.uploadedAt) : NaN;
+    if (!Number.isFinite(uploadedAt) || uploadedAt > cutoff) continue;
+    try {
+      fs.rmSync(attachmentFilePath(id), { force: true });
+      fs.rmSync(attachmentSidecarPath(id), { force: true });
+      removed += 1;
+    } catch (err) {
+      console.error(`[bpuu-workflow] attachment sweep could not remove ${id}: ${err.message}`);
+    }
+  }
+  if (removed) {
+    console.log(`[bpuu-workflow] attachment sweep: removed ${removed} file(s) older than ${ATTACHMENT_RETENTION_DAYS} days`);
+  }
+}
+sweepExpiredAttachments();
+setInterval(sweepExpiredAttachments, 12 * 60 * 60 * 1000).unref();
+
+// Per-identity upload budget (in-memory, resets on restart). An honest
+// requester never gets near these numbers — this exists so a single looping
+// account can't fill the shared /app/data volume (which also holds the
+// admin allowlist and approval decisions).
+const ATTACHMENT_BUDGET_WINDOW_MS = 60 * 60 * 1000;
+const ATTACHMENT_BUDGET_MAX_FILES = 50;
+const ATTACHMENT_BUDGET_MAX_BYTES = 500 * 1024 * 1024;
+const attachmentBudgets = new Map();
+
+function attachmentBudgetAllows(identity, bytes) {
+  const now = Date.now();
+  let budget = attachmentBudgets.get(identity);
+  if (!budget || now - budget.windowStart > ATTACHMENT_BUDGET_WINDOW_MS) {
+    budget = { windowStart: now, files: 0, bytes: 0 };
+    attachmentBudgets.set(identity, budget);
+  }
+  if (
+    budget.files + 1 > ATTACHMENT_BUDGET_MAX_FILES ||
+    budget.bytes + bytes > ATTACHMENT_BUDGET_MAX_BYTES
+  ) {
+    return false;
+  }
+  budget.files += 1;
+  budget.bytes += bytes;
+  if (attachmentBudgets.size > 1000) {
+    for (const [key, value] of attachmentBudgets) {
+      if (now - value.windowStart > ATTACHMENT_BUDGET_WINDOW_MS) attachmentBudgets.delete(key);
+    }
+  }
+  return true;
+}
+
+// Content types safe to render inline in the browser. Anything else is
+// forced to download as application/octet-stream with an attachment
+// disposition — an uploaded HTML/SVG served inline from this origin would
+// be stored XSS.
+const ATTACHMENT_INLINE_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png']);
+
+function signFileToken(id, exp) {
+  return crypto.createHmac('sha256', fileLinkSecret).update(`${id}.${exp}`).digest('hex');
+}
+
+function mintFileToken(id) {
+  const exp = Math.floor(Date.now() / 1000) + FILE_LINK_TTL_DAYS * 24 * 60 * 60;
+  return `${id}.${exp}.${signFileToken(id, exp)}`;
+}
+
+// Returns {id, expired} when the token's signature is genuine, else null.
+// Signature is checked before expiry so an expired-but-real link can degrade
+// to login-gated access, while a forged one learns nothing (timing-safe).
+function verifyFileToken(token) {
+  const m = /^([0-9a-f]{32})\.(\d{1,12})\.([0-9a-f]{64})$/.exec(String(token || ''));
+  if (!m) return null;
+  const [, id, expStr, sig] = m;
+  const a = Buffer.from(sig, 'hex');
+  const b = Buffer.from(signFileToken(id, expStr), 'hex');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  return { id, expired: Math.floor(Date.now() / 1000) > parseInt(expStr, 10) };
+}
+
+function attachmentFilePath(id) {
+  return path.join(ATTACHMENTS_PATH, `${id}.bin`);
+}
+
+function attachmentSidecarPath(id) {
+  return path.join(ATTACHMENTS_PATH, `${id}.json`);
+}
+
+function readAttachmentSidecar(id) {
+  try {
+    const meta = JSON.parse(fs.readFileSync(attachmentSidecarPath(id), 'utf8'));
+    return meta && typeof meta === 'object' ? meta : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// One file per request, raw body — no multipart, so no new dependency. The
+// browser sends the bytes directly with the original filename URL-encoded in
+// X-Attachment-Name (Thai filenames survive) and the MIME type in
+// X-Attachment-Type.
+app.post(
+  '/api/attachments',
+  requireAnyLoginJson,
+  express.raw({ type: () => true, limit: ATTACHMENT_MAX_BYTES }),
+  (req, res) => {
+    noStore(res);
+
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      res.status(400).json({ error: 'empty upload' });
+      return;
+    }
+
+    let originalName = '';
+    try {
+      originalName = decodeURIComponent(req.headers['x-attachment-name'] || '');
+    } catch (err) {
+      originalName = '';
+    }
+    // slice โดยนับ code point ไม่ใช่ UTF-16 unit — .slice(0,200) ตรง ๆ อาจตัด
+    // กลาง surrogate pair (อีโมจิ/อักขระนอก BMP) แล้ว encodeURIComponent ตอน
+    // ดาวน์โหลดจะ throw ใส่ทุก request ของไฟล์นั้นตลอดไป
+    originalName =
+      Array.from(originalName.replace(/[\r\n\\/]+/g, ' ').trim()).slice(0, 200).join('') ||
+      'attachment';
+
+    const mime = String(req.headers['x-attachment-type'] || req.headers['content-type'] || '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
+
+    const id = crypto.randomBytes(16).toString('hex');
+    const uploader = resolveApprovalIdentityLabel(req);
+    if (!attachmentBudgetAllows(uploader, req.body.length)) {
+      console.warn(`[bpuu-workflow] attachment upload quota exceeded by ${uploader}`);
+      res.status(429).json({ error: 'upload quota exceeded — try again later' });
+      return;
+    }
+    try {
+      fs.mkdirSync(ATTACHMENTS_PATH, { recursive: true });
+      fs.writeFileSync(attachmentFilePath(id), req.body);
+      fs.writeFileSync(
+        attachmentSidecarPath(id),
+        JSON.stringify(
+          { originalName, size: req.body.length, mime, uploader, uploadedAt: new Date().toISOString() },
+          null,
+          2
+        ) + '\n',
+        'utf8'
+      );
+    } catch (err) {
+      console.error(`[bpuu-workflow] attachment store failed: ${err.message}`);
+      res.status(500).json({ error: 'could not store the file' });
+      return;
+    }
+
+    console.log(
+      `[bpuu-workflow] attachment stored: id=${id} size=${req.body.length} name="${originalName}" by ${uploader}`
+    );
+    res.status(200).json({
+      url: `${fileLinkBaseUrl()}/files/${mintFileToken(id)}`,
+      name: originalName,
+      size: req.body.length,
+    });
+  }
+);
+
+// Serves a stored attachment. A valid, unexpired token needs no login at
+// all — this is exactly what lets email recipients open files without a
+// JotForm (or any) account. Expired-but-genuine tokens fall back to the
+// same any-login gate as /approve-gate. Forged/garbled tokens 404.
+app.get('/files/:token', (req, res) => {
+  const parsed = verifyFileToken(req.params.token);
+  if (!parsed) {
+    res.status(404).send(
+      renderErrorPage({
+        title: 'ไม่พบไฟล์',
+        message: 'ลิงก์ไฟล์แนบไม่ถูกต้อง กรุณาตรวจสอบลิงก์จากอีเมลอีกครั้ง',
+        retryHref: '/',
+      })
+    );
+    return;
+  }
+
+  if (parsed.expired) {
+    const justExpired = expireSessionIfNeeded(req);
+    if (!req.session.user && !req.session.externalUser) {
+      req.session.redirectAfterLogin = req.originalUrl;
+      req.session.thaidRedirectAfterLogin = req.originalUrl;
+      noStore(res);
+      res.status(200).send(renderLoginLandingPage({ expired: justExpired }));
+      return;
+    }
+  }
+
+  const meta = readAttachmentSidecar(parsed.id);
+  const filePath = attachmentFilePath(parsed.id);
+  let stat = null;
+  try {
+    stat = fs.statSync(filePath);
+  } catch (err) {
+    stat = null;
+  }
+  if (!meta || !stat || !stat.isFile()) {
+    res.status(404).send(
+      renderErrorPage({
+        title: 'ไม่พบไฟล์',
+        message: 'ไฟล์แนบนี้ไม่อยู่ในระบบแล้ว (อาจถูกลบตามรอบการจัดเก็บ)',
+        retryHref: '/',
+      })
+    );
+    return;
+  }
+
+  const inline = ATTACHMENT_INLINE_TYPES.has(meta.mime);
+  const rawName = meta.originalName || 'attachment';
+  // RFC 5987 ext-value: encodeURIComponent เว้น ' ( ) * ไว้ — ต้อง escape
+  // เพิ่มเอง ไม่งั้นชื่อไฟล์ที่มีวงเล็บ/apostrophe พังในบาง client
+  const encodedName = encodeURIComponent(rawName).replace(
+    /['()*]/g,
+    (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase()
+  );
+  // ASCII fallback สำหรับ client เก่าที่ไม่อ่าน filename* (ชื่อไทยจะกลายเป็น _
+  // แต่ยังดาวน์โหลดได้ ส่วน client ปกติใช้ filename* ได้ชื่อจริงครบ)
+  const asciiName =
+    rawName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\;]/g, '_').trim() || 'attachment';
+  res.status(200);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Type', inline ? meta.mime : 'application/octet-stream');
+  res.setHeader('Content-Length', stat.size);
+  res.setHeader(
+    'Content-Disposition',
+    `${inline ? 'inline' : 'attachment'}; filename="${asciiName}"; filename*=UTF-8''${encodedName}`
+  );
+  console.log(
+    `[bpuu-workflow] attachment served: id=${parsed.id} expired=${parsed.expired} viewer=${resolveApprovalIdentityLabel(req)}`
+  );
+  fs.createReadStream(filePath)
+    .on('error', (err) => {
+      console.error(`[bpuu-workflow] attachment stream failed: id=${parsed.id} ${err.message}`);
+      res.destroy();
+    })
+    .pipe(res);
+});
 
 // ---------------------------------------------------------------------------
 // Static assets — an explicit allowlist, NOT express.static(__dirname).
