@@ -1239,15 +1239,44 @@ function normalizeLocation(item) {
   return out;
 }
 
+// ชุดข้อมูลสถานที่ตั้งต้น (Area Master) ที่ฝังมากับ image — ใช้เมื่อ volume
+// ยังไม่มี data/locations.json (deploy ครั้งแรก หรือ volume ใหม่) เพื่อให้ทุก
+// environment ขึ้นมาพร้อมข้อมูลชุดเดียวกันโดยไม่ต้องคัดลอกไฟล์เข้าไปเอง
+// แนวเดียวกับการ seed รายชื่อผู้ดูแลจาก ADMIN_SEED_EMAIL: seed เฉพาะตอนที่
+// ยังไม่มีไฟล์เท่านั้น จะไม่เขียนทับข้อมูลที่ผู้ดูแลแก้ไว้แล้ว
+const LOCATIONS_SEED_PATH =
+  process.env.LOCATIONS_SEED_PATH || path.join(__dirname, 'data-seed', 'locations.json');
+
+function readSeedLocations() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(LOCATIONS_SEED_PATH, 'utf8'));
+    if (Array.isArray(parsed)) return parsed.map(normalizeLocation).filter(Boolean);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error(`[bpuu-workflow] could not read locations seed (${err.message})`);
+    }
+  }
+  return [];
+}
+
 function loadLocations() {
   if (locationsCache) return locationsCache;
   let list = [];
+  let seeded = false;
   try {
     const parsed = JSON.parse(fs.readFileSync(LOCATIONS_PATH, 'utf8'));
     if (Array.isArray(parsed)) list = parsed.map(normalizeLocation).filter(Boolean);
   } catch (err) {
     if (err.code !== 'ENOENT') {
       console.error(`[bpuu-workflow] could not read locations.json (${err.message}) — starting empty`);
+    }
+  }
+  if (list.length === 0) {
+    const seed = readSeedLocations();
+    if (seed.length) {
+      list = seed;
+      seeded = true;
+      console.log(`[bpuu-workflow] seeded ${seed.length} locations from ${LOCATIONS_SEED_PATH}`);
     }
   }
   // Backfill ids for any hand-edited entry that omitted one.
@@ -1260,6 +1289,16 @@ function loadLocations() {
     if (!l.id) l.id = String(++maxId);
   }
   locationsCache = list;
+  // เขียนชุดตั้งต้นลง volume ครั้งแรก เพื่อให้การแก้ไขครั้งถัดไปต่อยอดจากไฟล์จริง
+  // (best-effort — ถ้าเขียนไม่ได้ก็ยังทำงานต่อได้จากข้อมูลใน memory)
+  if (seeded) {
+    try {
+      fs.mkdirSync(path.dirname(LOCATIONS_PATH), { recursive: true });
+      fs.writeFileSync(LOCATIONS_PATH, JSON.stringify(list, null, 2) + '\n', 'utf8');
+    } catch (err) {
+      console.error(`[bpuu-workflow] could not persist seeded locations: ${err.message}`);
+    }
+  }
   return locationsCache;
 }
 
@@ -4576,6 +4615,10 @@ async function main() {
         'until this is fixed. The KMUTT/ADFS flow above is unaffected.'
     );
   }
+
+  // แตะข้อมูลสถานที่ตั้งแต่ตอนบูต เพื่อให้การ seed ชุดตั้งต้นลง volume เกิดขึ้น
+  // ทันทีและเห็นผลใน log ของ container ไม่ต้องรอ request แรก
+  console.log(`[bpuu-workflow] locations loaded: ${loadLocations().length} entries`);
 
   if (hasTlsCert) {
     const tlsOptions = {

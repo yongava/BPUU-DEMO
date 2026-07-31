@@ -15,6 +15,10 @@ COPY server.js ./
 COPY index.html ./
 COPY css ./css
 COPY js ./js
+# ชุดข้อมูลสถานที่ตั้งต้น (read-only) — แอปจะคัดลอกลง /app/data ครั้งแรกที่บูต
+# ถ้า volume ยังไม่มี locations.json ทำให้ทุก environment ขึ้นมาพร้อมข้อมูลชุด
+# เดียวกันโดยไม่ต้อง docker cp เข้าไปเอง
+COPY data-seed ./data-seed
 COPY AW_MODlink_pro_vertical.jpg AW_MODlink_student_vertical.jpg ./
 
 # /app itself is root-owned (created by WORKDIR/COPY above) and is NOT
