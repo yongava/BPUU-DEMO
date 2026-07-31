@@ -1384,9 +1384,14 @@ function saveRequestNote(id, note, editorEmail) {
 // index 9 = BuildingName-Display (ชื่ออาคารที่ใช้แสดงในดรอปดาวน์).
 // เรียงตาม CompanyCode แล้ว CampusCode ตามที่ผู้ใช้งานกำหนด — ลำดับใน
 // ดรอปดาวน์อิงลำดับของ array นี้โดยตรง.
+//
+// เปิด public โดยตั้งใจ (ไม่มี requireLogin): หน้า login โหลดข้อมูลชุดนี้ก่อน
+// เข้าระบบ และผู้ใช้ภายนอก (ThaID) ไม่มี session แบบ ADFS — ใส่ด่าน login
+// จะทำให้ดรอปดาวน์บริษัทว่างทั้งสองกรณี ข้อมูลนี้เคยเผยแพร่เป็น CSV สาธารณะ
+// บน Google Sheets อยู่แล้ว และ endpoint นี้คืนเฉพาะฟิลด์ชุดเดียวกัน
+// (ไม่มีชื่อ/อีเมลผู้ดูแลพื้นที่ ซึ่งมีเฉพาะใน /api/admin/locations ที่ยังติดด่านตามเดิม)
 app.get(
   '/api/locations',
-  requireLogin,
   asyncHandler(async (req, res) => {
     noStore(res);
     const collator = new Intl.Collator('th', { numeric: true, sensitivity: 'base' });
