@@ -178,7 +178,14 @@ document.addEventListener("DOMContentLoaded", function() {
 function loadDatabases() {
     Papa.parse(STAFF_DATA_URL, { download: true, header: false, skipEmptyLines: true, complete: function(results) { staffDatabase = results.data.slice(1); checkLoadingStatus(); }});
     Papa.parse(STUDENT_DATA_URL, { download: true, header: false, skipEmptyLines: true, complete: function(results) { studentDatabase = results.data.slice(1); checkLoadingStatus(); }});
-    Papa.parse(CONTRACT_DATA_URL, { download: true, header: false, skipEmptyLines: true, complete: function(results) { contractDatabase = results.data; checkLoadingStatus(); }});
+    // ข้อมูลสถานที่มาจากเซิร์ฟเวอร์ (data/locations.json ชุดเดียวกับหน้า /admin)
+    // เรียงตาม CompanyCode → CampusCode มาจากฝั่งเซิร์ฟเวอร์แล้ว และมี
+    // BuildingName-Display ที่ index 9 สำหรับแสดงในดรอปดาวน์เลือกอาคาร
+    fetch('/api/locations', { headers: { 'Accept': 'application/json' } })
+        .then(res => res.json())
+        .then(data => { contractDatabase = data.locations || []; })
+        .catch(() => { contractDatabase = []; })
+        .finally(() => { checkLoadingStatus(); });
 }
 
 function checkLoadingStatus() {
@@ -1572,22 +1579,55 @@ window.onCampusChange = function() {
     const campus = document.getElementById('contractCampus').value;
     const buildingSelect = document.getElementById('contractBuilding');
     const filtered = contractDatabase.filter(row => row[7] === company && row[5] === biz && row[1] === campus);
-    const buildings = [...new Set(filtered.map(row => row[3]).filter(b => b))];
     buildingSelect.innerHTML = '<option value="" selected disabled>-- 4. เลือกอาคาร --</option>';
-    buildings.forEach(b => { buildingSelect.innerHTML += `<option value="${b}">${b}</option>`; });
+    // value ยังเป็นชื่ออาคารเดิม (row[3]) เพื่อให้ข้อมูลที่ส่งเข้า JotForm ไม่เปลี่ยน
+    // ส่วนข้อความที่ผู้ใช้เห็นใช้ BuildingName-Display (row[9]) เช่น "S2-อาคารจอดรถ"
+    const seen = new Set();
+    filtered.forEach(row => {
+        const value = row[3];
+        if (!value || seen.has(value)) return;
+        seen.add(value);
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = row[9] || value;
+        buildingSelect.appendChild(opt);
+    });
     buildingSelect.disabled = false;
 };
 
 window.calculateEndDate = function() {
     const startDateInput = document.getElementById('parkingStartDate').value;
     if (!startDateInput) return;
-    let start = new Date(startDateInput);
-    start.setMonth(start.getMonth() + 1);
-    start.setDate(start.getDate() - 1);
-    const dd = String(start.getDate()).padStart(2, '0');
-    const mm = String(start.getMonth() + 1).padStart(2, '0');
-    const yyyy = start.getFullYear();
-    document.getElementById('parkingEndDate').value = `${dd}/${mm}/${yyyy}`;
+    // อ่านค่าเป็นตัวเลขตรง ๆ (YYYY-MM-DD จาก <input type="date">) แทน new Date()
+    // เพื่อไม่ให้ถูกตีความเป็น UTC แล้วเพี้ยนไป 1 วันตาม timezone ของเครื่อง
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDateInput);
+    if (!m) return;
+    const y = Number(m[1]), mon = Number(m[2]), d = Number(m[3]);
+
+    // สิ้นสุด = วันเดียวกันของเดือนถัดไป ลบ 1 วัน
+    // ถ้าเดือนถัดไปไม่มีวันที่นั้น (เช่น 31 ม.ค. → 31 ก.พ. ไม่มีจริง) setMonth
+    // ของ JS จะม้วนไปเดือนถัดไปอีก (กลายเป็น 2-3 มี.ค.) จึงต้อง clamp เอง
+    // ให้เป็นวันสุดท้ายของเดือนนั้นแทน: 31 ม.ค. → 28/29 ก.พ. ตามปีอธิกสุรทิน
+    let endY = y, endMon = mon + 1;
+    if (endMon > 12) { endMon = 1; endY += 1; }
+    const daysInEndMonth = new Date(Date.UTC(endY, endMon, 0)).getUTCDate();
+
+    let endD;
+    if (d > daysInEndMonth) {
+        // วันเริ่มต้นเกินจำนวนวันของเดือนถัดไป → จบที่วันสุดท้ายของเดือนนั้น
+        endD = daysInEndMonth;
+    } else {
+        endD = d - 1;
+        if (endD < 1) {
+            // เริ่มวันที่ 1 → จบวันสุดท้ายของเดือนเริ่มต้น
+            endMon = mon; endY = y;
+            endD = new Date(Date.UTC(y, mon, 0)).getUTCDate();
+        }
+    }
+
+    const dd = String(endD).padStart(2, '0');
+    const mm = String(endMon).padStart(2, '0');
+    document.getElementById('parkingEndDate').value = `${dd}/${mm}/${endY}`;
 };
 
 window.calculateDuration = function(startId, endId, totalId, unitType) {

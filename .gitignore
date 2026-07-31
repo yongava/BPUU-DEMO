@@ -5,3 +5,8 @@ node_modules
 !.env.example
 certs/
 ThaiD Key/
+admin-allowlist.json
+data/
+
+# server credentials — never commit
+File Sever.txt

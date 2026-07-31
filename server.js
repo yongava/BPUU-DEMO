@@ -1204,6 +1204,10 @@ const LOCATION_TEXT_FIELDS = [
   'campusName',
   'buildingCode',
   'buildingName',
+  // BuildingName-Display จากมาสเตอร์ชีต — "รหัส-ชื่ออาคาร" (เช่น "S2-อาคารจอดรถ")
+  // ใช้เป็นข้อความที่แสดงในดรอปดาวน์เลือกอาคารของฟอร์ม. แถวเก่าที่ยังไม่มีค่านี้
+  // จะ fallback ไปใช้ buildingName ตามเดิม (ดู buildingDisplayName ด้านล่าง).
+  'buildingNameDisplay',
   'businessTypeCode',
   'businessTypeName',
   'companyCode',
@@ -1330,6 +1334,47 @@ function saveRequestNote(id, note, editorEmail) {
   requestNotesCache = notes;
   return notes[id] || null;
 }
+
+// ข้อมูลสถานที่สำหรับ "ฟอร์มขอทำสัญญา" ในหน้าผู้ใช้ — เดิมหน้าฟอร์มดึง CSV
+// จาก Google Sheets โดยตรง ทำให้ข้อมูลที่ผู้ดูแลแก้ในหน้า /admin กับที่ผู้ใช้
+// เห็นในฟอร์มเป็นคนละชุดกัน. ตอนนี้ทั้งสองฝั่งอ่านจาก data/locations.json
+// ชุดเดียวกัน (หน้า admin คือแหล่งข้อมูลจริงชุดเดียว).
+//
+// คืนค่าเป็น array-of-arrays เรียงคอลัมน์ตาม CSV เดิมเป๊ะ ๆ เพื่อให้โค้ดฝั่ง
+// หน้าเว็บที่อ้าง row[1]/row[3]/row[5]/row[7] ทำงานได้เหมือนเดิม แล้วต่อท้าย
+// index 9 = BuildingName-Display (ชื่ออาคารที่ใช้แสดงในดรอปดาวน์).
+// เรียงตาม CompanyCode แล้ว CampusCode ตามที่ผู้ใช้งานกำหนด — ลำดับใน
+// ดรอปดาวน์อิงลำดับของ array นี้โดยตรง.
+app.get(
+  '/api/locations',
+  requireLogin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+    const collator = new Intl.Collator('th', { numeric: true, sensitivity: 'base' });
+    const rows = loadLocations()
+      .slice()
+      .sort(
+        (a, b) =>
+          collator.compare(a.companyCode || '', b.companyCode || '') ||
+          collator.compare(a.campusCode || '', b.campusCode || '') ||
+          collator.compare(a.buildingCode || '', b.buildingCode || '')
+      )
+      .map((l) => [
+        l.campusCode || '',
+        l.campusName || '',
+        l.buildingCode || '',
+        l.buildingName || '',
+        l.businessTypeCode || '',
+        l.businessTypeName || '',
+        l.companyCode || '',
+        l.companyName || '',
+        'Y', // คอลัมน์ isactive เดิมของ CSV — เก็บไว้ให้รูปแบบแถวเท่าเดิม
+        // แถวเก่าที่ยังไม่มี BuildingName-Display ให้ fallback เป็นชื่ออาคารเดิม
+        l.buildingNameDisplay || l.buildingName || '',
+      ]);
+    res.status(200).json({ locations: rows });
+  })
+);
 
 app.get(
   ['/', '/index.html'],
