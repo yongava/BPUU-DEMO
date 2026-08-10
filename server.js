@@ -2932,24 +2932,29 @@ app.post(
 // Emails now link here first instead; this route forces an ADFS/ThaID
 // login, then hands the browser a real link to the JotForm form itself.
 //
-// For workflow "assign form" tasks (?workflowAssignFormTask=1&taskID=...)
-// this now renders OUR OWN native fill-in UI instead of embedding JotForm:
-// the form's field structure is read live from the JotForm questions API,
-// rebuilt as a BPUU-styled page, and on confirm the browser POSTs straight
-// to submit.jotform.com with the same two hidden fields JotForm's own
-// client JS would have added (wfTaskID + wfTaskType='assign-form' — that
-// pair is exactly what advances the workflow task; confirmed by reading
-// jotform.forms.js). The POST happens in the USER'S browser via a hidden
-// iframe — the same proven browser-context trick /approve-gate uses,
-// because a server-side fetch was proven NOT to advance the workflow.
-// A completed task also gets the same one-shot guard as approvals: once
-// submitted, every revisit of the link shows a close-only "already
-// submitted" page.
+// WHY THE FORM IS EMBEDDED AND NOT REBUILT — settled by testing 2026-08-10.
+// A native BPUU-styled fill-in UI that posted the answers itself was built and
+// measured, and it CANNOT work: JotForm answers any submission that does not
+// originate from one of its own form pages with a CAPTCHA challenge page
+// ("Please Complete", action=correctCaptcha) and the submission never lands.
+// Reproduced three ways — server-side curl, curl with full browser headers,
+// and a real browser POST from this app's own origin carrying every hidden
+// field the real form ships (formID, jsExecutionTracker, buildDate,
+// submitSource, submitDate, eventObserver, uploadServerUrl, website,
+// simple_spc) — all three captcha'd, and the JotForm submissions API showed
+// no new submission for any of them. Worse, the hidden iframe's 'load' event
+// fires on that captcha page, so a self-submitting UI reports success while
+// nothing happened.
 //
-// Forms containing field types this generic builder can't reproduce (file
-// uploads, widgets, composite dates) — and any link without workflow task
-// params — fall back to the previous behavior: the real JotForm form
-// embedded in an iframe, no guard.
+// Going through the API instead is not an option either: JotForm support
+// states there is no supported API endpoint for completing a workflow
+// approval/task, so the workflow can only be advanced by a real submission
+// made from a JotForm page carrying wfTaskID.
+//
+// Therefore the real form stays embedded — it is the only mechanism that
+// actually advances a workflow task. That also means this route cannot
+// observe the submit, so it has NO one-shot guard: re-submission is governed
+// by JotForm's own task state, not by us.
 // ---------------------------------------------------------------------------
 
 // The form is embedded in the page rather than linked to: the visitor stays on
@@ -2999,7 +3004,7 @@ const FORM_GATE_SCRIPT = `
     })();
 `;
 
-function renderFormGatePage({ id, target, upn }) {
+function renderFormGatePage({ id, target, upn, detailRows }) {
   const safeTarget = escapeHtml(target);
   return `<!doctype html>
 <html lang="th">
@@ -3014,6 +3019,7 @@ function renderFormGatePage({ id, target, upn }) {
     <h1>กรอกรายละเอียด</h1>
     <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
     <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
+    ${renderApprovalDetailsHtml(detailRows)}
     <div class="form-frame">
       <div class="loading" id="formLoading">กำลังโหลดฟอร์ม…</div>
       <iframe id="formFrame" src="${safeTarget}" title="ฟอร์มกรอกรายละเอียด"
@@ -3023,334 +3029,6 @@ function renderFormGatePage({ id, target, upn }) {
     ${APPROVAL_FALLBACK_CONTACT_HTML}
   </div>
   <script>${FORM_GATE_SCRIPT}</script>
-</body>
-</html>`;
-}
-
-// Pulls the pieces the native fill-in UI needs out of a validated *.jotform.com
-// form link. Textual extraction, same rationale as approvalStepKey: merge-tag
-// URLs routinely carry a second literal '?', which URL parsing mis-buckets.
-function parseJotformFormTarget(target) {
-  const raw = String(target || '');
-  const idMatch = raw.match(/(?:^|\.|\/\/)jotform\.com\/(?:form\/)?(\d{6,20})/i);
-  const taskMatch = raw.match(/[?&]taskID=([^&#?]*)/i);
-  return {
-    formId: idMatch ? idMatch[1] : '',
-    taskId: taskMatch ? taskMatch[1] : '',
-    isAssignForm: /[?&]workflowAssignFormTask=1(?:[&#?]|$)/i.test(raw),
-  };
-}
-
-// One-shot guard key for a completed assign-form task. Keyed on the SEMANTIC
-// identity (formId + taskId) that actually drives workflow advancement —
-// those two are what get POSTed to submit.jotform.com — not the raw URL
-// bytes. Hashing the whole URL would let cosmetic variants of the same task
-// (www. vs form. vs eu. host, reordered query params, trailing slash) each
-// mint a different key and slip past the one-shot guard. The 'form' segment
-// keeps it from ever colliding with an approvalStepKey for the same submission.
-function formTaskKey(submissionId, formId, taskId) {
-  return `${submissionId}:form:${String(formId).toLowerCase()}:${String(taskId).toLowerCase()}`;
-}
-
-async function fetchJotformFormQuestions(formId) {
-  if (!isJotformConfigured() || !formId) return null;
-  const url = new URL(`${config.jotformApiBaseUrl}/form/${encodeURIComponent(formId)}/questions`);
-  url.searchParams.set('apiKey', config.jotformApiKey);
-  const response = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(JOTFORM_FETCH_TIMEOUT_MS) });
-  if (!response.ok) {
-    throw new Error(`JotForm questions API returned HTTP ${response.status}`);
-  }
-  const body = await response.json();
-  return body.content && typeof body.content === 'object' ? body.content : null;
-}
-
-// Field types the generic UI knows how to rebuild faithfully. Everything
-// layout-ish is skipped; a form containing any OTHER type (file upload,
-// widget, composite date/name, matrix, payment, ...) makes the whole form
-// ineligible — a partial submission would advance the workflow with data
-// missing, which is strictly worse than falling back to the embedded form.
-const FORM_GATE_LAYOUT_TYPES = new Set([
-  'control_head',
-  'control_button',
-  'control_text',
-  'control_divider',
-  'control_pagebreak',
-  'control_image',
-]);
-const FORM_GATE_INPUT_TYPES = new Set([
-  'control_textbox',
-  'control_textarea',
-  'control_number',
-  'control_email',
-  'control_dropdown',
-  'control_radio',
-]);
-
-// → { title, fields: [{ name, label, kind, required, options }] } or null
-// when the form has a question the builder can't reproduce.
-function buildFormGateFields(questions) {
-  if (!questions) return null;
-  let title = '';
-  const fields = [];
-  const entries = Object.entries(questions).sort(
-    (a, b) => (Number(a[1] && a[1].order) || 0) - (Number(b[1] && b[1].order) || 0)
-  );
-  for (const [qid, q] of entries) {
-    const type = q && q.type;
-    if (!type || FORM_GATE_LAYOUT_TYPES.has(type)) {
-      if (type === 'control_head' && !title && typeof q.text === 'string') title = q.text.trim();
-      continue;
-    }
-    if (!FORM_GATE_INPUT_TYPES.has(type)) return null;
-    const name = typeof q.name === 'string' ? q.name.trim() : '';
-    if (!name) return null;
-    // Dropdown/radio sub-features the flat single-value rebuild can't post
-    // faithfully — bail to the embedded real form rather than submit a
-    // mis-shaped or forced-wrong answer:
-    //   multipleSelections → real form posts an array under name[]
-    //   allowOther         → an "Other" free-text option we'd silently drop
-    //   empty option list  → a select/radio with nothing selectable
-    if (type === 'control_dropdown' || type === 'control_radio') {
-      if (q.multipleSelections === 'Yes' || q.allowOther === 'Yes') return null;
-      const opts = typeof q.options === 'string'
-        ? q.options.split('|').map((o) => o.trim()).filter(Boolean)
-        : [];
-      if (opts.length === 0) return null;
-    }
-    fields.push({
-      // JotForm's submit endpoint expects q{qid}_{name} for these controls.
-      name: `q${qid}_${name}`,
-      label: (typeof q.text === 'string' && q.text.trim()) || name,
-      kind:
-        type === 'control_textarea' ? 'textarea'
-        : type === 'control_number' ? 'number'
-        : type === 'control_email' ? 'email'
-        : type === 'control_dropdown' ? 'select'
-        : type === 'control_radio' ? 'radio'
-        : 'text',
-      required: q.required === 'Yes',
-      options:
-        (type === 'control_dropdown' || type === 'control_radio') && typeof q.options === 'string'
-          ? q.options.split('|').map((o) => o.trim()).filter(Boolean)
-          : [],
-    });
-  }
-  return fields.length ? { title, fields } : null;
-}
-
-const FORM_FILL_STYLE = `
-    .fields { text-align: left; margin-top: 16px; }
-    .field { margin-top: 14px; }
-    .field > label { display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; }
-    .field .req { color: #c0392b; }
-    .field input[type=text], .field input[type=number], .field input[type=email],
-    .field textarea, .field select {
-      width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #dde1e7;
-      border-radius: 8px; font-family: inherit; font-size: 1rem; background: #fff; color: #1f2430; }
-    .field textarea { min-height: 110px; resize: vertical; }
-    .field .radio-opt { display: block; margin: 4px 0; font-weight: 400; }
-    .field.invalid input, .field.invalid textarea, .field.invalid select { border-color: #c0392b; }
-    .form-msg { color: #c0392b; font-size: 0.92rem; margin-top: 10px; display: none; }
-    @media (prefers-color-scheme: dark) {
-      .field input[type=text], .field input[type=number], .field input[type=email],
-      .field textarea, .field select { background: #14161a; color: #e7e9ee; border-color: #2c313a; }
-    }
-`;
-
-function renderFormFieldHtml(field, index) {
-  const req = field.required ? ' <span class="req">*</span>' : '';
-  const fid = `ff_${index}`;
-  if (field.kind === 'textarea') {
-    return `<div class="field" data-name="${escapeHtml(field.name)}"><label for="${fid}">${escapeHtml(field.label)}${req}</label><textarea id="${fid}" name="${escapeHtml(field.name)}"></textarea></div>`;
-  }
-  if (field.kind === 'select') {
-    const opts = ['<option value="">— เลือก —</option>']
-      .concat(field.options.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`))
-      .join('');
-    return `<div class="field" data-name="${escapeHtml(field.name)}"><label for="${fid}">${escapeHtml(field.label)}${req}</label><select id="${fid}" name="${escapeHtml(field.name)}">${opts}</select></div>`;
-  }
-  if (field.kind === 'radio') {
-    const opts = field.options
-      .map((o) => `<label class="radio-opt"><input type="radio" name="${escapeHtml(field.name)}" value="${escapeHtml(o)}"> ${escapeHtml(o)}</label>`)
-      .join('');
-    return `<div class="field" data-name="${escapeHtml(field.name)}"><label>${escapeHtml(field.label)}${req}</label>${opts}</div>`;
-  }
-  const type = field.kind === 'number' ? 'number' : field.kind === 'email' ? 'email' : 'text';
-  const step = field.kind === 'number' ? ' step="any"' : '';
-  return `<div class="field" data-name="${escapeHtml(field.name)}"><label for="${fid}">${escapeHtml(field.label)}${req}</label><input id="${fid}" type="${type}"${step} name="${escapeHtml(field.name)}"></div>`;
-}
-
-// Close-only page for a form task that has already been submitted through
-// this gate — the form-gate counterpart of renderApprovalDecidedPage.
-function renderFormDonePage({ id, decided, upn }) {
-  return `<!doctype html>
-<html lang="th">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ส่งข้อมูลแล้ว — ระบบกระบวนงาน BPUU</title>
-  <style>${APPROVAL_PAGE_STYLE}</style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon decided">!</div>
-    <h1>แบบฟอร์มนี้ได้รับการส่งข้อมูลไปแล้ว</h1>
-    <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
-    <p class="meta">ส่งโดย: ${escapeHtml((decided && decided.identity) || '-')} &middot; เมื่อ ${escapeHtml(formatThaiTimestamp(decided && decided.at))}</p>
-    <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
-    <p class="warn">ระบบไม่เปิดให้ส่งข้อมูลซ้ำ หากต้องการแก้ไขข้อมูลที่ส่งไปแล้ว กรุณาติดต่อเจ้าหน้าที่</p>
-    <button type="button" class="button" onclick="window.close()">ปิดหน้าต่างนี้</button>
-    <p class="meta">หากกดแล้วหน้าต่างไม่ปิด ท่านสามารถปิดแท็บนี้ได้เอง</p>
-    ${APPROVAL_FALLBACK_CONTACT_HTML}
-  </div>
-</body>
-</html>`;
-}
-
-// The native fill-in UI for an assign-form workflow task.
-function renderFormFillPage({ id, upn, formId, taskId, target, formTitle, fields, detailRows }) {
-  const fieldsHtml = fields.map((f, i) => renderFormFieldHtml(f, i)).join('\n      ');
-  return `<!doctype html>
-<html lang="th">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(formTitle || 'กรอกรายละเอียด')} — ระบบกระบวนงาน BPUU</title>
-  <style>${APPROVAL_PAGE_STYLE}${FORM_FILL_STYLE}</style>
-</head>
-<body>
-  <div class="card">
-    <div id="stepFill">
-      <h1>${escapeHtml(formTitle || 'กรอกรายละเอียด')}</h1>
-      <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
-      <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
-      ${renderApprovalDetailsHtml(detailRows)}
-      <div class="fields">
-      ${fieldsHtml}
-      </div>
-      <div class="form-msg" id="formMsg">กรุณากรอกข้อมูลในช่องที่มีเครื่องหมาย * ให้ครบถ้วน</div>
-      <button type="button" id="submitBtn" class="button">ส่งข้อมูล</button>
-    </div>
-
-    <div id="stepWorking" style="display:none">
-      <h1>กำลังส่งข้อมูล</h1>
-      <div class="spinner"></div>
-      <p>กรุณารอสักครู่ อย่าปิดหน้าต่างนี้…</p>
-    </div>
-
-    <div id="stepDone" style="display:none">
-      <div class="icon">✓</div>
-      <h1>ส่งข้อมูลเรียบร้อยแล้ว</h1>
-      <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
-      <p class="meta">ระบบจะดำเนินการขั้นตอนถัดไปโดยอัตโนมัติ</p>
-      <button type="button" class="button" onclick="window.close()">ปิดหน้าต่างนี้</button>
-      <p class="meta">หากกดแล้วหน้าต่างไม่ปิด ท่านสามารถปิดแท็บนี้ได้เอง</p>
-      ${APPROVAL_FALLBACK_CONTACT_HTML}
-    </div>
-  </div>
-
-  <iframe name="jfSubmitFrame" id="jfSubmitFrame" style="display:none"></iframe>
-
-  <script>
-    // Submission = a real browser-context POST to submit.jotform.com carrying
-    // the exact hidden pair (wfTaskID + wfTaskType) JotForm's own client JS
-    // injects when the form is opened with workflow task params — that pair
-    // is what advances the workflow. Server-side submission is NOT an option
-    // here: a server fetch was proven not to advance workflow tasks.
-    const FORM_ID = ${toScriptJson(formId)};
-    const TASK_ID = ${toScriptJson(taskId)};
-    const TARGET = ${toScriptJson(target)};
-    const SUBMISSION_ID = ${toScriptJson(id || '')};
-    const FIELDS = ${toScriptJson(fields.map((f) => ({ name: f.name, label: f.label, kind: f.kind, required: f.required })))};
-
-    const show = (which) => {
-      for (const s of ['stepFill', 'stepWorking', 'stepDone']) {
-        document.getElementById(s).style.display = s === which ? 'block' : 'none';
-      }
-    };
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-    function fieldValue(name, kind) {
-      if (kind === 'radio') {
-        const checked = document.querySelector('input[name="' + CSS.escape(name) + '"]:checked');
-        return checked ? checked.value : '';
-      }
-      const el = document.querySelector('[name="' + CSS.escape(name) + '"]');
-      return el ? String(el.value || '').trim() : '';
-    }
-
-    document.getElementById('submitBtn').addEventListener('click', async () => {
-      const values = {};
-      let valid = true;
-      for (const f of FIELDS) {
-        const v = fieldValue(f.name, f.kind);
-        values[f.name] = v;
-        const wrap = document.querySelector('.field[data-name="' + CSS.escape(f.name) + '"]');
-        const missing = f.required && !v;
-        if (wrap) wrap.classList.toggle('invalid', missing);
-        if (missing) valid = false;
-      }
-      document.getElementById('formMsg').style.display = valid ? 'none' : 'block';
-      if (!valid) return;
-
-      show('stepWorking');
-
-      // Guard first, submit second — same order and same reasoning as
-      // /approve-gate: 409 = this task was already submitted somewhere,
-      // 401 = session expired mid-fill; both reload so the server renders
-      // the correct screen and nothing reaches JotForm.
-      //
-      // The audit copy is truncated to the SAME bounds the server enforces
-      // (≤40 fields, label ≤120, value ≤500) BEFORE it's sent. Without this,
-      // one long textarea could push the JSON body past the global 10kb
-      // express.json limit, the parser would 413 before the guard route runs,
-      // the client would "proceed" on the non-409/401 status — and the task
-      // would submit to JotForm with NO guard record written, silently
-      // reopening the double-submit hole this guard exists to close.
-      try {
-        const labeled = {};
-        for (const f of FIELDS.slice(0, 40)) {
-          labeled[String(f.label).slice(0, 120)] = String(values[f.name]).slice(0, 500);
-        }
-        const rec = await fetch('/api/form-gate/record', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ id: SUBMISSION_ID, target: TARGET, fields: labeled }),
-        });
-        if (rec.status === 409 || rec.status === 401) {
-          window.location.reload();
-          return;
-        }
-      } catch (err) { /* the record is a guard, not the submission — proceed */ }
-
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = 'https://submit.jotform.com/submit/' + encodeURIComponent(FORM_ID);
-      form.target = 'jfSubmitFrame';
-      form.acceptCharset = 'utf-8';
-      const add = (name, value) => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = name;
-        input.value = value;
-        form.appendChild(input);
-      };
-      add('formID', FORM_ID);
-      add('simple_spc', FORM_ID);
-      add('website', '');
-      for (const f of FIELDS) add(f.name, values[f.name]);
-      add('wfTaskID', TASK_ID);
-      add('wfTaskType', 'assign-form');
-      document.body.appendChild(form);
-
-      const frame = document.getElementById('jfSubmitFrame');
-      const loaded = new Promise((r) => frame.addEventListener('load', r, { once: true }));
-      form.submit();
-      await Promise.race([loaded, sleep(10000)]);
-
-      show('stepDone');
-    });
-  </script>
 </body>
 </html>`;
 }
@@ -3381,126 +3059,25 @@ app.get(
     }
 
     const identityLabel = resolveApprovalIdentityLabel(req);
-    const { formId, taskId, isAssignForm } = parseJotformFormTarget(targetStr);
 
-    // One-shot guard (assign-form tasks only): a task already submitted
-    // through this gate gets the close-only page, from any tab or login.
-    if (isAssignForm && taskId) {
-      const decided = getRecordedApprovalDecision(formTaskKey(String(id), formId, taskId));
-      if (decided) {
-        console.log(
-          `[bpuu-workflow] form gate: identity=${identityLabel} id=${id} -> already submitted (by ${decided.identity} at ${decided.at})`
-        );
-        res.status(200).send(renderFormDonePage({ id, decided, upn: identityLabel }));
-        return;
-      }
-    }
-
-    // Native fill-in UI when the form's structure is fully reproducible;
-    // any failure on this path (API down, unsupported field type, missing
-    // workflow params) falls back to embedding the real JotForm form.
-    if (isAssignForm && taskId && formId) {
-      try {
-        const built = buildFormGateFields(await fetchJotformFormQuestions(formId));
-        if (built) {
-          const isKmuttSession = Boolean(req.session.user);
-          let detailRows = isKmuttSession ? null : 'restricted';
-          try {
-            const submission = await fetchJotformSubmission(String(id));
-            if (submission && isKmuttSession) detailRows = submissionDetailRows(submission);
-          } catch (err) {
-            console.warn(`[bpuu-workflow] form gate: could not read submission ${id}: ${err.message}`);
-          }
-          console.log(
-            `[bpuu-workflow] form gate: identity=${identityLabel} id=${id} form=${formId} task=${taskId} -> native fill UI (${built.fields.length} fields)`
-          );
-          res.status(200).send(
-            renderFormFillPage({
-              id,
-              upn: identityLabel,
-              formId,
-              taskId,
-              target: targetStr,
-              formTitle: built.title,
-              fields: built.fields,
-              detailRows,
-            })
-          );
-          return;
-        }
-        console.log(
-          `[bpuu-workflow] form gate: form ${formId} has unsupported fields -> falling back to embed`
-        );
-      } catch (err) {
-        console.warn(`[bpuu-workflow] form gate: could not build native UI for form ${formId} (${err.message}) -> falling back to embed`);
-      }
+    // The request-detail table is shown above the form so the filler has the
+    // same context the notification email carried. KMUTT sessions only — the
+    // submission is requester PII and a ThaID filler has no business reading
+    // it (they still complete their form normally).
+    const isKmuttSession = Boolean(req.session.user);
+    let detailRows = isKmuttSession ? null : 'restricted';
+    try {
+      const submission = await fetchJotformSubmission(String(id));
+      if (submission && isKmuttSession) detailRows = submissionDetailRows(submission);
+    } catch (err) {
+      console.warn(`[bpuu-workflow] form gate: could not read submission ${id}: ${err.message}`);
     }
 
     console.log(`[bpuu-workflow] form gate: identity=${identityLabel} id=${id} -> form embedded`);
-    res.status(200).send(renderFormGatePage({ id, target: targetStr, upn: identityLabel }));
+    res.status(200).send(renderFormGatePage({ id, target: targetStr, upn: identityLabel, detailRows }));
   })
 );
 
-// The write half of the form-task guard — recorded at the moment of the
-// click, BEFORE the browser POSTs to JotForm, same first-decision-wins
-// semantics and same store as /api/approve-gate/record. The submitted
-// values (label → value) ride along in the record purely as an audit trail.
-app.post(
-  '/api/form-gate/record',
-  requireAnyLoginJson,
-  asyncHandler(async (req, res) => {
-    noStore(res);
-
-    const body = req.body || {};
-    const id = typeof body.id === 'string' ? body.id.trim() : '';
-    const target = typeof body.target === 'string' ? body.target : '';
-    if (!isPlausibleSubmissionId(id) || !isAllowedJotformTarget(target)) {
-      res.status(400).json({ error: 'invalid id or target' });
-      return;
-    }
-    const { formId, taskId, isAssignForm } = parseJotformFormTarget(target);
-    if (!isAssignForm || !taskId || !formId) {
-      res.status(400).json({ error: 'target is not an assign-form task link' });
-      return;
-    }
-
-    const stepKey = formTaskKey(id, formId, taskId);
-    const existing = getRecordedApprovalDecision(stepKey);
-    if (existing) {
-      res.status(409).json({ decided: existing });
-      return;
-    }
-
-    // Audit copy of what was submitted — bounded so a hostile client can't
-    // bloat the store (the real submission lives in JotForm regardless).
-    const fields = {};
-    if (body.fields && typeof body.fields === 'object' && !Array.isArray(body.fields)) {
-      for (const [label, value] of Object.entries(body.fields).slice(0, 40)) {
-        fields[String(label).slice(0, 120)] = String(value).slice(0, 500);
-      }
-    }
-
-    const record = {
-      type: 'form-submit',
-      outcome: 'form_submitted',
-      outcomeLabel: 'ส่งข้อมูลแล้ว',
-      formId,
-      taskId,
-      fields,
-      identity: resolveApprovalIdentityLabel(req),
-      at: new Date().toISOString(),
-    };
-    try {
-      recordApprovalDecision(stepKey, record);
-    } catch (err) {
-      console.error(`[bpuu-workflow] could not persist form submission record for ${stepKey}: ${err.message}`);
-    }
-    console.log(
-      `[bpuu-workflow] form submission recorded: step=${stepKey} form=${formId} task=${taskId} identity=${record.identity}`
-    );
-    res.status(200).json({ ok: true });
-  })
-);
 
 // ---------------------------------------------------------------------------
 // Admin page — request list + workflow-status tracking + permission settings.
