@@ -63,6 +63,18 @@ const config = {
   tlsCertPath: process.env.TLS_CERT_PATH || path.join(__dirname, 'certs', 'cert.pem'),
   tlsKeyPath: process.env.TLS_KEY_PATH || path.join(__dirname, 'certs', 'key.pem'),
 
+  // เลขเวอร์ชันที่โชว์ใน footer — รูปแบบ v.YYYYMMDD-<ลำดับ deploy ของวันนั้น>
+  // ปกติถูก bake เข้า image ตอน build (ARG APP_VERSION ใน Dockerfile) เพื่อให้
+  // เลขนี้ผูกกับ build จริงเสมอ แต่ override ที่ runtime ผ่าน env ได้ถ้าจำเป็น
+  appVersion: process.env.APP_VERSION || 'dev',
+
+  // ลิงก์ท้ายกล่องยินยอมคุกกี้ ปล่อยว่าง = ไม่แสดงลิงก์นั้น (ดีกว่าลิงก์ตาย)
+  privacyPolicyUrl:
+    process.env.PRIVACY_POLICY_URL === undefined
+      ? 'https://privacy.kmutt.ac.th/law/'
+      : process.env.PRIVACY_POLICY_URL,
+  termsUrl: process.env.TERMS_URL || '',
+
   // ThaID (Thailand national digital ID, DOPA) config — powers the /external
   // (บุคคลภายนอก) login flow. Deliberately NOT in REQUIRED_ENV_VARS: unlike
   // ADFS, this app must still boot and serve the KMUTT flow fine even if
@@ -710,12 +722,41 @@ function renderErrorPage({ title, message, retryHref = '/login' }) {
 // them to an external login domain. Loads the same CSS design tokens
 // (--ci-orange etc.) as the gated app itself, via the already-public
 // /css/styles.css route, so it looks native rather than bolted-on.
-function renderLoginLandingPage({ expired = false } = {}) {
+// โลโก้ KMUTT ต้อง inline เป็น <svg> ไม่ใช่ <img src="...svg"> เพราะไฟล์ SVG ที่
+// โหลดผ่าน <img> เป็นเอกสารแยก ไม่รับ currentColor จาก CSS ของหน้าเพจ — โลโก้จะ
+// กลายเป็นสีดำบนปุ่มส้มแทนที่จะเป็นสีขาว อ่านครั้งเดียวตอนบูตแล้ว cache ไว้
+const KMUTT_LOGO_SVG = (() => {
+  try {
+    return fs
+      .readFileSync(path.join(__dirname, 'img', 'kmutt-logo.svg'), 'utf8')
+      .replace(/<\?xml[^>]*\?>\s*/g, '')
+      .replace(/<svg /, '<svg class="login-provider-logo login-provider-logo--kmutt" aria-hidden="true" ');
+  } catch (e) {
+    return ''; // ไม่มีไฟล์ก็ไม่ล้ม — ปุ่มจะขึ้นข้อความอย่างเดียว
+  }
+})();
+
+// adfsOnly = ซ่อนปุ่ม ThaID สำหรับหน้าที่มีแต่บัญชี มจธ. เท่านั้นที่ใช้ได้
+//            (/admin, /approve-gate) — intro ใช้บอกบริบทของหน้านั้น ๆ
+function renderLoginLandingPage({ expired = false, adfsOnly = false, intro = '' } = {}) {
   const expiredNotice = expired
     ? `<div class="alert alert-warning py-2 mb-3" role="alert" style="font-size:.95rem;">
       <i class="bi bi-clock-history me-1"></i>เซสชันหมดอายุ (ครบ 60 นาที) กรุณาเข้าสู่ระบบใหม่
     </div>`
     : '';
+  const introText =
+    intro ||
+    (adfsOnly
+      ? 'กรุณาเข้าสู่ระบบด้วยบัญชี มจธ.'
+      : `การให้บริการของ<br>กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน<br>
+      กรุณาเลือกประเภทผู้ใช้งานเพื่อเริ่มยื่นคำขอ`);
+  const thaidButton = adfsOnly
+    ? ''
+    : `
+    <a href="/external" class="btn btn-ci-bluegrey btn-lg w-100 fw-bold login-provider-btn">
+      <img src="/img/thaid-logo.png" alt="" class="login-provider-logo login-provider-logo--thaid"
+           onerror="this.remove()"><span class="login-provider-text"><span>Login with ThaiD</span><span>(เฉพาะบุคคลภายนอกเท่านั้น)</span></span>
+    </a>`;
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -744,36 +785,30 @@ function renderLoginLandingPage({ expired = false } = {}) {
       text-align: center;
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
     }
+    /* โลโก้หลักเป็นไฟล์ CI สีส้มบนพื้นโปร่งใส วางบนการ์ดขาวได้ตรง ๆ
+       จึงไม่ต้องมีวงกลมสีส้มรองแบบเดิม (ซึ่งทำให้โลโก้ต้องกลับเป็นสีขาว) */
     .login-icon {
-      width: 76px;
-      height: 76px;
-      border-radius: 50%;
       margin: 0 auto 20px;
       display: flex;
-      align-items: center;
       justify-content: center;
-      font-size: 2.2rem;
-      color: #fff;
-      background: linear-gradient(135deg, var(--ci-orange), #ff734d);
     }
+    .login-icon img { height: 76px; width: auto; }
   </style>
 </head>
 <body>
   <div class="login-card">
     ${expiredNotice}
-    <div class="login-icon"><i class="bi bi-building"></i></div>
+    <div class="login-icon"><img src="/img/kmutt-main-logo.png" alt="KMUTT"></div>
     <h4 class="fw-bold text-ci-orange mb-2">ระบบกระบวนงาน (Workflow)</h4>
     <p class="text-ci-bluegrey mb-4">
-      การให้บริการของ<br>กลุ่มงานจัดการผลประโยชน์และทรัพย์สิน<br>
-      กรุณาเลือกประเภทผู้ใช้งานเพื่อเริ่มยื่นคำขอ
+      ${introText}
     </p>
-    <a href="/login" class="btn btn-ci-orange btn-lg w-100 fw-bold mb-2">
-      <i class="bi bi-box-arrow-in-right me-2"></i>Login with KMUTT Account<br>(บุคลากร / นักศึกษา)
-    </a>
-    <a href="/external" class="btn btn-ci-bluegrey btn-lg w-100 fw-bold">
-      <i class="bi bi-people-fill me-2"></i>Login with ThaiD<br>(เฉพาะบุคคลภายนอกเท่านั้น)
-    </a>
+    <a href="/login" class="btn btn-ci-orange btn-lg w-100 fw-bold${adfsOnly ? '' : ' mb-2'} login-provider-btn">
+      ${KMUTT_LOGO_SVG}<span class="login-provider-text"><span>Login with KMUTT Account</span><span>(บุคลากร / นักศึกษา)</span></span>
+    </a>${thaidButton}
   </div>
+  <script src="/js/site-chrome.js" defer></script>
+  <script src="/js/login-fit.js" defer></script>
 </body>
 </html>`;
 }
@@ -833,9 +868,10 @@ app.use(
 );
 
 // JSON body parsing — only needed by the small set of POST API routes below
-// (currently just /api/kmutt-dev-preview). Every other route in this file is
-// a GET, so this has no effect on them; a small size limit keeps it from
-// being usable to send oversized payloads at any route that does read a body.
+// (/api/approve-gate/record, /api/admin/request-note, /api/admin/allowlist,
+// /api/admin/locations). Every other route in this file is a GET, so this has
+// no effect on them; a small size limit keeps it from being usable to send
+// oversized payloads at any route that does read a body.
 app.use(express.json({ limit: '10kb' }));
 
 // Wrap async route handlers so rejected promises / thrown errors render a
@@ -882,10 +918,29 @@ function requireLogin(req, res, next) {
     // page, so clicking through to /login still returns here afterward.
     req.session.redirectAfterLogin = req.originalUrl;
     noStore(res);
-    res.status(200).send(renderLoginLandingPage({ expired: justExpired }));
+    // requireLogin gates BOTH '/' (where a ThaID user legitimately clicks
+    // through to /external) and '/admin' (which only an ADFS session can ever
+    // satisfy — external users can never be on the admin allowlist). Showing
+    // the ThaID button on the admin gate would send the user through a full
+    // DOPA login only to land back here with no explanation, so hide it there.
+    const adminGate = isAdminPath(req.originalUrl);
+    res.status(200).send(
+      renderLoginLandingPage({
+        expired: justExpired,
+        adfsOnly: adminGate,
+        intro: adminGate ? 'สำหรับผู้ดูแลระบบ<br>กรุณาเข้าสู่ระบบด้วยบัญชี มจธ.' : '',
+      })
+    );
     return;
   }
   next();
+}
+
+// '/admin' และ '/api/admin/*' — ตัด query string ออกก่อนเทียบ กัน '/adminx'
+// มาเข้าเงื่อนไขโดยไม่ตั้งใจ
+function isAdminPath(originalUrl) {
+  const path = String(originalUrl || '').split('?')[0];
+  return path === '/admin' || path.startsWith('/admin/') || path.startsWith('/api/admin/');
 }
 
 // JSON variant of requireLogin for fetch()-based admin APIs: an absent or
@@ -903,11 +958,32 @@ function requireLoginJson(req, res, next) {
   next();
 }
 
-// Like requireLogin, but accepts EITHER identity (KMUTT/ADFS or ThaID) —
-// used by /approve-gate. Unlike '/', which is deliberately KMUTT-only,
-// approving here just needs *some* identified login for the audit trail;
-// the university's requirement was "must authenticate before approving,"
-// not "must be KMUTT staff" — ThaID still ties the click to a real person.
+// Used by /approve-gate. A session from EITHER provider still satisfies this
+// gate (an approver who is already signed in with ThaID is not kicked out
+// mid-approval), but the login page it shows offers ADFS only: approvers come
+// from Master Data and are always KMUTT staff, so sending someone through a
+// full ThaID/DOPA login here would only ever dead-end. See the adfsOnly flag
+// passed to renderLoginLandingPage below.
+// Factory so each route can set its own login-landing wording. /approve-gate
+// addresses an approver; /form-gate addresses whoever was assigned to fill a
+// form (which can legitimately be a ThaID/external user — the form pages
+// already handle a 'restricted' external session), so it must NOT hide the
+// ThaID button or call the visitor an approver. Called with no args it keeps
+// the historical approver-facing, ADFS-only landing.
+function makeRequireAnyLogin({ adfsOnly = true, intro = 'สำหรับผู้อนุมัติคำขอ<br>กรุณาเข้าสู่ระบบด้วยบัญชี มจธ.' } = {}) {
+  return function requireAnyLoginRoute(req, res, next) {
+    const justExpired = expireSessionIfNeeded(req);
+    if (!req.session.user && !req.session.externalUser) {
+      req.session.redirectAfterLogin = req.originalUrl;
+      req.session.thaidRedirectAfterLogin = req.originalUrl;
+      noStore(res);
+      res.status(200).send(renderLoginLandingPage({ expired: justExpired, adfsOnly, intro }));
+      return;
+    }
+    next();
+  };
+}
+
 function requireAnyLogin(req, res, next) {
   const justExpired = expireSessionIfNeeded(req);
   if (!req.session.user && !req.session.externalUser) {
@@ -927,7 +1003,13 @@ function requireAnyLogin(req, res, next) {
     req.session.redirectAfterLogin = req.originalUrl;
     req.session.thaidRedirectAfterLogin = req.originalUrl;
     noStore(res);
-    res.status(200).send(renderLoginLandingPage({ expired: justExpired }));
+    res.status(200).send(
+      renderLoginLandingPage({
+        expired: justExpired,
+        adfsOnly: true,
+        intro: 'สำหรับผู้อนุมัติคำขอ<br>กรุณาเข้าสู่ระบบด้วยบัญชี มจธ.',
+      })
+    );
     return;
   }
   next();
@@ -1126,7 +1208,6 @@ function renderNoAccessPage(email) {
     .actions { margin-top: 24px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
     a.btn { display: inline-block; text-decoration: none; padding: 10px 22px; border-radius: 8px; font-weight: 700; font-size: .95rem; }
     a.primary { background: #FA4616; color: #fff; }
-    a.ghost { background: #fff; color: #55606d; border: 1px solid #dde1e7; }
     .hint { margin-top: 22px; font-size: .88rem; color: #7a828d; }
   </style>
 </head>
@@ -1138,7 +1219,6 @@ function renderNoAccessPage(email) {
     <div class="who">เข้าสู่ระบบเป็น: ${escapeHtml(email || '-')}</div>
     <div class="actions">
       <a class="btn primary" href="/">กลับหน้าหลัก</a>
-      <a class="btn ghost" href="mailto:bpuu@kmutt.ac.th?subject=${encodeURIComponent('ขอสิทธิ์เข้าใช้งานหน้าผู้ดูแลระบบ BPUU')}">ขอสิทธิ์เข้าใช้งาน</a>
     </div>
     <div class="hint">หากต้องการสิทธิ์ กรุณาแจ้งผู้ดูแลระบบเพื่อเพิ่มอีเมลข้างต้นในรายชื่อที่อนุญาต</div>
   </div>
@@ -2033,27 +2113,16 @@ app.get(
     // client that ignores the cookie's maxAge can't keep reading identity.
     expireSessionIfNeeded(req);
     if (req.session.user) {
-      // Dev preview override (see /api/kmutt-dev-preview below): only ever
-      // set when this real session's OWN kmuttUserType/kmuttRequesterProfile
-      // are null (see that route's 403 gate), so this never masks a real
-      // staff/student classification — it only fills the gap when there
-      // wasn't one. req.session.user.kmuttUserType/kmuttRequesterProfile
-      // themselves are never touched/overwritten by the preview feature;
-      // this is purely a response-shaping read here.
-      const devPreview = req.session.user.kmuttDevPreview || null;
+      // userType.type === null means KMUTT Master Data had no staff/student
+      // record for this account (or was unconfigured/unreachable). The client
+      // treats that as บุคคลภายนอก and renders the external menu set — see the
+      // /api/me handler in index.html. Reported as-is here; this endpoint
+      // states the facts and does not classify.
       res.status(200).json({
         type: 'kmutt',
         claims: req.session.user.claims,
-        userType: devPreview
-          ? devPreview.userType
-          : req.session.user.kmuttUserType || { type: null, displayName: null, department: null, statusName: null },
-        requesterProfile: devPreview
-          ? devPreview.requesterProfile
-          : req.session.user.kmuttRequesterProfile || { type: null, requester: null, approver: null },
-        // So the client can always tell a real classification apart from a
-        // dev-preview override and label it accordingly (see index.html).
-        devPreviewActive: Boolean(devPreview),
-        devPreviewEmail: devPreview ? devPreview.previewEmail : null,
+        userType: req.session.user.kmuttUserType || { type: null, displayName: null, department: null, statusName: null },
+        requesterProfile: req.session.user.kmuttRequesterProfile || { type: null, requester: null, approver: null },
       });
     } else if (req.session.externalUser) {
       res.status(200).json({
@@ -2253,6 +2322,27 @@ function jotformAnswerDisplayValue(entry) {
 // Builds the "รายละเอียดคำขอ" rows for the approval screens from a full
 // submission — every answered data field, in form order, same information
 // the approver already sees in the notification email's submission table.
+// แสดงวันที่เป็น '01 August 2026' ให้เหมือนกับหน้าสรุปคำขอฝั่งผู้ยื่น
+// (js/app.js formatDisplayDate) — ประกอบสตริงเองไม่ใช้ toLocaleDateString
+// เพื่อไม่ให้ผลลัพธ์เปลี่ยนตาม locale ของเครื่องที่รัน container
+const DISPLAY_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+function formatDisplayDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? '').trim());
+  if (!m) return value;
+  const month = DISPLAY_MONTHS[Number(m[2]) - 1];
+  return month ? `${m[3]} ${month} ${m[1]}` : value;
+}
+
+// ข้อความสรุป (q32) ถูกสร้างตอนยื่นคำขอ คำขอเก่าจึงยังฝังวันที่แบบ YYYY-MM-DD
+// อยู่ข้างใน — แปลงตอนแสดงผลด้วย เพื่อให้คำขอเก่ากับใหม่หน้าตาเหมือนกัน
+// (จับเฉพาะรูปแบบวันที่เต็ม ๆ ไม่แตะเลขอื่นอย่างทะเบียนรถหรือจำนวนเงิน)
+function formatDatesInText(text) {
+  return String(text ?? '').replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (whole) => formatDisplayDate(whole));
+}
+
 function submissionDetailRows(content) {
   const answers = (content && content.answers) || {};
   const rows = [];
@@ -2264,7 +2354,7 @@ function submissionDetailRows(content) {
     if (qid === '68') continue;
     const label = typeof entry.text === 'string' ? entry.text.trim() : '';
     if (!label) continue;
-    const value = jotformAnswerDisplayValue(entry);
+    const value = formatDatesInText(jotformAnswerDisplayValue(entry));
     if (!value) continue;
     rows.push({ order: Number(entry.order) || Number(qid) || 0, label, value });
   }
@@ -2311,17 +2401,30 @@ function isPlausibleSubmissionId(id) {
 }
 
 function approvalStepKey(submissionId, target) {
-  let normalized = String(target || '');
-  let outcomeId = '';
-  try {
-    const u = new URL(normalized);
-    outcomeId = u.searchParams.get('outcomeID') || '';
-    u.searchParams.delete('outcomeID');
-    normalized = u.toString();
-  } catch (err) {
-    // Not URL-parseable — hash the raw string; still deterministic.
-  }
-  const hash = crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 16);
+  // The email templates build target as `{approvalDeeplink}?outcomeID=N`,
+  // and the deeplink already carries its own query string — so the second
+  // '?' is literal and outcomeID ends up glued onto the tail of the LAST
+  // param's VALUE, not as a top-level param. The step key must be identical
+  // for every button of one step (accept/reject/…) so that once ANY of them
+  // is recorded, all of them show the close-only decided page. It must also
+  // differ between genuinely different steps (a later approver on the same
+  // submission) — the deeplink body carries that distinction.
+  //
+  // Two spellings routinely vary without changing which step it is, and both
+  // must be normalized away before hashing or the guard fractures per-button:
+  //   - the '?' / '&' before outcomeID is sometimes percent-encoded
+  //     (%3F / %26) by the mail editor — some real templates in docs/ do this;
+  //   - the jotform host casing can vary.
+  // (Param REORDER inside the opaque deeplink is not normalized — templates
+  // are author-controlled and stable per box, so it doesn't arise in practice.)
+  let s = String(target || '')
+    .replace(/%3f/gi, '?')
+    .replace(/%26/gi, '&');
+  const match = s.match(/[?&]outcomeID=([^&#]*)/i);
+  const outcomeId = match ? match[1] : '';
+  s = s.replace(/[?&]outcomeID=[^&#]*/gi, '');
+  s = s.replace(/^https?:\/\/[^/?#]+/i, (host) => host.toLowerCase());
+  const hash = crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
   return { key: `${submissionId}:${hash}`, outcomeId };
 }
 
@@ -2472,41 +2575,11 @@ const APPROVAL_FALLBACK_CONTACT_HTML = `<div class="fallback">
 
 // Shown instead of the confirm screen once a decision for this approval
 // step has already been recorded through this gate — the double-approval
-// guard's user-facing half. No confirm button; nothing here can record a
-// NEW decision. The one deliberate exception: when the person looking at
-// the page is the SAME identity that recorded the SAME outcome, a "resend"
-// button re-fires the JotForm deeplink without touching the record — the
-// escape hatch for a first delivery that never reached JotForm (network
-// blip mid-iframe); for that pair it is a pure retry, never a new decision.
-function renderApprovalDecidedPage({ id, decided, upn, detailRows, resendTarget }) {
-  const resendHtml = resendTarget
-    ? `<div id="resendWrap">
-      <p class="meta">หากผลการพิจารณายังไม่ปรากฏในระบบ ท่านสามารถส่งผลเดิมซ้ำได้</p>
-      <button type="button" id="resendBtn" class="button">ส่งผล &ldquo;${escapeHtml(decided.outcomeLabel || outcomeToLabel(decided.outcome))}&rdquo; อีกครั้ง</button>
-    </div>
-    <div id="resendDone" style="display:none">
-      <div class="spinner" id="resendSpinner"></div>
-      <p class="meta" id="resendMsg">กำลังส่งผลไปยังระบบ…</p>
-    </div>
-    <script>
-      const RESEND_TARGET = ${toScriptJson(resendTarget)};
-      document.getElementById('resendBtn').addEventListener('click', async () => {
-        document.getElementById('resendWrap').style.display = 'none';
-        document.getElementById('resendDone').style.display = 'block';
-        const frame = document.createElement('iframe');
-        frame.style.display = 'none';
-        frame.setAttribute('referrerpolicy', 'no-referrer');
-        frame.src = RESEND_TARGET;
-        document.body.appendChild(frame);
-        await Promise.race([
-          new Promise((r) => frame.addEventListener('load', r, { once: true })),
-          new Promise((r) => setTimeout(r, 8000)),
-        ]);
-        document.getElementById('resendSpinner').style.display = 'none';
-        document.getElementById('resendMsg').textContent = 'ส่งผลไปยังระบบแล้ว ระบบอาจใช้เวลาสักครู่ในการอัปเดตสถานะ';
-      });
-    </script>`
-    : '';
+// guard's user-facing half. No confirm button, and nothing on this page
+// touches JotForm — a second visit can never re-fire the deeplink. Its only
+// button closes the window, the same way the confirm page ends once a
+// decision has gone through, so both paths finish on the same screen.
+function renderApprovalDecidedPage({ id, decided, upn, detailRows }) {
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -2524,7 +2597,8 @@ function renderApprovalDecidedPage({ id, decided, upn, detailRows, resendTarget 
     <p class="meta">บันทึกโดย: ${escapeHtml(decided.identity || '-')} &middot; เมื่อ ${escapeHtml(formatThaiTimestamp(decided.at))}</p>
     <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
     <p class="warn">ระบบไม่เปิดให้บันทึกผลซ้ำ หากต้องการเปลี่ยนแปลงผลการพิจารณา กรุณาติดต่อเจ้าหน้าที่</p>
-    ${resendHtml}
+    <button type="button" class="button" onclick="window.close()">ปิดหน้าต่างนี้</button>
+    <p class="meta">หากกดแล้วหน้าต่างไม่ปิด ท่านสามารถปิดแท็บนี้ได้เอง</p>
     ${renderApprovalDetailsHtml(detailRows)}
     ${APPROVAL_FALLBACK_CONTACT_HTML}
   </div>
@@ -2731,11 +2805,8 @@ app.get(
     const { key: stepKey } = approvalStepKey(id, targetStr);
     const decided = getRecordedApprovalDecision(stepKey);
     if (decided) {
-      // Retry-of-delivery escape hatch: same identity, same outcome — see
-      // renderApprovalDecidedPage. Anyone/anything else gets no target at all.
-      const canResend = decided.identity === identityLabel && decided.outcome === outcome;
       console.log(
-        `[bpuu-workflow] approval gate: identity=${identityLabel} id=${id} outcome=${outcome} -> already decided (${decided.outcome} by ${decided.identity} at ${decided.at})${canResend ? ' [resend offered]' : ''}`
+        `[bpuu-workflow] approval gate: identity=${identityLabel} id=${id} outcome=${outcome} -> already decided (${decided.outcome} by ${decided.identity} at ${decided.at})`
       );
       res.status(200).send(
         renderApprovalDecidedPage({
@@ -2743,7 +2814,6 @@ app.get(
           decided,
           upn: identityLabel,
           detailRows,
-          resendTarget: canResend ? targetStr : null,
         })
       );
       return;
@@ -2862,39 +2932,435 @@ app.post(
 // Emails now link here first instead; this route forces an ADFS/ThaID
 // login, then hands the browser a real link to the JotForm form itself.
 //
-// Deliberately NOT a decision like /approve-gate: opening a form to fill in
-// details is not a one-shot irreversible action (JotForm's own form re-opens
-// fine on a second visit), so this has no double-submission guard and no
-// hidden-iframe auto-submit — the visitor is meant to actually see and use
-// the JotForm page, so this route does a plain navigation to `target`
-// (still gated behind login) rather than acting on the user's behalf.
+// For workflow "assign form" tasks (?workflowAssignFormTask=1&taskID=...)
+// this now renders OUR OWN native fill-in UI instead of embedding JotForm:
+// the form's field structure is read live from the JotForm questions API,
+// rebuilt as a BPUU-styled page, and on confirm the browser POSTs straight
+// to submit.jotform.com with the same two hidden fields JotForm's own
+// client JS would have added (wfTaskID + wfTaskType='assign-form' — that
+// pair is exactly what advances the workflow task; confirmed by reading
+// jotform.forms.js). The POST happens in the USER'S browser via a hidden
+// iframe — the same proven browser-context trick /approve-gate uses,
+// because a server-side fetch was proven NOT to advance the workflow.
+// A completed task also gets the same one-shot guard as approvals: once
+// submitted, every revisit of the link shows a close-only "already
+// submitted" page.
+//
+// Forms containing field types this generic builder can't reproduce (file
+// uploads, widgets, composite dates) — and any link without workflow task
+// params — fall back to the previous behavior: the real JotForm form
+// embedded in an iframe, no guard.
 // ---------------------------------------------------------------------------
 
+// The form is embedded in the page rather than linked to: the visitor stays on
+// our own domain, keeps the request number and the signed-in identity visible
+// above the form, and never sees a raw JotForm URL. JotForm sets no
+// X-Frame-Options/CSP and no frame-busting — the same property /approve-gate's
+// hidden-iframe completion already depends on — so the form renders and submits
+// normally inside the frame.
+const FORM_GATE_STYLE = `
+    .card.wide { max-width: 900px; }
+    @media (max-width: 600px) { .card.wide { padding: 18px 12px; } }
+    .form-frame { position: relative; margin-top: 18px; border: 1px solid #dde1e7;
+      border-radius: 8px; overflow: hidden; background: #fff; }
+    .form-frame iframe { display: block; width: 100%; height: 78vh; min-height: 560px; border: 0; }
+    .form-frame .loading { position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; background: #fff; color: #667; font-size: 0.95rem; }
+    @media (prefers-color-scheme: dark) { .form-frame { border-color: #2c313a; } }
+`;
+
+// JotForm posts "setHeight:<px>:<formID>" to the embedding window as its content
+// grows (page changes, conditional fields, validation errors). This grows the
+// frame to match so the form scrolls with the page instead of inside a small
+// box. Deliberately additive-only on top of a tall CSS default: if those
+// messages never arrive (protocol change, a form that doesn't emit them), the
+// frame just stays at its default height with its own scrollbar — usable, only
+// less pretty. Accepted only from a jotform.com https origin AND only from this
+// frame's own contentWindow, so no other window can drive the resize.
+const FORM_GATE_SCRIPT = `
+    (function () {
+      var frame = document.getElementById('formFrame');
+      var loading = document.getElementById('formLoading');
+      if (!frame) return;
+      frame.addEventListener('load', function () { if (loading) loading.remove(); });
+      window.addEventListener('message', function (e) {
+        if (!frame.contentWindow || e.source !== frame.contentWindow) return;
+        if (typeof e.data !== 'string') return;
+        var origin;
+        try { origin = new URL(e.origin); } catch (err) { return; }
+        if (origin.protocol !== 'https:') return;
+        if (origin.hostname !== 'jotform.com' && !origin.hostname.endsWith('.jotform.com')) return;
+        var parts = e.data.split(':');
+        if (parts[0] !== 'setHeight') return;
+        var px = parseInt(parts[1], 10);
+        if (!isFinite(px) || px < 200 || px > 20000) return;
+        frame.style.height = px + 'px';
+      });
+    })();
+`;
+
 function renderFormGatePage({ id, target, upn }) {
+  const safeTarget = escapeHtml(target);
   return `<!doctype html>
 <html lang="th">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>เปิดฟอร์ม — ระบบกระบวนงาน BPUU</title>
+  <title>กรอกรายละเอียด — ระบบกระบวนงาน BPUU</title>
+  <style>${APPROVAL_PAGE_STYLE}${FORM_GATE_STYLE}</style>
+</head>
+<body>
+  <div class="card wide">
+    <h1>กรอกรายละเอียด</h1>
+    <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
+    <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
+    <div class="form-frame">
+      <div class="loading" id="formLoading">กำลังโหลดฟอร์ม…</div>
+      <iframe id="formFrame" src="${safeTarget}" title="ฟอร์มกรอกรายละเอียด"
+        allow="geolocation; microphone; camera; fullscreen; payment"></iframe>
+    </div>
+    <p class="meta">หากฟอร์มไม่แสดง <a href="${safeTarget}" target="_blank" rel="noopener noreferrer">เปิดฟอร์มในแท็บใหม่</a></p>
+    ${APPROVAL_FALLBACK_CONTACT_HTML}
+  </div>
+  <script>${FORM_GATE_SCRIPT}</script>
+</body>
+</html>`;
+}
+
+// Pulls the pieces the native fill-in UI needs out of a validated *.jotform.com
+// form link. Textual extraction, same rationale as approvalStepKey: merge-tag
+// URLs routinely carry a second literal '?', which URL parsing mis-buckets.
+function parseJotformFormTarget(target) {
+  const raw = String(target || '');
+  const idMatch = raw.match(/(?:^|\.|\/\/)jotform\.com\/(?:form\/)?(\d{6,20})/i);
+  const taskMatch = raw.match(/[?&]taskID=([^&#?]*)/i);
+  return {
+    formId: idMatch ? idMatch[1] : '',
+    taskId: taskMatch ? taskMatch[1] : '',
+    isAssignForm: /[?&]workflowAssignFormTask=1(?:[&#?]|$)/i.test(raw),
+  };
+}
+
+// One-shot guard key for a completed assign-form task. Keyed on the SEMANTIC
+// identity (formId + taskId) that actually drives workflow advancement —
+// those two are what get POSTed to submit.jotform.com — not the raw URL
+// bytes. Hashing the whole URL would let cosmetic variants of the same task
+// (www. vs form. vs eu. host, reordered query params, trailing slash) each
+// mint a different key and slip past the one-shot guard. The 'form' segment
+// keeps it from ever colliding with an approvalStepKey for the same submission.
+function formTaskKey(submissionId, formId, taskId) {
+  return `${submissionId}:form:${String(formId).toLowerCase()}:${String(taskId).toLowerCase()}`;
+}
+
+async function fetchJotformFormQuestions(formId) {
+  if (!isJotformConfigured() || !formId) return null;
+  const url = new URL(`${config.jotformApiBaseUrl}/form/${encodeURIComponent(formId)}/questions`);
+  url.searchParams.set('apiKey', config.jotformApiKey);
+  const response = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(JOTFORM_FETCH_TIMEOUT_MS) });
+  if (!response.ok) {
+    throw new Error(`JotForm questions API returned HTTP ${response.status}`);
+  }
+  const body = await response.json();
+  return body.content && typeof body.content === 'object' ? body.content : null;
+}
+
+// Field types the generic UI knows how to rebuild faithfully. Everything
+// layout-ish is skipped; a form containing any OTHER type (file upload,
+// widget, composite date/name, matrix, payment, ...) makes the whole form
+// ineligible — a partial submission would advance the workflow with data
+// missing, which is strictly worse than falling back to the embedded form.
+const FORM_GATE_LAYOUT_TYPES = new Set([
+  'control_head',
+  'control_button',
+  'control_text',
+  'control_divider',
+  'control_pagebreak',
+  'control_image',
+]);
+const FORM_GATE_INPUT_TYPES = new Set([
+  'control_textbox',
+  'control_textarea',
+  'control_number',
+  'control_email',
+  'control_dropdown',
+  'control_radio',
+]);
+
+// → { title, fields: [{ name, label, kind, required, options }] } or null
+// when the form has a question the builder can't reproduce.
+function buildFormGateFields(questions) {
+  if (!questions) return null;
+  let title = '';
+  const fields = [];
+  const entries = Object.entries(questions).sort(
+    (a, b) => (Number(a[1] && a[1].order) || 0) - (Number(b[1] && b[1].order) || 0)
+  );
+  for (const [qid, q] of entries) {
+    const type = q && q.type;
+    if (!type || FORM_GATE_LAYOUT_TYPES.has(type)) {
+      if (type === 'control_head' && !title && typeof q.text === 'string') title = q.text.trim();
+      continue;
+    }
+    if (!FORM_GATE_INPUT_TYPES.has(type)) return null;
+    const name = typeof q.name === 'string' ? q.name.trim() : '';
+    if (!name) return null;
+    // Dropdown/radio sub-features the flat single-value rebuild can't post
+    // faithfully — bail to the embedded real form rather than submit a
+    // mis-shaped or forced-wrong answer:
+    //   multipleSelections → real form posts an array under name[]
+    //   allowOther         → an "Other" free-text option we'd silently drop
+    //   empty option list  → a select/radio with nothing selectable
+    if (type === 'control_dropdown' || type === 'control_radio') {
+      if (q.multipleSelections === 'Yes' || q.allowOther === 'Yes') return null;
+      const opts = typeof q.options === 'string'
+        ? q.options.split('|').map((o) => o.trim()).filter(Boolean)
+        : [];
+      if (opts.length === 0) return null;
+    }
+    fields.push({
+      // JotForm's submit endpoint expects q{qid}_{name} for these controls.
+      name: `q${qid}_${name}`,
+      label: (typeof q.text === 'string' && q.text.trim()) || name,
+      kind:
+        type === 'control_textarea' ? 'textarea'
+        : type === 'control_number' ? 'number'
+        : type === 'control_email' ? 'email'
+        : type === 'control_dropdown' ? 'select'
+        : type === 'control_radio' ? 'radio'
+        : 'text',
+      required: q.required === 'Yes',
+      options:
+        (type === 'control_dropdown' || type === 'control_radio') && typeof q.options === 'string'
+          ? q.options.split('|').map((o) => o.trim()).filter(Boolean)
+          : [],
+    });
+  }
+  return fields.length ? { title, fields } : null;
+}
+
+const FORM_FILL_STYLE = `
+    .fields { text-align: left; margin-top: 16px; }
+    .field { margin-top: 14px; }
+    .field > label { display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; }
+    .field .req { color: #c0392b; }
+    .field input[type=text], .field input[type=number], .field input[type=email],
+    .field textarea, .field select {
+      width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #dde1e7;
+      border-radius: 8px; font-family: inherit; font-size: 1rem; background: #fff; color: #1f2430; }
+    .field textarea { min-height: 110px; resize: vertical; }
+    .field .radio-opt { display: block; margin: 4px 0; font-weight: 400; }
+    .field.invalid input, .field.invalid textarea, .field.invalid select { border-color: #c0392b; }
+    .form-msg { color: #c0392b; font-size: 0.92rem; margin-top: 10px; display: none; }
+    @media (prefers-color-scheme: dark) {
+      .field input[type=text], .field input[type=number], .field input[type=email],
+      .field textarea, .field select { background: #14161a; color: #e7e9ee; border-color: #2c313a; }
+    }
+`;
+
+function renderFormFieldHtml(field, index) {
+  const req = field.required ? ' <span class="req">*</span>' : '';
+  const fid = `ff_${index}`;
+  if (field.kind === 'textarea') {
+    return `<div class="field" data-name="${escapeHtml(field.name)}"><label for="${fid}">${escapeHtml(field.label)}${req}</label><textarea id="${fid}" name="${escapeHtml(field.name)}"></textarea></div>`;
+  }
+  if (field.kind === 'select') {
+    const opts = ['<option value="">— เลือก —</option>']
+      .concat(field.options.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`))
+      .join('');
+    return `<div class="field" data-name="${escapeHtml(field.name)}"><label for="${fid}">${escapeHtml(field.label)}${req}</label><select id="${fid}" name="${escapeHtml(field.name)}">${opts}</select></div>`;
+  }
+  if (field.kind === 'radio') {
+    const opts = field.options
+      .map((o) => `<label class="radio-opt"><input type="radio" name="${escapeHtml(field.name)}" value="${escapeHtml(o)}"> ${escapeHtml(o)}</label>`)
+      .join('');
+    return `<div class="field" data-name="${escapeHtml(field.name)}"><label>${escapeHtml(field.label)}${req}</label>${opts}</div>`;
+  }
+  const type = field.kind === 'number' ? 'number' : field.kind === 'email' ? 'email' : 'text';
+  const step = field.kind === 'number' ? ' step="any"' : '';
+  return `<div class="field" data-name="${escapeHtml(field.name)}"><label for="${fid}">${escapeHtml(field.label)}${req}</label><input id="${fid}" type="${type}"${step} name="${escapeHtml(field.name)}"></div>`;
+}
+
+// Close-only page for a form task that has already been submitted through
+// this gate — the form-gate counterpart of renderApprovalDecidedPage.
+function renderFormDonePage({ id, decided, upn }) {
+  return `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ส่งข้อมูลแล้ว — ระบบกระบวนงาน BPUU</title>
   <style>${APPROVAL_PAGE_STYLE}</style>
 </head>
 <body>
   <div class="card">
-    <h1>เปิดฟอร์มกรอกรายละเอียด</h1>
+    <div class="icon decided">!</div>
+    <h1>แบบฟอร์มนี้ได้รับการส่งข้อมูลไปแล้ว</h1>
     <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
+    <p class="meta">ส่งโดย: ${escapeHtml((decided && decided.identity) || '-')} &middot; เมื่อ ${escapeHtml(formatThaiTimestamp(decided && decided.at))}</p>
     <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
-    <a class="button" href="${escapeHtml(target)}">เปิดฟอร์ม</a>
-    <p class="meta">ลิงก์นี้จะพาท่านไปยังฟอร์มบน JotForm เพื่อกรอกรายละเอียดต่อไป</p>
+    <p class="warn">ระบบไม่เปิดให้ส่งข้อมูลซ้ำ หากต้องการแก้ไขข้อมูลที่ส่งไปแล้ว กรุณาติดต่อเจ้าหน้าที่</p>
+    <button type="button" class="button" onclick="window.close()">ปิดหน้าต่างนี้</button>
+    <p class="meta">หากกดแล้วหน้าต่างไม่ปิด ท่านสามารถปิดแท็บนี้ได้เอง</p>
     ${APPROVAL_FALLBACK_CONTACT_HTML}
   </div>
 </body>
 </html>`;
 }
 
+// The native fill-in UI for an assign-form workflow task.
+function renderFormFillPage({ id, upn, formId, taskId, target, formTitle, fields, detailRows }) {
+  const fieldsHtml = fields.map((f, i) => renderFormFieldHtml(f, i)).join('\n      ');
+  return `<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(formTitle || 'กรอกรายละเอียด')} — ระบบกระบวนงาน BPUU</title>
+  <style>${APPROVAL_PAGE_STYLE}${FORM_FILL_STYLE}</style>
+</head>
+<body>
+  <div class="card">
+    <div id="stepFill">
+      <h1>${escapeHtml(formTitle || 'กรอกรายละเอียด')}</h1>
+      <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
+      <p class="meta">เข้าสู่ระบบเป็น: ${escapeHtml(upn)}</p>
+      ${renderApprovalDetailsHtml(detailRows)}
+      <div class="fields">
+      ${fieldsHtml}
+      </div>
+      <div class="form-msg" id="formMsg">กรุณากรอกข้อมูลในช่องที่มีเครื่องหมาย * ให้ครบถ้วน</div>
+      <button type="button" id="submitBtn" class="button">ส่งข้อมูล</button>
+    </div>
+
+    <div id="stepWorking" style="display:none">
+      <h1>กำลังส่งข้อมูล</h1>
+      <div class="spinner"></div>
+      <p>กรุณารอสักครู่ อย่าปิดหน้าต่างนี้…</p>
+    </div>
+
+    <div id="stepDone" style="display:none">
+      <div class="icon">✓</div>
+      <h1>ส่งข้อมูลเรียบร้อยแล้ว</h1>
+      <p>คำขอหมายเลข <strong>${escapeHtml(id || '-')}</strong></p>
+      <p class="meta">ระบบจะดำเนินการขั้นตอนถัดไปโดยอัตโนมัติ</p>
+      <button type="button" class="button" onclick="window.close()">ปิดหน้าต่างนี้</button>
+      <p class="meta">หากกดแล้วหน้าต่างไม่ปิด ท่านสามารถปิดแท็บนี้ได้เอง</p>
+      ${APPROVAL_FALLBACK_CONTACT_HTML}
+    </div>
+  </div>
+
+  <iframe name="jfSubmitFrame" id="jfSubmitFrame" style="display:none"></iframe>
+
+  <script>
+    // Submission = a real browser-context POST to submit.jotform.com carrying
+    // the exact hidden pair (wfTaskID + wfTaskType) JotForm's own client JS
+    // injects when the form is opened with workflow task params — that pair
+    // is what advances the workflow. Server-side submission is NOT an option
+    // here: a server fetch was proven not to advance workflow tasks.
+    const FORM_ID = ${toScriptJson(formId)};
+    const TASK_ID = ${toScriptJson(taskId)};
+    const TARGET = ${toScriptJson(target)};
+    const SUBMISSION_ID = ${toScriptJson(id || '')};
+    const FIELDS = ${toScriptJson(fields.map((f) => ({ name: f.name, label: f.label, kind: f.kind, required: f.required })))};
+
+    const show = (which) => {
+      for (const s of ['stepFill', 'stepWorking', 'stepDone']) {
+        document.getElementById(s).style.display = s === which ? 'block' : 'none';
+      }
+    };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    function fieldValue(name, kind) {
+      if (kind === 'radio') {
+        const checked = document.querySelector('input[name="' + CSS.escape(name) + '"]:checked');
+        return checked ? checked.value : '';
+      }
+      const el = document.querySelector('[name="' + CSS.escape(name) + '"]');
+      return el ? String(el.value || '').trim() : '';
+    }
+
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+      const values = {};
+      let valid = true;
+      for (const f of FIELDS) {
+        const v = fieldValue(f.name, f.kind);
+        values[f.name] = v;
+        const wrap = document.querySelector('.field[data-name="' + CSS.escape(f.name) + '"]');
+        const missing = f.required && !v;
+        if (wrap) wrap.classList.toggle('invalid', missing);
+        if (missing) valid = false;
+      }
+      document.getElementById('formMsg').style.display = valid ? 'none' : 'block';
+      if (!valid) return;
+
+      show('stepWorking');
+
+      // Guard first, submit second — same order and same reasoning as
+      // /approve-gate: 409 = this task was already submitted somewhere,
+      // 401 = session expired mid-fill; both reload so the server renders
+      // the correct screen and nothing reaches JotForm.
+      //
+      // The audit copy is truncated to the SAME bounds the server enforces
+      // (≤40 fields, label ≤120, value ≤500) BEFORE it's sent. Without this,
+      // one long textarea could push the JSON body past the global 10kb
+      // express.json limit, the parser would 413 before the guard route runs,
+      // the client would "proceed" on the non-409/401 status — and the task
+      // would submit to JotForm with NO guard record written, silently
+      // reopening the double-submit hole this guard exists to close.
+      try {
+        const labeled = {};
+        for (const f of FIELDS.slice(0, 40)) {
+          labeled[String(f.label).slice(0, 120)] = String(values[f.name]).slice(0, 500);
+        }
+        const rec = await fetch('/api/form-gate/record', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ id: SUBMISSION_ID, target: TARGET, fields: labeled }),
+        });
+        if (rec.status === 409 || rec.status === 401) {
+          window.location.reload();
+          return;
+        }
+      } catch (err) { /* the record is a guard, not the submission — proceed */ }
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://submit.jotform.com/submit/' + encodeURIComponent(FORM_ID);
+      form.target = 'jfSubmitFrame';
+      form.acceptCharset = 'utf-8';
+      const add = (name, value) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      };
+      add('formID', FORM_ID);
+      add('simple_spc', FORM_ID);
+      add('website', '');
+      for (const f of FIELDS) add(f.name, values[f.name]);
+      add('wfTaskID', TASK_ID);
+      add('wfTaskType', 'assign-form');
+      document.body.appendChild(form);
+
+      const frame = document.getElementById('jfSubmitFrame');
+      const loaded = new Promise((r) => frame.addEventListener('load', r, { once: true }));
+      form.submit();
+      await Promise.race([loaded, sleep(10000)]);
+
+      show('stepDone');
+    });
+  </script>
+</body>
+</html>`;
+}
+
 app.get(
   '/form-gate',
-  requireAnyLogin,
+  makeRequireAnyLogin({
+    adfsOnly: false,
+    intro: 'สำหรับผู้ได้รับมอบหมายให้กรอกแบบฟอร์ม<br>กรุณาเข้าสู่ระบบเพื่อดำเนินการต่อ',
+  }),
   asyncHandler(async (req, res) => {
     noStore(res);
 
@@ -2915,9 +3381,124 @@ app.get(
     }
 
     const identityLabel = resolveApprovalIdentityLabel(req);
-    console.log(`[bpuu-workflow] form gate: identity=${identityLabel} id=${id} -> form link shown`);
+    const { formId, taskId, isAssignForm } = parseJotformFormTarget(targetStr);
 
+    // One-shot guard (assign-form tasks only): a task already submitted
+    // through this gate gets the close-only page, from any tab or login.
+    if (isAssignForm && taskId) {
+      const decided = getRecordedApprovalDecision(formTaskKey(String(id), formId, taskId));
+      if (decided) {
+        console.log(
+          `[bpuu-workflow] form gate: identity=${identityLabel} id=${id} -> already submitted (by ${decided.identity} at ${decided.at})`
+        );
+        res.status(200).send(renderFormDonePage({ id, decided, upn: identityLabel }));
+        return;
+      }
+    }
+
+    // Native fill-in UI when the form's structure is fully reproducible;
+    // any failure on this path (API down, unsupported field type, missing
+    // workflow params) falls back to embedding the real JotForm form.
+    if (isAssignForm && taskId && formId) {
+      try {
+        const built = buildFormGateFields(await fetchJotformFormQuestions(formId));
+        if (built) {
+          const isKmuttSession = Boolean(req.session.user);
+          let detailRows = isKmuttSession ? null : 'restricted';
+          try {
+            const submission = await fetchJotformSubmission(String(id));
+            if (submission && isKmuttSession) detailRows = submissionDetailRows(submission);
+          } catch (err) {
+            console.warn(`[bpuu-workflow] form gate: could not read submission ${id}: ${err.message}`);
+          }
+          console.log(
+            `[bpuu-workflow] form gate: identity=${identityLabel} id=${id} form=${formId} task=${taskId} -> native fill UI (${built.fields.length} fields)`
+          );
+          res.status(200).send(
+            renderFormFillPage({
+              id,
+              upn: identityLabel,
+              formId,
+              taskId,
+              target: targetStr,
+              formTitle: built.title,
+              fields: built.fields,
+              detailRows,
+            })
+          );
+          return;
+        }
+        console.log(
+          `[bpuu-workflow] form gate: form ${formId} has unsupported fields -> falling back to embed`
+        );
+      } catch (err) {
+        console.warn(`[bpuu-workflow] form gate: could not build native UI for form ${formId} (${err.message}) -> falling back to embed`);
+      }
+    }
+
+    console.log(`[bpuu-workflow] form gate: identity=${identityLabel} id=${id} -> form embedded`);
     res.status(200).send(renderFormGatePage({ id, target: targetStr, upn: identityLabel }));
+  })
+);
+
+// The write half of the form-task guard — recorded at the moment of the
+// click, BEFORE the browser POSTs to JotForm, same first-decision-wins
+// semantics and same store as /api/approve-gate/record. The submitted
+// values (label → value) ride along in the record purely as an audit trail.
+app.post(
+  '/api/form-gate/record',
+  requireAnyLoginJson,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+
+    const body = req.body || {};
+    const id = typeof body.id === 'string' ? body.id.trim() : '';
+    const target = typeof body.target === 'string' ? body.target : '';
+    if (!isPlausibleSubmissionId(id) || !isAllowedJotformTarget(target)) {
+      res.status(400).json({ error: 'invalid id or target' });
+      return;
+    }
+    const { formId, taskId, isAssignForm } = parseJotformFormTarget(target);
+    if (!isAssignForm || !taskId || !formId) {
+      res.status(400).json({ error: 'target is not an assign-form task link' });
+      return;
+    }
+
+    const stepKey = formTaskKey(id, formId, taskId);
+    const existing = getRecordedApprovalDecision(stepKey);
+    if (existing) {
+      res.status(409).json({ decided: existing });
+      return;
+    }
+
+    // Audit copy of what was submitted — bounded so a hostile client can't
+    // bloat the store (the real submission lives in JotForm regardless).
+    const fields = {};
+    if (body.fields && typeof body.fields === 'object' && !Array.isArray(body.fields)) {
+      for (const [label, value] of Object.entries(body.fields).slice(0, 40)) {
+        fields[String(label).slice(0, 120)] = String(value).slice(0, 500);
+      }
+    }
+
+    const record = {
+      type: 'form-submit',
+      outcome: 'form_submitted',
+      outcomeLabel: 'ส่งข้อมูลแล้ว',
+      formId,
+      taskId,
+      fields,
+      identity: resolveApprovalIdentityLabel(req),
+      at: new Date().toISOString(),
+    };
+    try {
+      recordApprovalDecision(stepKey, record);
+    } catch (err) {
+      console.error(`[bpuu-workflow] could not persist form submission record for ${stepKey}: ${err.message}`);
+    }
+    console.log(
+      `[bpuu-workflow] form submission recorded: step=${stepKey} form=${formId} task=${taskId} identity=${record.identity}`
+    );
+    res.status(200).json({ ok: true });
   })
 );
 
@@ -2962,6 +3543,8 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
     body { background: #f2f4f7; font-family: "Sarabun", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     .admin-header { background: linear-gradient(135deg, #FA4616, #ff734d); color: #fff; padding: 18px 0; }
     .admin-header .sub { font-size: 12px; letter-spacing: .4px; opacity: .95; }
+    /* ใช้โลโก้เวอร์ชันสีขาว เพราะแถบหัวเป็นพื้นส้ม (ตัวสีส้มจะจมหาย) */
+    .admin-header .admin-logo { height: 44px; width: auto; flex: none; }
     .admin-header .title { font-size: 20px; font-weight: 800; }
     .panel { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; }
     .panel-head { padding: 16px 20px; border-bottom: 1px solid #eef0f3; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -3004,9 +3587,12 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
 <body>
   <div class="admin-header">
     <div class="container d-flex align-items-center justify-content-between">
-      <div>
-        <div class="sub">มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี (มจธ.)</div>
-        <div class="title">ผู้ดูแลระบบ · ระบบกระบวนงาน BPUU</div>
+      <div class="d-flex align-items-center gap-3">
+        <img src="/img/kmutt-main-logo-white.png" alt="KMUTT" class="admin-logo">
+        <div>
+          <div class="sub">มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี (มจธ.)</div>
+          <div class="title">ผู้ดูแลระบบ · ระบบกระบวนงาน BPUU</div>
+        </div>
       </div>
       <div class="text-end">
         <div style="font-size:.85rem;opacity:.95;">
@@ -3025,6 +3611,7 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
     <nav class="nav-menu">
       <button type="button" class="active" data-tab="requests"><i class="bi bi-inbox"></i> รายการคำขอ</button>
       <button type="button" data-tab="locations"><i class="bi bi-geo-alt"></i> จัดการสถานที่</button>
+      <button type="button" data-tab="report"><i class="bi bi-file-earmark-spreadsheet"></i> รายงาน</button>
       ${isRoleAdmin ? '<button type="button" data-tab="permissions"><i class="bi bi-shield-lock"></i> สิทธิ์การเข้าถึง</button>' : ''}
     </nav>
 
@@ -3050,7 +3637,7 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
           <div class="table-responsive">
             <table class="table table-hover tbl align-middle mb-0">
               <thead class="table-light"><tr id="reqHead"></tr></thead>
-              <tbody id="reqBody"><tr><td colspan="9" class="state-msg">กำลังโหลด…</td></tr></tbody>
+              <tbody id="reqBody"><tr><td colspan="8" class="state-msg">กำลังโหลด…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -3101,6 +3688,49 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
           </details>
           <div id="locMsg" class="mt-2" style="font-size:.9rem;"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Report -->
+    <div class="tab-panel" id="tab-report">
+      <div class="panel">
+        <div class="panel-head">
+          <h2><i class="bi bi-file-earmark-spreadsheet text-ci-orange"></i> รายงาน</h2>
+          <div class="toolbar">
+            <select id="rptType" class="form-select form-select-sm" style="width:330px">
+              ${REPORT_DEFS.map(
+                (d) => '<option value="' + escapeHtml(d.key) + '">' + escapeHtml(d.title) + '</option>'
+              ).join('')}
+            </select>
+            <input id="rptFrom" type="date" class="form-control form-control-sm" style="width:150px" title="วันที่คำขอ ตั้งแต่">
+            <input id="rptTo" type="date" class="form-control form-control-sm" style="width:150px" title="วันที่คำขอ ถึง">
+            <span id="rptFilters" class="d-flex flex-wrap gap-2"></span>
+            <span class="result-count" id="rptCount"></span>
+            <button id="rptRefresh" class="btn btn-sm btn-outline-secondary" title="โหลดใหม่"><i class="bi bi-arrow-clockwise"></i></button>
+            <button id="rptExport" class="btn btn-sm btn-ci-orange fw-bold"><i class="bi bi-download"></i> ดาวน์โหลด CSV</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="table-responsive">
+            <table class="table table-hover tbl align-middle mb-0">
+              <thead class="table-light"><tr id="rptGroupHead"></tr><tr id="rptHead"></tr></thead>
+              <tbody id="rptBody"><tr><td class="state-msg">กำลังโหลด…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- รายละเอียดคำขอ (เปิดจากการคลิกหมายเลขคำขอในตารางรายงาน) -->
+    <div id="rptDetail" style="display:none; position:fixed; inset:0; z-index:1080;
+         background:rgba(0,0,0,.35); align-items:center; justify-content:center;">
+      <div style="background:#fff; border-radius:10px; max-width:560px; width:calc(100% - 2rem);
+           max-height:80vh; overflow:auto; box-shadow:0 12px 32px rgba(0,0,0,.25);">
+        <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
+          <strong>รายละเอียดคำขอ</strong>
+          <button type="button" id="rptDetailClose" class="btn-close" aria-label="ปิด"></button>
+        </div>
+        <pre id="rptDetailBody" class="px-3 py-3 mb-0" style="white-space:pre-wrap; font-family:inherit; font-size:.9rem;"></pre>
       </div>
     </div>
 
@@ -3246,9 +3876,12 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
         const q = state.filter.trim().toLowerCase();
         let rows = state.rows;
         if (q) {
-          rows = rows.filter((r) =>
-            opts.columns.some((c) => val(r, c.key).toLowerCase().includes(q)) ||
-            (opts.searchKeys || []).some((k) => val(r, k).toLowerCase().includes(q))
+          // เลือกกลุ่มไว้ = ค้นหาเฉพาะฟิลด์นั้น (รวมอีเมลคู่ของมัน ซึ่งเป็นค่าที่แสดงแทนเมื่อชื่อว่าง)
+          const scope = state.groupBy ? [state.groupBy, state.groupBy + 'Email'] : null;
+          rows = rows.filter((r) => scope
+            ? scope.some((k) => val(r, k).toLowerCase().includes(q))
+            : opts.columns.some((c) => val(r, c.key).toLowerCase().includes(q)) ||
+              (opts.searchKeys || []).some((k) => val(r, k).toLowerCase().includes(q))
           );
         }
         if (state.sortKey) {
@@ -3296,7 +3929,18 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
       const search = document.getElementById(opts.searchId);
       if (search) search.addEventListener('input', () => { state.filter = search.value; render(); });
       const group = document.getElementById(opts.groupId);
-      if (group) group.addEventListener('change', () => { state.groupBy = group.value; render(); });
+      if (group) {
+        // placeholder บอกขอบเขตที่ค้นหาอยู่ — ป้ายตัวเลือกขึ้นต้นด้วย 'กลุ่ม: '
+        const basePlaceholder = search ? search.placeholder : '';
+        group.addEventListener('change', () => {
+          state.groupBy = group.value;
+          if (search) {
+            const label = (group.selectedOptions[0]?.textContent || '').replace(/^กลุ่ม: /, '');
+            search.placeholder = state.groupBy ? 'ค้นหาใน ' + label + '…' : basePlaceholder;
+          }
+          render();
+        });
+      }
 
       return {
         setRows(rows) { state.rows = rows || []; render(); },
@@ -3327,11 +3971,10 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
       searchKeys: ['requesterEmail', 'approverEmail'],
       columns: [
         { key: 'id', label: 'Ref' },
-        { key: 'createdAt', label: 'วันที่' },
+        { key: 'createdAt', label: 'วันที่ขอ' },
         { key: 'requester', label: 'ผู้ขอ' },
         { key: 'requestType', label: 'ประเภทบริการ' },
         { key: 'approver', label: 'ผู้อนุมัติ', cell: (r) => textCell(r.approver || r.approverEmail) },
-        { key: 'amount', label: 'ยอด (บาท)', align: 'end', cell: (r) => textCell(r.amount, 'end') },
         {
           key: 'status', label: 'สถานะ',
           cell: (r) => {
@@ -3622,8 +4265,258 @@ function renderAdminPage({ currentEmail, currentRole, jotformConfigured }) {
 
     document.getElementById('refreshBtn').addEventListener('click', loadRequests);
 
+    // -----------------------------------------------------------------
+    // Report tab — หัวตาราง 2 ชั้นตามไฟล์ต้นแบบ จึงไม่ได้ใช้ createTable()
+    // (ตัวนั้นรองรับหัวแถวเดียว) เรนเดอร์ด้วย textContent ล้วนเหมือนแท็บอื่น
+    // เพื่อไม่ให้เนื้อหาจาก JotForm แทรก markup เข้าหน้านี้ได้
+    // -----------------------------------------------------------------
+    let rptData = { title: '', columns: [], rows: [], meta: [], filters: [], sumColumn: '' };
+    let rptActiveFilters = {};
+
+    function rptColIndex(header) {
+      return rptData.columns.findIndex((c) => c.header === header);
+    }
+
+    function rptMessage(text) {
+      const body = document.getElementById('rptBody');
+      body.replaceChildren();
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.className = 'state-msg';
+      td.colSpan = Math.max(1, rptData.columns.length);
+      td.textContent = text;
+      tr.appendChild(td);
+      body.appendChild(tr);
+    }
+
+    // สร้าง dropdown ตัวกรองจากค่าที่มีจริงในข้อมูล (ไม่ hardcode รายชื่อหน่วยงาน)
+    function renderFilters() {
+      const host = document.getElementById('rptFilters');
+      host.replaceChildren();
+      rptActiveFilters = {};
+      for (const f of rptData.filters || []) {
+        const values = [...new Set(rptData.meta.map((m) => m[f.key]).filter(Boolean))]
+          .sort((a, b) => String(a).localeCompare(String(b), 'th'));
+        if (!values.length) continue;
+        const sel = document.createElement('select');
+        sel.className = 'form-select form-select-sm';
+        sel.style.width = '200px';
+        sel.title = f.label;
+        const all = document.createElement('option');
+        all.value = '';
+        all.textContent = 'ทุก' + f.label;
+        sel.appendChild(all);
+        for (const v of values) {
+          const o = document.createElement('option');
+          o.value = v;
+          o.textContent = v;
+          sel.appendChild(o);
+        }
+        sel.addEventListener('change', () => {
+          rptActiveFilters[f.key] = sel.value;
+          renderReport();
+        });
+        host.appendChild(sel);
+      }
+    }
+
+    // คืน index ของแถวที่ผ่านตัวกรองทั้งหมด (เก็บ index ไว้เพื่ออ้าง meta ได้ตรงแถว)
+    function rptVisibleIndexes() {
+      const from = document.getElementById('rptFrom').value;
+      const to = document.getElementById('rptTo').value;
+      const dateIdx = rptColIndex('วันที่คำขอ');
+      const out = [];
+      rptData.rows.forEach((r, i) => {
+        if (dateIdx >= 0) {
+          const d = r[dateIdx] || '';
+          if (from && d < from) return;
+          if (to && d > to) return;
+        }
+        const m = rptData.meta[i] || {};
+        for (const [key, want] of Object.entries(rptActiveFilters)) {
+          if (want && String(m[key] || '') !== want) return;
+        }
+        out.push(i);
+      });
+      return out;
+    }
+
+    // แถวสรุปท้ายตาราง: ถ้ามีคอลัมน์ที่กำหนดไว้ก็รวมค่าในคอลัมน์นั้น
+    // ถ้าไม่มี (เช่นรายเดือนที่ 1 คำขอ = 1 คัน) ให้นับจำนวนแถวแทน
+    function rptTotal(indexes) {
+      const idx = rptData.sumColumn ? rptColIndex(rptData.sumColumn) : -1;
+      if (idx < 0) return indexes.length;
+      return indexes.reduce((sum, i) => {
+        const n = Number(String(rptData.rows[i][idx]).replace(/,/g, ''));
+        return sum + (Number.isFinite(n) ? n : 0);
+      }, 0);
+    }
+
+    function showRequestDetail(index) {
+      const m = rptData.meta[index];
+      if (!m) return;
+      const lines = [];
+      lines.push('หมายเลขคำขอ : ' + m.id);
+      if (m.requesterName) lines.push('ผู้ยื่นคำขอ : ' + m.requesterName);
+      if (m.startDate || m.endDate) lines.push('ช่วงวันที่ : ' + (m.startDate || '-') + ' ถึง ' + (m.endDate || '-'));
+      if (m.amount) lines.push('จำนวนเงิน : ' + m.amount);
+      if (m.vehicleCount) lines.push('จำนวนรถ : ' + m.vehicleCount + ' คัน');
+      if (m.vehicles && m.vehicles.length) {
+        lines.push('');
+        lines.push('รายการรถทั้งหมด');
+        for (const v of m.vehicles) {
+          lines.push('  คันที่ ' + v.index + (v.owner ? ' (' + v.owner + ')' : '') +
+            ' : ' + [v.name, v.plate].filter(Boolean).join(' — '));
+        }
+      }
+      const box = document.getElementById('rptDetailBody');
+      box.textContent = lines.join('\n');
+      document.getElementById('rptDetail').style.display = 'flex';
+    }
+
+    function renderReport() {
+      const groupHead = document.getElementById('rptGroupHead');
+      const head = document.getElementById('rptHead');
+      const body = document.getElementById('rptBody');
+      groupHead.replaceChildren();
+      head.replaceChildren();
+
+      // แถวบน: ยุบคอลัมน์ที่อยู่กลุ่มเดียวกันติดกันให้เป็นเซลล์เดียว (colspan)
+      let i = 0;
+      while (i < rptData.columns.length) {
+        const g = rptData.columns[i].group || '';
+        let span = 1;
+        while (i + span < rptData.columns.length && (rptData.columns[i + span].group || '') === g) span++;
+        const th = document.createElement('th');
+        th.colSpan = span;
+        th.textContent = g;
+        if (g) th.className = 'text-center';
+        groupHead.appendChild(th);
+        i += span;
+      }
+
+      for (const col of rptData.columns) {
+        const th = document.createElement('th');
+        th.textContent = col.header;
+        // คอลัมน์ที่ยังไม่มีแหล่งข้อมูล — ทำให้เห็นชัดว่าตั้งใจเว้นว่าง ไม่ใช่บั๊ก
+        if (!col.mapped) {
+          th.style.color = '#9aa1a9';
+          th.title = 'ยังไม่มีข้อมูลในระบบ — รอกำหนดวิธีแมป';
+        }
+        head.appendChild(th);
+      }
+
+      const indexes = rptVisibleIndexes();
+      document.getElementById('rptCount').textContent = indexes.length + ' คำขอ';
+      if (!indexes.length) { rptMessage('ไม่มีข้อมูลตามเงื่อนไขที่เลือก'); return; }
+
+      const idIdx = rptColIndex('หมายเลขคำขอ');
+      body.replaceChildren();
+      for (const rowIndex of indexes) {
+        const tr = document.createElement('tr');
+        rptData.rows[rowIndex].forEach((cell, idx) => {
+          const td = document.createElement('td');
+          if (idx === idIdx && cell) {
+            // คลิกหมายเลขคำขอเพื่อดูรายละเอียด เช่น ทะเบียนรถครบทุกคัน
+            const a = document.createElement('button');
+            a.type = 'button';
+            a.className = 'btn btn-link btn-sm p-0 text-decoration-underline';
+            a.textContent = cell;
+            a.addEventListener('click', () => showRequestDetail(rowIndex));
+            td.appendChild(a);
+          } else {
+            td.textContent = cell;
+          }
+          if (!rptData.columns[idx] || !rptData.columns[idx].mapped) td.style.background = '#fafafa';
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      }
+
+      if (rptData.sumColumn) {
+        const sumIdx = rptColIndex(rptData.sumColumn);
+        const tr = document.createElement('tr');
+        tr.className = 'fw-bold table-light';
+        const label = document.createElement('td');
+        label.colSpan = sumIdx > 0 ? sumIdx : rptData.columns.length;
+        label.className = 'text-end';
+        label.textContent = 'รวมจำนวนรถ';
+        tr.appendChild(label);
+        if (sumIdx > 0) {
+          const total = document.createElement('td');
+          total.textContent = String(rptTotal(indexes));
+          tr.appendChild(total);
+          for (let c = sumIdx + 1; c < rptData.columns.length; c++) tr.appendChild(document.createElement('td'));
+        }
+        body.appendChild(tr);
+      }
+    }
+
+    async function loadReport() {
+      const key = document.getElementById('rptType').value;
+      rptData = { title: '', columns: [], rows: [], meta: [], filters: [], sumColumn: '' };
+      document.getElementById('rptFilters').replaceChildren();
+      rptMessage('กำลังโหลด…');
+      document.getElementById('rptCount').textContent = '';
+      try {
+        const res = await fetch('/api/admin/report?key=' + encodeURIComponent(key), {
+          headers: { 'Accept': 'application/json' },
+        });
+        const data = await res.json();
+        if (data.notConfigured) { rptMessage('ยังไม่ได้ตั้งค่า JotForm API key'); return; }
+        if (data.error) { rptMessage(data.error); return; }
+        rptData = data;
+        renderFilters();
+        renderReport();
+      } catch (err) {
+        rptMessage('เกิดข้อผิดพลาดในการโหลดรายงาน');
+      }
+    }
+
+    function rptExportCsv() {
+      if (!rptData.columns.length) return;
+      const esc = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+      const indexes = rptVisibleIndexes();
+      const lines = [
+        rptData.columns.map((c) => esc(c.group || '')).join(','),
+        rptData.columns.map((c) => esc(c.header)).join(','),
+        ...indexes.map((i) => rptData.rows[i].map(esc).join(',')),
+      ];
+      if (rptData.sumColumn) {
+        const sumIdx = rptColIndex(rptData.sumColumn);
+        const cells = rptData.columns.map(() => esc(''));
+        cells[0] = esc('รวมจำนวนรถ');
+        if (sumIdx >= 0) cells[sumIdx] = esc(rptTotal(indexes));
+        lines.push(cells.join(','));
+      }
+      // ﻿ (BOM) จำเป็นมาก — ถ้าไม่มี Excel จะอ่านภาษาไทยเป็นอักขระเพี้ยน
+      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (rptData.title || 'report') + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+    }
+
+    document.getElementById('rptDetailClose').addEventListener('click', () => {
+      document.getElementById('rptDetail').style.display = 'none';
+    });
+    document.getElementById('rptDetail').addEventListener('click', (e) => {
+      // คลิกพื้นหลังนอกกล่องเพื่อปิด
+      if (e.target.id === 'rptDetail') e.target.style.display = 'none';
+    });
+
+    document.getElementById('rptType').addEventListener('change', loadReport);
+    document.getElementById('rptRefresh').addEventListener('click', loadReport);
+    document.getElementById('rptExport').addEventListener('click', rptExportCsv);
+    document.getElementById('rptFrom').addEventListener('change', renderReport);
+    document.getElementById('rptTo').addEventListener('change', renderReport);
+
     loadRequests();
     loadLocations();
+    loadReport();
     loadAllowlist();
   </script>
 </body>
@@ -3692,7 +4585,9 @@ function requestDurationDays(createdAt, updatedAt, status) {
   return Math.round((end - start) / 86400000);
 }
 
-async function fetchJotformRequests() {
+// ดึง submission ดิบทั้งหมด — ใช้ร่วมกันระหว่างตาราง "รายการคำขอ" กับ tab "รายงาน"
+// (แยกออกมาเพื่อไม่ให้ทั้งสองที่มี logic การเรียก API ซ้ำกันคนละชุด)
+async function fetchJotformSubmissionsRaw() {
   const url = new URL(`${config.jotformApiBaseUrl}/form/${config.jotformFormId}/submissions`);
   url.searchParams.set('apiKey', config.jotformApiKey);
   url.searchParams.set('limit', '1000');
@@ -3707,7 +4602,11 @@ async function fetchJotformRequests() {
   }
 
   const body = await response.json();
-  const content = Array.isArray(body.content) ? body.content : [];
+  return Array.isArray(body.content) ? body.content : [];
+}
+
+async function fetchJotformRequests() {
+  const content = await fetchJotformSubmissionsRaw();
 
   const notes = loadRequestNotes();
   const requests = content.map((sub) => {
@@ -3749,6 +4648,521 @@ async function fetchJotformRequests() {
 function looksLikeEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
+
+// ---------------------------------------------------------------------------
+// รายงาน (tab "รายงาน" ในหน้า admin)
+//
+// โครงคอลัมน์ยึดตามไฟล์ต้นแบบ "รายงานระบบ Work Flow.xlsx" (11 ชีต) หัวตาราง
+// เป็น 2 ชั้น: แถวบน = หัวกลุ่ม (ส่วนที่ 1/2/3 ฯลฯ), แถวล่าง = ชื่อคอลัมน์จริง
+//
+// คอลัมน์ที่ src เป็น null คือช่องที่ระบบ "ยังไม่มีแหล่งข้อมูล" (ใบเสร็จรับเงิน,
+// ใบแจ้งหนี้, เลขที่ Voucher) — คงคอลัมน์ไว้ให้ครบตามต้นแบบแต่ปล่อยค่าว่าง
+// รอผู้ใช้ระบุวิธีแมปภายหลัง ห้ามเดาค่าใส่
+// ---------------------------------------------------------------------------
+
+const FORM_AREA = 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว';
+const FORM_CONTRACT = 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา';
+const FORM_OVERNIGHT = 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)';
+const FORM_MONTHLY = 'แบบฟอร์มขอจอดรถรายเดือน';
+const FORM_STAMP = 'แบบฟอร์มขอใช้ตราประทับ';
+const FORM_ISSUE = 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ';
+
+const G_REQUESTER = '(ส่วนที่ 1) รายละเอียดผู้ยื่นคำขอ';
+const G_CONTACT = '(ส่วนที่ 1) ข้อมูลผู้ติดต่อ';
+const G_APPROVER = '(ส่วนที่ 2) ผู้บังคับบัญชา (หน่วยงาน)';
+const G_DETAIL2 = '(ส่วนที่ 2) รายละเอียดคำขอ';
+const G_DETAIL3 = '(ส่วนที่ 3) รายละเอียดคำขอ';
+const G_RECEIPT = 'ใบเสร็จรับเงิน';
+const G_INVOICE = 'ใบแจ้งหนี้';
+
+// ช่องใบเสร็จ 3 ช่องท้ายตารางที่ซ้ำกันในหลายรายงาน — ยังไม่มีแหล่งข้อมูล
+const RECEIPT_COLUMNS = [
+  { header: 'ชื่อที่ออกใบเสร็จรับเงิน', group: G_RECEIPT, src: null },
+  { header: 'เลขที่ใบเสร็จรับเงิน', group: G_RECEIPT, src: null },
+  { header: 'วันที่ใบเสร็จรับเงิน', group: G_RECEIPT, src: null },
+];
+
+const COL_SEQ = { header: 'ลำดับ', group: '', src: 'seq' };
+const COL_ID = { header: 'หมายเลขคำขอ', group: '', src: 'id' };
+const COL_CREATED = { header: 'วันที่คำขอ', group: '', src: 'createdAt' };
+const COL_AMOUNT = { header: 'จำนวนเงิน', group: '', src: 'amount' };
+
+// filters: ตัวกรองที่แท็บรายงานจะสร้าง dropdown ให้ (ค่าตัวเลือกดึงจากข้อมูลจริง)
+// sumColumn: หัวคอลัมน์ที่จะรวมยอดในแถวท้ายตาราง
+const REPORT_DEFS = [
+  {
+    key: 'area-internal',
+    title: 'รายงานการขอใช้พื้นที่ชั่วคราว (บุคลากรภายใน)',
+    match: (r) => r.formName === FORM_AREA && r.userType === 'บุคลากร',
+    filters: ['department'],
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'ชื่อ-สกุล', group: G_REQUESTER, src: 'requesterName' },
+      { header: 'หน่วยงาน', group: G_REQUESTER, src: 'department' },
+      { header: 'ผู้มีอำนาจอนุมัติ', group: G_APPROVER, src: 'approver' },
+      { header: 'วันที่อนุมัติ', group: G_APPROVER, src: 'approvedAt' },
+      { header: 'ชื่อกิจกรรม', group: G_DETAIL3, src: 'eventName' },
+      { header: 'วัตถุประสงค์', group: G_DETAIL3, src: 'eventObjectives' },
+      { header: 'จำนวนบูธ', group: G_DETAIL3, src: 'boothCount' },
+      { header: 'สถานที่', group: G_DETAIL3, src: 'eventLocations' },
+      { header: 'วันที่เริ่มต้น', group: G_DETAIL3, src: 'startDate' },
+      { header: 'วันที่สิ้นสุด', group: G_DETAIL3, src: 'endDate' },
+    ],
+  },
+  {
+    key: 'area-external',
+    title: 'รายงานการขอใช้พื้นที่ชั่วคราว (บุคคลภายนอก)',
+    match: (r) => r.formName === FORM_AREA && r.userType === 'บุคคลภายนอก',
+    filters: ['department', 'externalType'],
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'ชื่อ', group: G_CONTACT, src: 'firstName' },
+      { header: 'นามสกุล', group: G_CONTACT, src: 'lastName' },
+      { header: 'หน่วยงาน / บริษัท / นิติบุคคล', group: G_CONTACT, src: 'department' },
+      { header: 'ชื่อกิจกรรม', group: G_DETAIL2, src: 'eventName' },
+      { header: 'วัตถุประสงค์', group: G_DETAIL2, src: 'eventObjectives' },
+      { header: 'จำนวนบูธ', group: G_DETAIL2, src: 'boothCount' },
+      { header: 'สถานที่', group: G_DETAIL2, src: 'eventLocations' },
+      { header: 'วันที่เริ่มต้น', group: G_DETAIL2, src: 'startDate' },
+      { header: 'วันที่สิ้นสุด', group: G_DETAIL2, src: 'endDate' },
+      COL_AMOUNT,
+      ...RECEIPT_COLUMNS,
+    ],
+  },
+  {
+    key: 'contract',
+    title: 'รายงานการขอใช้พื้นที่ภายใต้คู่สัญญา',
+    match: (r) => r.formName === FORM_CONTRACT,
+    filters: ['department', 'contractCampus'],
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'ชื่อ', group: G_CONTACT, src: 'firstName' },
+      { header: 'นามสกุล', group: G_CONTACT, src: 'lastName' },
+      { header: 'หน่วยงาน / บริษัท / นิติบุคคล', group: G_CONTACT, src: 'department' },
+      { header: 'ชื่อบริษัท', group: G_DETAIL2, src: 'contractCompany' },
+      { header: 'ประเภทธุรกิจ', group: G_DETAIL2, src: 'contractBusinessType' },
+      { header: 'พื้นที่การศึกษา', group: G_DETAIL2, src: 'contractCampus' },
+      { header: 'อาคาร', group: G_DETAIL2, src: 'contractBuilding' },
+      { header: 'วันที่ขอเข้าพื้นที่เริ่มต้น', group: G_DETAIL2, src: 'startDate' },
+      { header: 'วันที่ขอเข้าพื้นที่สิ้นสุด', group: G_DETAIL2, src: 'endDate' },
+      { header: 'ข้อความเสนอพิจารณา', group: G_DETAIL2, src: 'considerationNote' },
+      { header: 'ผู้มีอำนาจอนุมัติ', group: 'เจ้าของพื้นที่', src: 'approver' },
+      { header: 'วันที่อนุมัติ', group: 'เจ้าของพื้นที่', src: 'approvedAt' },
+    ],
+  },
+  {
+    key: 'overnight-internal',
+    title: 'รายงานการขอจอดรถค้างคืน (บุคลากรภายใน)',
+    match: (r) => r.formName === FORM_OVERNIGHT && r.userType === 'บุคลากร',
+    filters: ['department'],
+    sumColumn: 'จำนวนรถ (คัน)',
+    columns: [
+      COL_SEQ, COL_ID, COL_CREATED,
+      { header: 'ผู้ยื่นคำขอ', group: '(ส่วนที่ 1) ผู้ยื่นคำขอ', src: 'requesterName' },
+      { header: 'หน่วยงาน', group: '(ส่วนที่ 1) ผู้ยื่นคำขอ', src: 'department' },
+      { header: 'ผู้มีอำนาจอนุมัติ', group: G_APPROVER, src: 'approver' },
+      { header: 'วันที่อนุมัติ', group: G_APPROVER, src: 'approvedAt' },
+      { header: 'ทะเบียนรถ', group: G_DETAIL3, src: 'singlePlate' },
+      { header: 'ชื่อ-สกุล', group: G_DETAIL3, src: 'singleOwner' },
+      { header: 'จำนวนรถ (คัน)', group: G_DETAIL3, src: 'vehicleCount' },
+      { header: 'วันที่เริ่มต้น', group: G_DETAIL3, src: 'startDate' },
+      { header: 'วันที่สิ้นสุด', group: G_DETAIL3, src: 'endDate' },
+      { header: 'จำนวนคืน', group: G_DETAIL3, src: 'totalDays' },
+      { header: 'เหตุผลการขอจอด', group: G_DETAIL3, src: 'parkReason' },
+      COL_AMOUNT,
+      ...RECEIPT_COLUMNS,
+    ],
+  },
+  {
+    key: 'overnight-external',
+    title: 'รายงานการขอจอดรถค้างคืน (บุคคลภายนอก)',
+    match: (r) => r.formName === FORM_OVERNIGHT && r.userType === 'บุคคลภายนอก',
+    filters: ['department', 'externalType'],
+    sumColumn: 'จำนวนรถ (คัน)',
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'ประเภทผู้ขอ', group: G_CONTACT, src: 'externalType' },
+      { header: 'ชื่อ', group: G_CONTACT, src: 'firstName' },
+      { header: 'นามสกุล', group: G_CONTACT, src: 'lastName' },
+      { header: 'หน่วยงาน / บริษัท / นิติบุคคล', group: G_CONTACT, src: 'department' },
+      { header: 'ทะเบียนรถ', group: G_DETAIL2, src: 'singlePlate' },
+      { header: 'จำนวนรถ (คัน)', group: G_DETAIL2, src: 'vehicleCount' },
+      { header: 'วันที่เริ่มต้น', group: G_DETAIL2, src: 'startDate' },
+      { header: 'วันที่สิ้นสุด', group: G_DETAIL2, src: 'endDate' },
+      { header: 'จำนวนคืน', group: G_DETAIL2, src: 'totalDays' },
+      { header: 'เหตุผลการขอจอด', group: G_DETAIL2, src: 'parkReason' },
+      COL_AMOUNT,
+      ...RECEIPT_COLUMNS,
+    ],
+  },
+  {
+    key: 'overnight-student',
+    title: 'รายงานการขอจอดรถค้างคืน (นักศึกษา)',
+    match: (r) => r.formName === FORM_OVERNIGHT && r.userType === 'นักศึกษา',
+    filters: ['faculty'],
+    sumColumn: 'จำนวนรถ (คัน)',
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'รหัสนักศึกษา', group: G_REQUESTER, src: 'requesterId' },
+      { header: 'ผู้ยื่นคำขอ', group: G_REQUESTER, src: 'requesterName' },
+      { header: 'คณะ / สังกัด', group: G_REQUESTER, src: 'faculty' },
+      { header: 'ภาควิชา / สาขาวิชา', group: G_REQUESTER, src: 'major' },
+      { header: 'ทะเบียนรถ', group: G_DETAIL2, src: 'singlePlate' },
+      { header: 'จำนวนรถ (คัน)', group: G_DETAIL2, src: 'vehicleCount' },
+      { header: 'วันที่เริ่มต้น', group: G_DETAIL2, src: 'startDate' },
+      { header: 'วันที่สิ้นสุด', group: G_DETAIL2, src: 'endDate' },
+      { header: 'จำนวนคืน', group: G_DETAIL2, src: 'totalDays' },
+      { header: 'เหตุผลการขอจอด', group: G_DETAIL2, src: 'parkReason' },
+      COL_AMOUNT,
+      ...RECEIPT_COLUMNS,
+    ],
+  },
+  {
+    key: 'monthly-internal',
+    title: 'รายงานการขอจอดรถรายเดือน (บุคลากรภายใน)',
+    match: (r) => r.formName === FORM_MONTHLY && r.userType === 'บุคลากร',
+    filters: ['department'],
+    sumColumn: 'จำนวนรถ (คัน)',
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'ชื่อ', group: G_REQUESTER, src: 'firstName' },
+      { header: 'นามสกุล', group: G_REQUESTER, src: 'lastName' },
+      { header: 'หน่วยงาน', group: G_REQUESTER, src: 'department' },
+      { header: 'ผู้มีอำนาจอนุมัติ', group: G_APPROVER, src: 'approver' },
+      { header: 'วันที่อนุมัติ', group: G_APPROVER, src: 'approvedAt' },
+      { header: 'ผู้ใช้บริการจริง', group: G_DETAIL3, src: 'actualUserName' },
+      { header: 'ทะเบียนรถ', group: G_DETAIL3, src: 'singlePlate' },
+      { header: 'วันที่เริ่มต้น', group: G_DETAIL3, src: 'startDate' },
+      { header: 'วันที่สิ้นสุด', group: G_DETAIL3, src: 'endDate' },
+      COL_AMOUNT,
+      ...RECEIPT_COLUMNS,
+    ],
+  },
+  {
+    key: 'monthly-external',
+    title: 'รายงานการขอจอดรถรายเดือน (บุคคลภายนอก)',
+    match: (r) => r.formName === FORM_MONTHLY && r.userType === 'บุคคลภายนอก',
+    filters: ['department', 'externalType'],
+    sumColumn: 'จำนวนรถ (คัน)',
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'ประเภทผู้ขอ', group: G_CONTACT, src: 'externalType' },
+      { header: 'ชื่อ', group: G_CONTACT, src: 'firstName' },
+      { header: 'นามสกุล', group: G_CONTACT, src: 'lastName' },
+      { header: 'หน่วยงาน / บริษัท / นิติบุคคล', group: G_CONTACT, src: 'department' },
+      { header: 'ทะเบียนรถ', group: G_DETAIL2, src: 'singlePlate' },
+      { header: 'วันที่เริ่มต้น', group: G_DETAIL2, src: 'startDate' },
+      { header: 'วันที่สิ้นสุด', group: G_DETAIL2, src: 'endDate' },
+      COL_AMOUNT,
+      ...RECEIPT_COLUMNS,
+    ],
+  },
+  {
+    key: 'monthly-student',
+    title: 'รายงานการขอจอดรถรายเดือน (นักศึกษา)',
+    match: (r) => r.formName === FORM_MONTHLY && r.userType === 'นักศึกษา',
+    filters: ['faculty'],
+    sumColumn: 'จำนวนรถ (คัน)',
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'รหัสนักศึกษา', group: G_REQUESTER, src: 'requesterId' },
+      { header: 'ผู้ยื่นคำขอ', group: G_REQUESTER, src: 'requesterName' },
+      { header: 'คณะ / สังกัด', group: G_REQUESTER, src: 'faculty' },
+      { header: 'ภาควิชา / สาขาวิชา', group: G_REQUESTER, src: 'major' },
+      { header: 'ข้อมูลรถ', group: G_DETAIL2, src: 'singlePlate' },
+      { header: 'วันที่เริ่มต้น', group: G_DETAIL2, src: 'startDate' },
+      { header: 'วันที่สิ้นสุด', group: G_DETAIL2, src: 'endDate' },
+      COL_AMOUNT,
+      ...RECEIPT_COLUMNS,
+    ],
+  },
+  {
+    key: 'stamp',
+    title: 'รายงานการขอใช้ตราประทับ',
+    match: (r) => r.formName === FORM_STAMP,
+    filters: ['department', 'stampUserType'],
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'ชื่อ-สกุล', group: G_REQUESTER, src: 'requesterName' },
+      { header: 'หน่วยงาน', group: G_REQUESTER, src: 'department' },
+      { header: 'ผู้มีอำนาจอนุมัติ', group: G_APPROVER, src: 'approver' },
+      { header: 'วันที่อนุมัติ', group: G_APPROVER, src: 'approvedAt' },
+      { header: 'ชื่อโครงการ / หน่วยงาน', group: '', src: 'stampProjectName' },
+      { header: 'ประเภทผู้ใช้ตราประทับ', group: '', src: 'stampUserType' },
+      { header: 'วันที่เริ่มต้น', group: '', src: 'startDate' },
+      { header: 'วันที่สิ้นสุด', group: '', src: 'endDate' },
+      // ชื่อผู้ใช้ตราประทับถูกเก็บรวมอยู่ในข้อความสรุป q32 ไม่มีฟิลด์แยก (รอ mapping)
+      { header: 'ชื่อ-สกุล ผู้ใช้ตราประทับ', group: '', src: null },
+      { header: 'จำนวนเงิน', group: G_INVOICE, src: null },
+      { header: 'ชื่อหน่วยงาน', group: G_INVOICE, src: null },
+      { header: 'วันที่ใบแจ้งหนี้', group: G_INVOICE, src: null },
+      { header: 'เลขที่ใบแจ้งหนี้', group: G_INVOICE, src: null },
+      { header: 'เลขที่ Voucher', group: '', src: null },
+    ],
+  },
+  {
+    key: 'issue',
+    title: 'รายงานแจ้งปัญหาทั่วไป',
+    match: (r) => r.formName === FORM_ISSUE,
+    filters: ['userType', 'issueCategory'],
+    // ชีตนี้รวมทุกประเภทผู้ใช้ไว้ตารางเดียว แต่ละแถวจะมีค่าเฉพาะบล็อกของตัวเอง
+    columns: [
+      COL_ID, COL_CREATED,
+      { header: 'ชื่อ-สกุล', group: '(ส่วนที่ 1) รายละเอียดผู้ยื่นคำขอ (บุคลากรภายใน)', src: 'staffName' },
+      { header: 'ตำแหน่ง', group: '(ส่วนที่ 1) รายละเอียดผู้ยื่นคำขอ (บุคลากรภายใน)', src: 'staffPosition' },
+      { header: 'หน่วยงาน', group: '(ส่วนที่ 1) รายละเอียดผู้ยื่นคำขอ (บุคลากรภายใน)', src: 'staffDepartment' },
+      { header: 'ประเภทผู้ขอ', group: '(ส่วนที่ 1) ข้อมูลผู้ติดต่อ (บุคคลภายนอก)', src: 'extType' },
+      { header: 'ชื่อ', group: '(ส่วนที่ 1) ข้อมูลผู้ติดต่อ (บุคคลภายนอก)', src: 'extFirstName' },
+      { header: 'นามสกุล', group: '(ส่วนที่ 1) ข้อมูลผู้ติดต่อ (บุคคลภายนอก)', src: 'extLastName' },
+      { header: 'หน่วยงาน / บริษัท / นิติบุคคล', group: '(ส่วนที่ 1) ข้อมูลผู้ติดต่อ (บุคคลภายนอก)', src: 'extCompany' },
+      { header: 'รหัสนักศึกษา', group: '(ส่วนที่ 1) รายละเอียดผู้ยื่นคำขอ (นักศึกษา)', src: 'studentId' },
+      { header: 'ชื่อ-สกุล', group: '(ส่วนที่ 1) รายละเอียดผู้ยื่นคำขอ (นักศึกษา)', src: 'studentName' },
+      { header: 'คณะ / สังกัด', group: '(ส่วนที่ 1) รายละเอียดผู้ยื่นคำขอ (นักศึกษา)', src: 'studentFaculty' },
+      { header: 'ภาควิชา / สาขาวิชา', group: '(ส่วนที่ 1) รายละเอียดผู้ยื่นคำขอ (นักศึกษา)', src: 'studentMajor' },
+      { header: 'กลุ่มของปัญหาที่แจ้ง', group: G_DETAIL2, src: 'issueCategory' },
+      { header: 'รายละเอียดปัญหาที่พบ', group: G_DETAIL2, src: 'issueDetail' },
+    ],
+  },
+];
+
+// ป้ายกำกับตัวกรองที่ให้ผู้ใช้เลือกในแท็บรายงาน
+const REPORT_FILTER_LABELS = {
+  department: 'หน่วยงาน',
+  faculty: 'คณะ / สังกัด',
+  externalType: 'ประเภทผู้ขอ',
+  userType: 'ประเภทผู้ยื่นคำขอ',
+  issueCategory: 'กลุ่มของปัญหา',
+  contractCampus: 'พื้นที่การศึกษา',
+  stampUserType: 'ประเภทผู้ใช้ตราประทับ',
+};
+
+// q19 เก็บชื่อ-สกุลรวมเป็นสตริงเดียว (บุคคลภายนอกคือ extFname + ' ' + extLname)
+// ตัดที่ช่องว่างสุดท้าย: ส่วนท้าย = นามสกุล ที่เหลือ = ชื่อ (คำนำหน้าติดมากับชื่อ)
+function splitFullName(full) {
+  const s = String(full || '').trim();
+  if (!s) return { firstName: '', lastName: '' };
+  const cut = s.lastIndexOf(' ');
+  if (cut === -1) return { firstName: s, lastName: '' };
+  return { firstName: s.slice(0, cut).trim(), lastName: s.slice(cut + 1).trim() };
+}
+
+// เก็บเฉพาะผลที่แปลว่า "อนุมัติ" — VALID_APPROVAL_OUTCOMES มี reject/needs_edit/
+// invalid_code ฯลฯ ปนอยู่ด้วย ถ้าไม่กรอง วันที่ของการ "ไม่อนุมัติ" จะไปโผล่ใต้หัว
+// คอลัมน์ "วันที่อนุมัติ" ('special' = กรณีพิเศษ ถือเป็นการอนุมัติ)
+const APPROVED_OUTCOMES = new Set(['accept', 'special']);
+
+// record.at เป็น ISO UTC (new Date().toISOString()) — ตัด 10 ตัวแรกตรง ๆ จะได้
+// วันที่ตามเวลา UTC ทำให้การอนุมัติช่วงเที่ยงคืน–07:00 น. ไทย เพี้ยนไป 1 วัน
+const BANGKOK_DATE_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+function bangkokDate(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : BANGKOK_DATE_FMT.format(d);
+}
+
+// ไฟล์บันทึกผลอนุมัติมี key เป็น `${submissionId}:${hash(target)}` จึงไม่มี index
+// ตรงต่อ submission — ไล่ทั้งไฟล์ครั้งเดียวแล้วยุบเป็น map (ไฟล์เล็ก อ่านครั้งเดียว
+// ต่อการเรียก API หนึ่งครั้ง) เก็บเวลาอนุมัติ "ครั้งแรกสุด" ของแต่ละคำขอ
+function approvalDatesBySubmission() {
+  const out = Object.create(null);
+  for (const record of Object.values(loadApprovalDecisions())) {
+    if (!record || typeof record !== 'object') continue;
+    const id = record.submissionId;
+    const at = record.at;
+    if (!id || !at) continue;
+    if (!APPROVED_OUTCOMES.has(record.outcome)) continue;
+    if (!out[id] || String(at) < String(out[id])) out[id] = String(at);
+  }
+  for (const id of Object.keys(out)) out[id] = bangkokDate(out[id]);
+  return out;
+}
+
+// ช่อง checkbox หลายค่า (q57 วัตถุประสงค์ / q59 สถานที่) JotForm คืน .answer เป็น
+// array — jotformAnswer() ทำ String(array) ได้ 'ก,ข' (ไม่มีเว้นวรรค) จึงอ่านดิบเอง
+function jotformListAnswer(answers, qid) {
+  const entry = answers && answers[qid];
+  const a = entry && entry.answer;
+  if (Array.isArray(a)) return a.map((v) => String(v).trim()).filter(Boolean);
+  const s = typeof a === 'string' ? a : '';
+  return s ? s.split(/\s*(?:\r?\n|,)\s*/).map((v) => v.trim()).filter(Boolean) : [];
+}
+
+// ตัวเลือก "อื่นๆ" เก็บข้อความที่ผู้ใช้ระบุไว้คนละฟิลด์ (q57↔q58, q59↔q60, q17↔q35)
+// ถ้าไม่ประกบกลับ รายงานจะเห็นแค่คำว่า "อื่นๆ" ลอย ๆ ไม่รู้ว่าอื่นๆ คืออะไร
+function mergeOtherOption(list, otherText) {
+  const extra = String(otherText || '').trim();
+  return list.map((v) => (v === 'อื่นๆ' && extra ? `อื่นๆ: ${extra}` : v)).join(', ');
+}
+
+// q22 ของบุคลากรเป็นชื่อหน่วยงานหลายระดับคั่นด้วยขึ้นบรรทัดใหม่ — ยุบให้อยู่บรรทัด
+// เดียวแบบเดียวกับที่หน้าสรุปคำขอทำอยู่ (js/app.js) เพื่อไม่ให้เซลล์ตารางสูงผิดรูป
+function flattenMultiline(value) {
+  return String(value || '').replace(/\s*\r?\n\s*/g, ' / ').trim();
+}
+
+// เมื่อ Master Data หาสายอนุมัติไม่เจอ ฝั่งหน้าเว็บเขียนข้อความแจ้งเตือนลงช่อง
+// ชื่อผู้อนุมัติแล้วส่งเป็น q28 ตามนั้น — ในรายงานต้องแสดงเป็นช่องว่าง ไม่ใช่ประโยค
+const NO_APPROVER_SENTINEL = 'ไม่มีข้อมูลผู้อนุมัติในสายงาน (ติดต่อส่วนกลาง)';
+function sanitizeApprover(name) {
+  const s = String(name || '').trim();
+  return s === NO_APPROVER_SENTINEL ? '' : s;
+}
+
+// q42 เก็บรถทุกคันเป็นข้อความหลายบรรทัด รูปแบบที่หน้าเว็บสร้างไว้คือ
+//   'คันที่ 1 (ตนเอง): ชื่อ สกุล ทะเบียน'
+// แยกกลับเป็นรายการเพื่อเอาไปลงคอลัมน์ทะเบียน/ชื่อ และแสดงรายละเอียดตอนคลิก
+const VEHICLE_LINE_RE = /^คันที่\s*(\d+)\s*(?:\(([^)]*)\))?\s*:\s*(.+)$/;
+function parseVehicleLines(text) {
+  return String(text || '')
+    .split(/\r?\n/)
+    .map((line) => {
+      const m = VEHICLE_LINE_RE.exec(line.trim());
+      if (!m) return null;
+      const parts = m[3].trim().split(/\s+/);
+      // ทะเบียนคือคำสุดท้าย ที่เหลือคือชื่อ-สกุล (ชื่อไทยมีช่องว่างได้หลายจุด)
+      const plate = parts.length > 1 ? parts[parts.length - 1] : '';
+      const name = parts.length > 1 ? parts.slice(0, -1).join(' ') : m[3].trim();
+      return { index: Number(m[1]), owner: m[2] || '', name, plate };
+    })
+    .filter(Boolean);
+}
+
+function reportRecordFromSubmission(sub, approvalDates) {
+  const a = sub.answers || {};
+  const q = (id) => jotformAnswer(a, id);
+  const list = (id) => jotformListAnswer(a, id);
+  const userType = q('16');
+  const fullName = q('19');
+  const { firstName, lastName } = splitFullName(fullName);
+  const department = flattenMultiline(q('22'));
+  const rawExternalType = q('17');
+  const isStaff = userType === 'บุคลากร';
+  const isStudent = userType === 'นักศึกษา';
+  const isExternal = userType === 'บุคคลภายนอก';
+  const externalType = rawExternalType
+    ? mergeOtherOption([rawExternalType], q('35'))
+    : '';
+  const vehicles = parseVehicleLines(q('42'));
+  return {
+    id: sub.id,
+    createdAt: String(sub.created_at || '').slice(0, 10),
+    formName: q('15'),
+    userType,
+    externalType,
+    requesterId: q('18'),
+    requesterName: fullName,
+    firstName,
+    lastName,
+    department,
+    position: q('23'),
+    faculty: q('26'),
+    major: q('27'),
+    approver: sanitizeApprover(q('28')),
+    approvedAt: approvalDates[sub.id] || '',
+    startDate: jotformDateAnswer(a, '36'),
+    endDate: jotformDateAnswer(a, '37'),
+    totalDays: q('40'),
+    vehiclePlate: q('41'),
+    vehicleList: q('42') || q('41'), // เผื่อคำขอเก่าที่ยังไม่มีรายการรายคัน
+    vehicleCount: q('43'),
+    // ต้นแบบแยก "ทะเบียนรถ" กับ "ชื่อ-สกุล" เป็นคนละคอลัมน์ และในตัวอย่างจะกรอก
+    // เฉพาะคำขอที่มีรถคันเดียว ส่วนคำขอหลายคันเว้นว่างไว้ (ดูรายการเต็มได้จากการ
+    // คลิกหมายเลขคำขอ) — ทำตามนั้นเพื่อไม่ให้เซลล์เดียวมีหลายทะเบียนปนกัน
+    singlePlate: vehicles.length === 1 ? vehicles[0].plate : (Number(q('43')) === 1 ? q('41') : ''),
+    singleOwner: vehicles.length === 1 ? vehicles[0].name : '',
+    vehicles,
+    parkReason: q('44'),
+    considerationNote: q('46'),
+    actualUserName: q('48'),
+    stampProjectName: q('52'),
+    stampUserType: q('53'),
+    eventName: q('56'),
+    eventObjectives: mergeOtherOption(list('57'), q('58')),
+    eventLocations: mergeOtherOption(list('59'), q('60')),
+    contractCompany: q('61'),
+    contractBusinessType: q('62'),
+    contractCampus: q('63'),
+    contractBuilding: q('64'),
+    issueCategory: q('65'),
+    issueDetail: q('66'),
+    amount: q('67'),
+    boothCount: q('69'),
+    // รายงานแจ้งปัญหาแยกบล็อกตามประเภทผู้ใช้ — เว้นว่างเมื่อไม่ตรงประเภท
+    staffName: isStaff ? fullName : '',
+    staffPosition: isStaff ? q('23') : '',
+    staffDepartment: isStaff ? department : '',
+    extType: isExternal ? externalType : '',
+    extFirstName: isExternal ? firstName : '',
+    extLastName: isExternal ? lastName : '',
+    extCompany: isExternal ? department : '',
+    studentId: isStudent ? q('18') : '',
+    studentName: isStudent ? fullName : '',
+    studentFaculty: isStudent ? q('26') : '',
+    studentMajor: isStudent ? q('27') : '',
+  };
+}
+
+app.get(
+  '/api/admin/report',
+  requireLogin,
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+    const def = REPORT_DEFS.find((d) => d.key === req.query.key);
+    if (!def) {
+      res.status(400).json({ error: 'unknown report key' });
+      return;
+    }
+    if (!config.jotformApiKey) {
+      res.status(200).json({ notConfigured: true, title: def.title, columns: [], rows: [] });
+      return;
+    }
+
+    const submissions = await fetchJotformSubmissionsRaw();
+    const approvalDates = approvalDatesBySubmission();
+    const records = submissions
+      .map((sub) => reportRecordFromSubmission(sub, approvalDates))
+      .filter((r) => def.match(r))
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+
+    // ลำดับนับจากรายการทั้งหมดของรายงานนี้ (ก่อนกรองฝั่ง client) เพื่อให้เลขคงที่
+    records.forEach((r, i) => { r.seq = String(i + 1); });
+
+    const rows = records.map((r) => def.columns.map((c) => (c.src ? String(r[c.src] ?? '') : '')));
+
+    // ข้อมูลประกอบต่อแถว: ใช้ทำตัวกรอง และแสดงรายละเอียดตอนคลิกหมายเลขคำขอ
+    const meta = records.map((r) => ({
+      id: r.id,
+      department: r.department,
+      faculty: r.faculty,
+      externalType: r.externalType,
+      userType: r.userType,
+      issueCategory: r.issueCategory,
+      contractCampus: r.contractCampus,
+      stampUserType: r.stampUserType,
+      vehicles: r.vehicles,
+      vehicleCount: r.vehicleCount,
+      requesterName: r.requesterName,
+      startDate: r.startDate,
+      endDate: r.endDate,
+      amount: r.amount,
+    }));
+
+    res.status(200).json({
+      title: def.title,
+      columns: def.columns.map((c) => ({ header: c.header, group: c.group, mapped: Boolean(c.src) })),
+      rows,
+      meta,
+      // ชื่อคอลัมน์ที่จะรวมยอดในแถวท้ายตาราง ('' = รายงานนี้ไม่มีแถวสรุป)
+      sumColumn: def.sumColumn || '',
+      filters: (def.filters || []).map((f) => ({ key: f, label: REPORT_FILTER_LABELS[f] || f })),
+    });
+  })
+);
 
 app.get(
   '/admin',
@@ -3843,9 +5257,9 @@ app.get(
 
 // Add / remove / change-role. State-changing, so POST (not GET): SameSite=Lax
 // on the session cookie keeps a cross-site POST from carrying the session,
-// matching the CSRF posture the existing /api/kmutt-dev-preview/clear route
-// already relies on. requireRoleAdmin enforces admin-only SERVER-SIDE — a
-// 'staff' user is not merely hidden from this UI, they are rejected here.
+// which is the CSRF posture every state-changing route here relies on.
+// requireRoleAdmin enforces admin-only SERVER-SIDE — a 'staff' user is not
+// merely hidden from this UI, they are rejected here.
 app.post(
   '/api/admin/allowlist',
   requireLogin,
@@ -4052,11 +5466,25 @@ function maskClientId(clientId) {
   return String(clientId).slice(0, 8) + '***';
 }
 
+// เลขเวอร์ชันสำหรับ footer — ต้องเป็น public เพราะหน้า login (ยังไม่ล็อกอิน)
+// ก็แสดง footer เดียวกัน ไม่มีข้อมูลอ่อนไหว มีแค่สตริงเวอร์ชันที่เรากำหนดเอง
+// ส่งลิงก์นโยบายมาด้วย เพื่อให้ index.html (ไฟล์ static ที่ template ไม่ได้)
+// กับหน้า login ใช้ค่าจาก env ชุดเดียวกัน ไม่ต้อง hardcode สองที่
+app.get('/api/version', (req, res) => {
+  noStore(res);
+  res.status(200).json({
+    version: config.appVersion,
+    privacyUrl: config.privacyPolicyUrl,
+    termsUrl: config.termsUrl,
+  });
+});
+
 app.get(
   '/diagnostics',
   asyncHandler(async (req, res) => {
     noStore(res);
     res.status(200).json({
+      version: config.appVersion,
       configuredRedirectUri: config.redirectUri,
       configuredPostLogoutRedirectUri: config.postLogoutRedirectUri,
       tls: {
@@ -4089,124 +5517,6 @@ app.get(
       },
       serverTimeUtc: new Date().toISOString(),
     });
-  })
-);
-
-// ---------------------------------------------------------------------------
-// KMUTT dev preview (developer/test convenience — NOT a general
-// "impersonate anyone" feature).
-//
-// Real ADFS-authenticated KMUTT users whose OWN Master Data classification
-// comes back null (kmuttUserType.type === null — e.g. a developer's own test
-// account, which has no real Master Data record) have no way to see how
-// ส่วนที่ 1 (requester) / ส่วนที่ 2 (approver) auto-fill looks for a real
-// staff/student account. This lets such a user type in another real KMUTT
-// member's email so the app can preview that auto-fill as if that other
-// member were logged in.
-//
-// Security gating (this is the whole point of the feature):
-//   1. 401 if there is no real ADFS session at all — completely unreachable
-//      without having actually authenticated via ADFS first.
-//   2. 403 if the REAL logged-in session's own kmuttUserType is already
-//      'staff' or 'student' — an already-classified real user can never use
-//      this to switch to previewing as someone else.
-//   3. The real session's own kmuttUserType/kmuttRequesterProfile fields are
-//      NEVER overwritten — the preview result lives only in the separate
-//      req.session.user.kmuttDevPreview field, so "this session's real
-//      identity" (always null/unclassified here) and "what we're previewing
-//      as" can never be confused.
-//   4. Every use is logged server-side with both the real upn and the
-//      previewed email, as an audit trail — this does let one authenticated
-//      real person view another real person's name/position/department/
-//      phone/approver info.
-// ---------------------------------------------------------------------------
-
-const DEV_PREVIEW_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-app.post(
-  '/api/kmutt-dev-preview',
-  asyncHandler(async (req, res) => {
-    noStore(res);
-
-    // Gating rule 1: unreachable without a real prior ADFS login.
-    if (!req.session.user) {
-      res.status(401).json({ error: 'unauthenticated' });
-      return;
-    }
-
-    // Gating rule 2: only usable when the REAL logged-in session's own
-    // Master Data classification came back null — never lets an
-    // already-classified real staff/student user preview as someone else.
-    const realUserType = req.session.user.kmuttUserType && req.session.user.kmuttUserType.type;
-    if (realUserType === 'staff' || realUserType === 'student') {
-      res.status(403).json({
-        error: 'dev preview is only available to accounts with no Master Data classification of their own',
-      });
-      return;
-    }
-
-    const email = req.body ? req.body.email : undefined;
-    if (typeof email !== 'string' || !DEV_PREVIEW_EMAIL_RE.test(email.trim())) {
-      res.status(400).json({ error: 'a valid email is required' });
-      return;
-    }
-    const previewEmail = email.trim();
-
-    try {
-      // Same functions the real ADFS login path uses (see /redirect above) —
-      // called here, not duplicated.
-      const userType = await lookupKmuttUserType(previewEmail);
-
-      if (userType.type !== 'staff' && userType.type !== 'student') {
-        // Unclassified target email — nothing to preview, and nothing is
-        // written to the session in this case.
-        res.status(200).json({ found: false });
-        return;
-      }
-
-      const requesterProfile = await lookupKmuttRequesterProfile(previewEmail);
-
-      // Gating rule 3: a new, separate session field — never
-      // kmuttUserType/kmuttRequesterProfile themselves.
-      req.session.user.kmuttDevPreview = {
-        previewEmail,
-        userType,
-        requesterProfile,
-      };
-
-      // Gating rule 4: audit log with both the real logged-in upn and the
-      // email being previewed as.
-      const realUpn = (req.session.user.claims && req.session.user.claims.upn) || '(unknown upn)';
-      console.log(
-        `[bpuu-workflow] KMUTT dev preview used: real upn=${realUpn} now previewing as email=${previewEmail}`
-      );
-
-      res.status(200).json({ found: true, userType, requesterProfile });
-    } catch (err) {
-      console.error(
-        `[bpuu-workflow] KMUTT dev preview lookup failed (non-fatal): ${err && err.message ? err.message : err}`
-      );
-      res.status(500).json({ error: 'an unexpected error occurred while looking up that account' });
-    }
-  })
-);
-
-// POST, not GET — this mutates session state (clears the dev preview), so it
-// must not be triggerable by a bare top-level navigation/link. SameSite=Lax
-// still attaches cookies to top-level GET requests, so a state-changing GET
-// here would let a crafted link silently clear a victim's preview mid-test.
-app.post(
-  '/api/kmutt-dev-preview/clear',
-  asyncHandler(async (req, res) => {
-    noStore(res);
-
-    if (!req.session.user) {
-      res.status(401).json({ error: 'unauthenticated' });
-      return;
-    }
-
-    delete req.session.user.kmuttDevPreview;
-    res.status(200).json({ ok: true });
   })
 );
 
@@ -4539,6 +5849,7 @@ app.get('/files/:token', (req, res) => {
 
 app.use('/css', express.static(path.join(__dirname, 'css')));
 app.use('/js', express.static(path.join(__dirname, 'js')));
+app.use('/img', express.static(path.join(__dirname, 'img')));
 app.get('/AW_MODlink_pro_vertical.jpg', (req, res) =>
   res.sendFile(path.join(__dirname, 'AW_MODlink_pro_vertical.jpg'))
 );
