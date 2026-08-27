@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BPUU Flows — ตรวจ Flowchart</title>
+<style>
+    :root {
+        --ci-orange: #e35205;
+        --ci-bluegrey: #53565a;
+        --ci-yellow: #f2a900;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        font-family: -apple-system, "Segoe UI", "Leelawadee UI", Tahoma, sans-serif;
+        background: #f6f5f3;
+        color: #222;
+        line-height: 1.65;
+    }
+    header {
+        background: var(--ci-orange);
+        color: #fff;
+        padding: .8rem 1.4rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    header h1 { font-size: 1.05rem; margin: 0; font-weight: 700; }
+    header .src { font-size: .78rem; opacity: .85; }
+    header button {
+        border: 1px solid rgba(255,255,255,.7);
+        background: transparent;
+        color: #fff;
+        border-radius: 6px;
+        padding: .3rem .9rem;
+        font-size: .85rem;
+        cursor: pointer;
+    }
+    header button:hover { background: rgba(255,255,255,.15); }
+    main { max-width: 1000px; margin: 0 auto; padding: 1.5rem 1.2rem 4rem; }
+    h1.md { font-size: 1.5rem; color: var(--ci-orange); border-bottom: 3px solid var(--ci-yellow); padding-bottom: .4rem; }
+    h2.md { font-size: 1.25rem; color: var(--ci-orange); margin-top: 2.4rem; border-bottom: 2px solid #e8e6e2; padding-bottom: .3rem; }
+    h3.md { font-size: 1.02rem; color: var(--ci-bluegrey); margin-top: 1.6rem; }
+    hr.md { border: none; border-top: 2px dashed #ddd8d2; margin: 2.2rem 0; }
+    ul.md { padding-left: 1.4rem; }
+    table.md { border-collapse: collapse; width: 100%; margin: .6rem 0 1rem; background: #fff; font-size: .92rem; }
+    table.md th, table.md td { border: 1px solid #e2ded8; padding: .45rem .7rem; text-align: left; vertical-align: top; }
+    table.md th { background: #faf3ea; color: var(--ci-bluegrey); }
+    table.md td code, p code, li code {
+        background: #f0ede9;
+        border-radius: 4px;
+        padding: .08em .38em;
+        font-size: .88em;
+        color: #a33c00;
+    }
+    .diagram {
+        background: #fff;
+        border: 1px solid #e2ded8;
+        border-radius: 10px;
+        padding: 1.2rem;
+        margin: 1rem 0 1.6rem;
+        overflow-x: auto;
+    }
+    .diagram svg { max-width: 100%; height: auto; }
+    .err {
+        background: #fdecea;
+        border: 1px solid #f5c6c0;
+        color: #8a1f11;
+        border-radius: 8px;
+        padding: .8rem 1rem;
+        white-space: pre-wrap;
+        font-size: .85rem;
+    }
+</style>
+</head>
+<body>
+<header>
+    <h1>BPUU Flows — ตรวจ Flowchart</h1>
+    <span class="src">source: docs/flows.md</span>
+    <button onclick="location.reload()">โหลดใหม่</button>
+</header>
+<main id="content"><p>กำลังโหลด flows.md …</p></main>
+
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({
+    startOnLoad: false,
+    theme: 'base',
+    themeVariables: {
+        primaryColor: '#faf3ea',
+        primaryBorderColor: '#e35205',
+        primaryTextColor: '#222',
+        lineColor: '#53565a',
+        fontFamily: '-apple-system, "Segoe UI", "Leelawadee UI", Tahoma, sans-serif',
+        fontSize: '15px'
+    },
+    flowchart: { htmlLabels: true, curve: 'basis' }
+});
+
+// ---- markdown ย่อส่วน: รองรับเฉพาะที่ flows.md ใช้จริง ----
+// heading / bullet list / ตาราง / ```mermaid``` / **bold** / `code` / ---
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const inline = s => esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/_\(([^)]+)\)_/g, '<em>($1)</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+
+function mdToBlocks(md) {
+    const lines = md.split('\n');
+    const blocks = [];
+    let i = 0;
+    while (i < lines.length) {
+        const line = lines[i];
+        if (line.startsWith('```mermaid')) {
+            const buf = [];
+            i++;
+            while (i < lines.length && !lines[i].startsWith('```')) buf.push(lines[i++]);
+            i++; // ข้ามบรรทัดปิด fence
+            blocks.push({ type: 'mermaid', code: buf.join('\n') });
+        } else if (/^#{1,3} /.test(line)) {
+            const level = line.match(/^#+/)[0].length;
+            blocks.push({ type: 'h' + level, text: line.replace(/^#+ /, '') });
+            i++;
+        } else if (/^---+\s*$/.test(line)) {
+            blocks.push({ type: 'hr' });
+            i++;
+        } else if (line.startsWith('|')) {
+            const rows = [];
+            while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]);
+            blocks.push({ type: 'table', rows });
+        } else if (/^[-*] /.test(line)) {
+            const items = [];
+            while (i < lines.length && /^[-*] /.test(lines[i])) items.push(lines[i++].replace(/^[-*] /, ''));
+            blocks.push({ type: 'ul', items });
+        } else if (/^\d+\. /.test(line)) {
+            const items = [];
+            while (i < lines.length && /^\d+\. /.test(lines[i])) items.push(lines[i++].replace(/^\d+\. /, ''));
+            blocks.push({ type: 'ol', items });
+        } else if (line.trim() === '') {
+            i++;
+        } else {
+            const buf = [];
+            while (i < lines.length && lines[i].trim() !== '' && !/^([#|`]|[-*] |---)/.test(lines[i])) buf.push(lines[i++]);
+            blocks.push({ type: 'p', text: buf.join(' ') });
+        }
+    }
+    return blocks;
+}
+
+function tableHTML(rows) {
+    const cells = r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+    let html = '<table class="md">';
+    rows.forEach((row, idx) => {
+        if (/^\|[\s:-]+\|/.test(row.replace(/\|/g, '|'))&& /^[\s|:-]+$/.test(row)) return; // แถวคั่น header
+        const tag = idx === 0 ? 'th' : 'td';
+        html += '<tr>' + cells(row).map(c => `<${tag}>${inline(c)}</${tag}>`).join('') + '</tr>';
+    });
+    return html + '</table>';
+}
+
+async function render() {
+    const main = document.getElementById('content');
+    let md;
+    try {
+        const res = await fetch('flows.md', { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        md = await res.text();
+    } catch (e) {
+        main.innerHTML = `<div class="err">โหลด flows.md ไม่ได้: ${esc(String(e))}\n\nหน้านี้ต้องเปิดผ่าน http server (ไม่ใช่ file://) เช่นรัน python3 -m http.server จาก root โปรเจคแล้วเปิด /docs/flows-viewer.html</div>`;
+        return;
+    }
+
+    main.innerHTML = '';
+    let n = 0;
+    for (const b of mdToBlocks(md)) {
+        const el = document.createElement(
+            b.type === 'mermaid' ? 'div' :
+            b.type === 'table' ? 'div' :
+            b.type === 'ul' ? 'ul' :
+            b.type === 'ol' ? 'ol' :
+            b.type === 'hr' ? 'hr' :
+            b.type === 'p' ? 'p' : b.type
+        );
+        if (b.type !== 'mermaid') el.className = 'md';
+        if (b.type.startsWith('h') && b.type !== 'hr') el.innerHTML = inline(b.text);
+        else if (b.type === 'p') el.innerHTML = inline(b.text);
+        else if (b.type === 'ul' || b.type === 'ol') el.innerHTML = b.items.map(t => `<li>${inline(t)}</li>`).join('');
+        else if (b.type === 'table') el.innerHTML = tableHTML(b.rows);
+        else if (b.type === 'mermaid') {
+            el.className = 'diagram';
+            try {
+                const { svg } = await mermaid.render('flow-' + (n++), b.code);
+                el.innerHTML = svg;
+            } catch (e) {
+                el.innerHTML = `<div class="err">mermaid render ไม่ผ่าน:\n${esc(String(e && e.message || e))}\n\n--- source ---\n${esc(b.code)}</div>`;
+            }
+        }
+        main.appendChild(el);
+    }
+}
+render();
+</script>
+</body>
+</html>

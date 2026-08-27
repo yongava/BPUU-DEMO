@@ -2175,6 +2175,40 @@ function isAllowedJotformTarget(rawTarget) {
   }
 }
 
+// Resolve the {approvalDeeplink} to the final JotForm approval-form URL by
+// following its redirect chain server-side. The confirm page embeds THIS
+// resolved URL in a visible iframe, not the deeplink: the deeplink's own
+// multi-hop redirect renders blank inside a frame, but the final
+// approval-form page frames cleanly (verified live 2026-08-27 — the blank
+// was the redirect chain, never an iframe limitation of the task page).
+// Returns the resolved https jotform.com URL, or null on any failure /
+// non-jotform result — the caller then falls back to the raw deeplink so a
+// resolver hiccup never blocks the approver.
+async function resolveJotformTaskUrl(deeplinkTarget) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const resp = await fetch(deeplinkTarget, {
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: {
+          // browser UA — without it JotForm resolves to a login page instead
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36',
+        },
+      });
+      const finalUrl = resp.url;
+      return isAllowedJotformTarget(finalUrl) ? finalUrl : null;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    console.warn(`[bpuu-workflow] could not resolve approval deeplink: ${err.message}`);
+    return null;
+  }
+}
+
 // JotForm's {approvalDeeplink} merge value is itself a full URL with its own
 // query string (e.g. ".../deeplink?deeplink=...&redirect=...") — confirmed
 // from a real workflow email — not the bare path the initial design assumed.
@@ -2221,6 +2255,49 @@ function outcomeToLabel(outcome) {
   return String(outcome || '-');
 }
 
+// The q68 (สถานะดำเนินการ) value written back after an approval step
+// completes. JotForm's own workflow does NOT write q68 (verified 2026-08-27:
+// after a real approval q68 stayed "รอพิจารณา", updated_at frozen), yet q68
+// is the single field the request list / tracking reads — so the gate writes
+// it itself once it has confirmed the task closed. Returns null for outcomes
+// that are not a final request status (the budget-code box's reasons and the
+// edit-appointment action are mid-workflow steps, not an end state) so those
+// leave q68 untouched rather than mislabeling the request.
+//
+// NOTE for multi-step flows (e.g. จอดรถ: หัวหน้าหน่วยงาน → BPUU): an early
+// accept here would prematurely mark the whole request "อนุมัติแล้ว". Flow 1
+// (แจ้งปัญหา) is single-step so accept IS final. When a multi-step flow is
+// wired, pass the intended status per link instead of relying on this map —
+// see the `status` override read in /approve-gate.
+function outcomeToQ68Status(outcome) {
+  if (outcome === 'accept') return 'อนุมัติแล้ว';
+  if (outcome === 'reject') return 'ไม่อนุมัติ';
+  if (outcome === 'special') return 'อนุมัติแล้ว';
+  return null;
+}
+
+// Writes a single field on a submission via JotForm's submission API — the
+// same call proven to move q68 in the live table (2026-08-27). Best-effort:
+// the approval itself already landed on JotForm's side, so a failed status
+// write must be logged, never surfaced as an approval failure.
+async function writeJotformSubmissionField(submissionId, fieldId, value) {
+  if (!isJotformConfigured() || !submissionId) return false;
+  const url = new URL(`${config.jotformApiBaseUrl}/submission/${encodeURIComponent(submissionId)}`);
+  url.searchParams.set('apiKey', config.jotformApiKey);
+  const body = new URLSearchParams();
+  body.set(`submission[${fieldId}]`, value);
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+    signal: AbortSignal.timeout(JOTFORM_FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`JotForm submission update returned HTTP ${response.status}`);
+  }
+  return true;
+}
+
 // requireAnyLogin accepts either identity — this builds the audit-trail
 // label from whichever one is actually present. ThaID has no upn, only a
 // national ID (pid); log it masked, same discipline as /api/me.
@@ -2240,21 +2317,26 @@ function resolveApprovalIdentityLabel(req) {
 // requests if the gate redirected immediately instead of requiring a click.
 //
 // HOW THE APPROVAL IS COMPLETED — settled by real end-to-end testing:
-//   1. Server-side fetch() of the deeplink (2026-07-22): DOES NOT WORK.
-//      Reported HTTP 200 while the workflow never advanced. Node's fetch has
-//      no browser context (cookies across the redirect chain, JS).
-//   2. Hidden iframe (2026-07-23): WORKS — confirmed end-to-end by the user.
-//      JotForm sets no X-Frame-Options/CSP and no frame-busting, and the
-//      approval really does land. This is what we use, because it keeps the
-//      approver on our own domain and never exposes a JotForm URL.
+//   1. Server-side fetch()/POST of the deeplink: DOES NOT WORK. A GET only
+//      reads the task page; the actual POST to submit.jotform.com is met by
+//      a captcha ("Please Complete", verified 2026-08-27).
+//   2. Hidden iframe: FALSE POSITIVE. It loaded the task page and reported
+//      success while the workflow never advanced.
+//   3. Visible iframe of the RESOLVED /approval-form URL (2026-08-27): WORKS,
+//      end-to-end confirmed. The approver presses JotForm's own Submit inside
+//      a frame embedded in our page — no new tab, no JotForm URL in the
+//      address bar. Completion is confirmed server-side via the task-state
+//      probe (the task's outcome buttons disappear), and only then recorded.
+//      The frame must load the resolved /approval-form URL, not the deeplink
+//      (the deeplink's redirect chain renders blank when framed).
 //
-// CAUTION about verifying it: q68 (สถานะดำเนินการ) is NOT updated by the
-// approval step itself — on a real approved request it stayed "รอพิจารณา"
-// with updated_at unchanged. The workflow only writes q68 at a later node.
-// An earlier version treated "q68 unchanged" as failure and wrongly told
-// approvers their approval had not gone through. So q68 may only ever be
-// used as a *bonus* confirmation when it happens to change — never as
-// evidence of failure.
+// q68 (สถานะดำเนินการ) is NOT written by JotForm's approval step — it stays
+// "รอพิจารณา" with updated_at frozen even on a real approval. Because q68 is
+// the single field the request list / tracking reads, the gate writes it
+// itself right after confirming completion (see outcomeToQ68Status +
+// writeJotformSubmissionField in the record endpoint). It is therefore now a
+// reliable status, not a mere bonus — but a WRITE failure still must never be
+// reported as an approval failure, since the approval already landed.
 //
 // Reads ONE full submission straight from JotForm. Returns null when JotForm
 // isn't configured or submissionId is missing; throws on API failure.
@@ -2531,6 +2613,9 @@ const APPROVAL_PAGE_STYLE = `
     .details tr:first-child th, .details tr:first-child td { border-top: none; }
     .details th { width: 42%; color: #667; font-weight: 600; }
     @media (max-width: 480px) { .details th { width: 36%; } }
+    .card.wide { max-width: 780px; }
+    .jf-frame-holder { margin-top: 16px; border: 1px solid #dde1e7; border-radius: 8px; overflow: hidden; background: #fff; }
+    .jf-frame-holder iframe { display: block; width: 100%; height: min(70vh, 620px); border: 0; }
     @media (prefers-color-scheme: dark) {
       body { background: #14161a; color: #e7e9ee; }
       .card { background: #1d2026; border-color: #2c313a; }
@@ -2540,6 +2625,7 @@ const APPROVAL_PAGE_STYLE = `
       .details, .details th, .details td { border-color: #2c313a; }
       .details th { color: #9aa3b2; }
       .details-title { background: #23262d; border-color: #2c313a; }
+      .jf-frame-holder { border-color: #2c313a; }
     }
 `;
 
@@ -2606,7 +2692,7 @@ function renderApprovalDecidedPage({ id, decided, upn, detailRows }) {
 </html>`;
 }
 
-function renderApprovalConfirmPage({ id, outcome, outcomeLabel, target, upn, beforeStatus, detailRows }) {
+function renderApprovalConfirmPage({ id, outcome, outcomeLabel, target, resolvedTarget, upn, beforeStatus, detailRows }) {
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -2627,9 +2713,21 @@ function renderApprovalConfirmPage({ id, outcome, outcomeLabel, target, upn, bef
     </div>
 
     <div id="stepWorking" style="display:none">
-      <h1>กำลังบันทึกผลการพิจารณา</h1>
-      <div class="spinner"></div>
-      <p id="workingMsg">กรุณารอสักครู่ อย่าปิดหน้าต่างนี้…</p>
+      <h1>กดยืนยันผลในกรอบด้านล่าง</h1>
+      <p id="workingMsg">ผลที่เลือกไว้: <strong>${escapeHtml(outcomeLabel)}</strong> —
+        กรุณากดปุ่ม <strong>Submit</strong> ในกรอบด้านล่างเพื่อบันทึกผล
+        หน้านี้จะขึ้นผลให้อัตโนมัติเมื่อบันทึกสำเร็จ</p>
+      <div id="frameHolder" class="jf-frame-holder"></div>
+      <p class="meta" id="workingNote">กำลังรอการยืนยัน…</p>
+      <button type="button" id="recheckBtn" class="button" style="display:none">ตรวจสถานะอีกครั้ง</button>
+    </div>
+
+    <div id="stepError" style="display:none">
+      <div class="icon decided">!</div>
+      <h1>ยังบันทึกผลไม่ได้</h1>
+      <p>หน้าบันทึกผลเรียกขอการเข้าสู่ระบบเพิ่มเติม จึงยังไม่สามารถบันทึกผลได้</p>
+      <p class="warn">กรุณาแจ้งผู้ดูแลระบบให้ตรวจการตั้งค่าการเข้าถึงของขั้นพิจารณา (Require login) ใน workflow</p>
+      ${APPROVAL_FALLBACK_CONTACT_HTML}
     </div>
 
     <div id="stepDone" style="display:none">
@@ -2645,23 +2743,49 @@ function renderApprovalConfirmPage({ id, outcome, outcomeLabel, target, upn, bef
   </div>
 
   <script>
-    // The approval is completed by loading JotForm's own deeplink in a HIDDEN
-    // iframe — confirmed working end-to-end. The approver stays on this page
-    // and never sees a JotForm URL.
+    // The deeplink does NOT complete the approval by itself (established
+    // 2026-08-27 against the live task): it resolves to JotForm's own
+    // approval FORM page (/approval-form/...) which renders the outcome
+    // preselected and waits for a human to press Submit. A HIDDEN iframe
+    // therefore only ever displayed that page to nobody — every "success"
+    // it reported was a false positive. Self-posting the form server-side
+    // is not an option either (captcha — verified live, the reason
+    // /form-gate embeds the real form instead).
+    //
+    // The fix: embed the RESOLVED approval-form URL in a VISIBLE iframe and
+    // let the approver press JotForm's own Submit inside it. This keeps
+    // everything on our gated page — no new tab, no JotForm URL in the
+    // address bar for the approver to copy and forward. Crucial detail: the
+    // iframe must load the RESOLVED /approval-form URL (RESOLVED_TARGET),
+    // NOT the raw deeplink — the deeplink's multi-hop redirect renders blank
+    // inside a frame, but the final approval-form page frames cleanly
+    // (verified live; the blank was never an iframe limit of the task page).
+    // If resolution failed server-side, RESOLVED_TARGET is null and we fall
+    // back to the deeplink so the approver is never blocked.
+    //
+    // Completion is detected by polling /api/approve-gate/task-state — a
+    // server-side read of the task page reporting whether its outcome
+    // buttons are still offered (GET on the chain is side-effect-free).
+    // Only on 'completed' is the decision recorded with our double-approval
+    // guard — recording at click time (as before) could lock the step as
+    // "decided" while JotForm still had the task pending, deadlocking it.
+    // The probe also surfaces JotForm demanding a login as a real error.
     //
     // Verification note: q68 is NOT written by the approval step (see the
     // renderer comment above), so it is polled only in the BACKGROUND as a
     // bonus. "q68 didn't change" must never be presented as failure — an
     // earlier version did that and wrongly told approvers it hadn't worked.
     const TARGET = ${toScriptJson(target)};
+    const RESOLVED_TARGET = ${toScriptJson(resolvedTarget || null)};
     const SUBMISSION_ID = ${toScriptJson(id || '')};
     const OUTCOME = ${toScriptJson(outcome || '')};
     const BEFORE_STATUS = ${toScriptJson(beforeStatus === null || beforeStatus === undefined ? null : beforeStatus)};
 
     const show = (which) => {
-      for (const s of ['stepConfirm', 'stepWorking', 'stepDone']) {
+      for (const s of ['stepConfirm', 'stepWorking', 'stepDone', 'stepError']) {
         document.getElementById(s).style.display = s === which ? 'block' : 'none';
       }
+      document.querySelector('.card').classList.toggle('wide', which === 'stepWorking');
     };
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -2685,48 +2809,84 @@ function renderApprovalConfirmPage({ id, outcome, outcomeLabel, target, upn, bef
       }
     }
 
-    document.getElementById('confirmBtn').addEventListener('click', async () => {
-      show('stepWorking');
-
-      // Record the decision FIRST — the double-approval guard. HTTP 409
-      // means a decision for this submission is already on record (e.g. the
-      // other link from the same email, or a second tab): reload so the
-      // server renders the already-decided screen, and do NOT touch JotForm.
-      // HTTP 401 means the session expired while this page sat open: also
-      // reload — the login landing appears, and after re-login the approver
-      // returns here to click again, so no decision ever goes unrecorded.
-      // Only a network-level failure falls through — the record is a guard,
-      // not the approval itself, so that alone must not block the approver.
+    // Runs once JotForm actually took the submission (second frame load).
+    // The guard record is written here — HTTP 409 means the other outcome's
+    // record won the race; reload so the server renders the already-decided
+    // screen. Any other failure (network, expired session) must not hide
+    // the fact that JotForm DID record the outcome — the done screen still
+    // shows, and the server log is the audit fallback.
+    let completed = false;
+    async function onJotformCompleted() {
+      if (completed) return;
+      completed = true;
       try {
         const rec = await fetch('/api/approve-gate/record', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({ id: SUBMISSION_ID, outcome: OUTCOME, target: TARGET }),
         });
-        if (rec.status === 409 || rec.status === 401) {
+        if (rec.status === 409) {
           window.location.reload();
           return;
         }
-      } catch (err) { /* proceed — see comment above */ }
-
-      const frame = document.createElement('iframe');
-      frame.style.display = 'none';
-      frame.setAttribute('referrerpolicy', 'no-referrer');
-      frame.src = TARGET;
-      document.body.appendChild(frame);
-
-      // React as soon as the framed page loads; the cap is only a safety net
-      // so a redirect chain that never fires 'load' can't hang the screen.
-      await Promise.race([
-        new Promise((r) => frame.addEventListener('load', r, { once: true })),
-        sleep(8000),
-      ]);
+      } catch (err) { /* see comment above */ }
 
       document.getElementById('doneStatus').textContent =
         'ระบบกำลังอัปเดตสถานะ อาจใช้เวลาสักครู่';
       show('stepDone');
-
       watchStatusInBackground();
+    }
+
+    // Polls the server-side task probe until the JotForm tab's Submit has
+    // actually landed. 'unknown' (probe could not read the page) just keeps
+    // waiting — it must never be reported as either success or failure.
+    // After the window runs out, the approver gets a manual re-check button
+    // instead of an open-ended spinner.
+    let polling = false;
+    async function pollTaskState() {
+      if (polling || completed) return;
+      polling = true;
+      document.getElementById('recheckBtn').style.display = 'none';
+      document.getElementById('workingNote').textContent = 'กำลังรอการยืนยัน…';
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 5 * 60 * 1000) {
+        await sleep(4000);
+        if (completed) return;
+        try {
+          const res = await fetch('/api/approve-gate/task-state?target=' + encodeURIComponent(TARGET), {
+            headers: { Accept: 'application/json' },
+          });
+          const data = await res.json();
+          if (data && data.state === 'completed') {
+            await onJotformCompleted();
+            return;
+          }
+          if (data && data.state === 'login-required') {
+            polling = false;
+            show('stepError');
+            return;
+          }
+        } catch (err) { /* keep waiting */ }
+      }
+      polling = false;
+      document.getElementById('workingNote').textContent =
+        'ยังไม่พบการบันทึกผล — หากกด Submit ในกรอบด้านบนแล้ว กรุณากด "ตรวจสถานะอีกครั้ง"';
+      document.getElementById('recheckBtn').style.display = 'inline-block';
+    }
+
+    document.getElementById('recheckBtn').addEventListener('click', pollTaskState);
+
+    document.getElementById('confirmBtn').addEventListener('click', () => {
+      show('stepWorking');
+      const frame = document.createElement('iframe');
+      frame.setAttribute('referrerpolicy', 'no-referrer');
+      // The resolved /approval-form URL frames cleanly; the raw deeplink does
+      // not (its redirect chain renders blank in a frame). Fall back to the
+      // deeplink only if server-side resolution failed — better a blank frame
+      // the approver can report than no path at all.
+      frame.src = RESOLVED_TARGET || TARGET;
+      document.getElementById('frameHolder').appendChild(frame);
+      pollTaskState();
     });
   </script>
 </body>
@@ -2819,14 +2979,20 @@ app.get(
       return;
     }
 
+    // Resolve the deeplink to the final approval-form URL so the confirm
+    // page can frame it directly (the deeplink itself won't frame — see the
+    // confirm-page script). Non-fatal: on failure the page falls back to the
+    // raw deeplink.
+    const resolvedTarget = await resolveJotformTaskUrl(targetStr);
+
     console.log(
       `[bpuu-workflow] approval gate: identity=${identityLabel} id=${id} outcome=${outcome} beforeStatus=${
         beforeStatus === null ? '(unknown)' : beforeStatus
-      } -> confirm screen`
+      } resolved=${resolvedTarget ? 'yes' : 'no'} -> confirm screen`
     );
 
     res.status(200).send(
-      renderApprovalConfirmPage({ id, outcome, outcomeLabel, target: targetStr, upn: identityLabel, beforeStatus, detailRows })
+      renderApprovalConfirmPage({ id, outcome, outcomeLabel, target: targetStr, resolvedTarget, upn: identityLabel, beforeStatus, detailRows })
     );
   })
 );
@@ -2857,6 +3023,66 @@ app.get(
     } catch (err) {
       console.warn(`[bpuu-workflow] approval status probe failed: ${err.message}`);
       res.status(200).json({ verifiable: false, status: null });
+    }
+  })
+);
+
+// Probes whether the JotForm approval task behind `target` still offers its
+// outcome buttons. The confirm page polls this while the approver works in
+// the JotForm tab (the task page refuses to render inside an iframe, so the
+// tab is the only viable place for the actual click — see the confirm-page
+// script). A GET of the task chain is side-effect-free: completing a task
+// requires the form POST (established live 2026-08-27). Classification is
+// by markers observed on the live pages:
+//   'wfOutcomes'                        → buttons still offered → pending
+//   'loginFlowHelper' / 'for-login-flow' → JotForm demands a login
+//   any other 200 page                  → outcomes gone → completed
+// Any fetch/HTTP failure reports 'unknown' so the poller keeps waiting
+// rather than mis-reporting in either direction. Unlike /approve-gate, the
+// target arrives properly URL-encoded here (our own client encodes it), so
+// req.query is safe to use.
+app.get(
+  '/api/approve-gate/task-state',
+  requireAnyLoginJson,
+  asyncHandler(async (req, res) => {
+    noStore(res);
+
+    const target = typeof req.query.target === 'string' ? req.query.target : '';
+    if (!isAllowedJotformTarget(target)) {
+      res.status(400).json({ state: 'unknown', error: 'invalid target' });
+      return;
+    }
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      let html;
+      try {
+        const resp = await fetch(target, {
+          redirect: 'follow',
+          signal: controller.signal,
+          // ไม่ใส่ UA แบบเบราว์เซอร์ JotForm จะพาไปหน้า login แทนหน้า task
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0 Safari/537.36',
+          },
+        });
+        if (!resp.ok) {
+          res.status(200).json({ state: 'unknown' });
+          return;
+        }
+        html = await resp.text();
+      } finally {
+        clearTimeout(timer);
+      }
+
+      let state = 'completed';
+      if (html.includes('wfOutcomes')) state = 'pending';
+      else if (html.includes('loginFlowHelper') || html.includes('for-login-flow')) state = 'login-required';
+      res.status(200).json({ state });
+    } catch (err) {
+      console.warn(`[bpuu-workflow] approval task-state probe failed: ${err.message}`);
+      res.status(200).json({ state: 'unknown' });
     }
   })
 );
@@ -2918,6 +3144,20 @@ app.post(
     console.log(
       `[bpuu-workflow] approval decision recorded: step=${stepKey} outcomeID=${outcomeId || '(none)'} outcome=${outcome} identity=${record.identity}`
     );
+
+    // Write the request status back to q68 — JotForm's workflow doesn't, and
+    // q68 is what the request list / tracking reads. Best-effort: the approval
+    // already landed on JotForm, so a failed write is logged, not surfaced.
+    const q68Status = outcomeToQ68Status(outcome);
+    if (q68Status) {
+      try {
+        await writeJotformSubmissionField(id, '68', q68Status);
+        console.log(`[bpuu-workflow] q68 set to "${q68Status}" for submission ${id}`);
+      } catch (err) {
+        console.error(`[bpuu-workflow] could not write q68 for submission ${id}: ${err.message}`);
+      }
+    }
+
     res.status(200).json({ ok: true });
   })
 );
