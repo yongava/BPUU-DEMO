@@ -12,14 +12,14 @@ same zip, ready to use as-is — no separate file to track down.
 
 ```
 # 1. Import the image — the tag it restores is printed by this command,
-#    e.g. "Loaded image: bpuu-workflow:uat-20260807"
+#    e.g. "Loaded image: bpuu-workflow:uat-20260827"
 docker load -i bpuu-workflow-image.tar.gz
 
 # 2. Run it with the bundled env file (ใส่ tag ให้ตรงกับที่ขั้นที่ 1 พิมพ์ออกมา):
 docker run -d --name bpuu-workflow --restart unless-stopped \
   --env-file bpuu-workflow-uat.env -p 9999:9999 \
   -v bpuu-workflow-admin-data:/app/data \
-  bpuu-workflow:uat-20260807
+  bpuu-workflow:uat-20260827
 ```
 
 แต่ละรอบส่งมอบใช้ tag ที่ระบุวันที่เสมอ ไม่ใช้ `:latest` เพราะ `:latest` จะถูก
@@ -76,7 +76,7 @@ read-only to the process):
 ```
 docker run --env-file bpuu-workflow-uat.env -p 9999:9999 \
   -v bpuu-workflow-admin-data:/app/data \
-  bpuu-workflow:latest
+  bpuu-workflow:uat-20260827
 ```
 
 แท็บ "รายการคำขอ" และแท็บ "รายงาน" ดึงข้อมูลจาก JotForm จึงต้องมี

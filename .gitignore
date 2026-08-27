@@ -10,3 +10,6 @@ data/
 
 # server credentials — never commit
 File Sever.txt
+
+# UAT build artifacts (image tar + env with live secrets)
+dist-uat/
