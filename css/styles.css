@@ -54,3 +54,122 @@ body { font-family: 'Sarabun', sans-serif; background-color: #f8f9fa; color: #33
 .success-checkmark { width: 80px; height: 80px; margin: 0 auto; display: block; border-radius: 50%; border: 4px solid #4CAF50; position: relative; animation: popIn 0.5s ease-out; }
 .success-checkmark::after { content: ''; position: absolute; left: 22px; top: 38px; width: 25px; height: 12px; border-left: 4px solid #4CAF50; border-bottom: 4px solid #4CAF50; transform: rotate(-45deg); }
 @keyframes popIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+/* =========================================
+   Site footer + cookie consent
+   ใช้ร่วมกันทั้งหน้า login (server-rendered ใน server.js) และ index.html
+   markup ถูก inject โดย /js/site-chrome.js — แก้ที่ไฟล์นั้นที่เดียว
+   ========================================= */
+
+body.has-site-footer { padding-bottom: 3.25rem; }
+
+.site-footer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1030;
+    display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+    padding: .45rem .9rem;
+    font-size: .74rem; line-height: 1.35; color: #8a9199;
+    background: rgba(255, 255, 255, .92);
+    border-top: 1px solid rgba(0, 0, 0, .07);
+    backdrop-filter: blur(6px);
+}
+.site-footer__copy { text-align: right; margin-left: auto; }
+.site-footer__version { white-space: nowrap; opacity: .85; }
+.site-footer__cookie {
+    flex: none; display: inline-flex; align-items: center; gap: .3rem;
+    background: none; border: 0; padding: 0;
+    font: inherit; color: #8a9199; text-decoration: underline; cursor: pointer;
+}
+.site-footer__cookie:hover { color: var(--ci-orange); }
+
+@media (max-width: 575.98px) {
+    .site-footer { flex-direction: column; align-items: flex-start; gap: .2rem; font-size: .68rem; }
+    .site-footer__copy { text-align: left; margin-left: 0; }
+    body.has-site-footer { padding-bottom: 4.5rem; }
+}
+
+/* ---- cookie consent card ---- */
+.cookie-consent {
+    position: fixed; left: 1rem; bottom: 4rem; z-index: 1080;
+    width: min(400px, calc(100vw - 2rem));
+    background: #fff; border-radius: 10px; overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .22);
+    font-size: .875rem; color: #333;
+}
+.cookie-consent[hidden] { display: none; }
+.cookie-consent__head {
+    display: flex; align-items: center; gap: .6rem;
+    padding: 1rem 1.15rem .85rem;
+    font-size: 1.15rem; font-weight: 700; color: #212529;
+}
+.cookie-consent__head svg { width: 30px; height: 34px; color: var(--ci-orange); flex: none; }
+.cookie-consent__body { padding: .9rem 1.15rem 1rem; border-top: 1px solid #e9ecef; }
+.cookie-consent__actions { display: flex; gap: .5rem; margin-top: .9rem; }
+.cookie-consent__actions .btn { flex: 1; font-size: .82rem; font-weight: 600; }
+.cookie-consent .btn-cookie-dark {
+    background: #343a40; border: 1px solid #343a40; color: #fff;
+}
+.cookie-consent .btn-cookie-dark:hover { background: #23272b; color: #fff; }
+.cookie-consent .btn-cookie-light {
+    width: 100%; margin-top: .5rem;
+    background: #e9ecef; border: 1px solid #e9ecef; color: #343a40;
+    font-size: .82rem; font-weight: 600;
+}
+.cookie-consent .btn-cookie-light:hover { background: #dde1e5; color: #23272b; }
+.cookie-consent__links {
+    display: flex; gap: 1.25rem; padding: .6rem 1.15rem;
+    background: #f1f3f5; font-size: .78rem;
+}
+.cookie-consent__links a { color: #52585e; text-decoration: none; font-weight: 600; }
+.cookie-consent__links a:hover { color: var(--ci-orange); text-decoration: underline; }
+.cookie-consent__links:empty { display: none; }
+
+/* ---- per-category toggles (เปิดด้วยปุ่ม "ตั้งค่าเอง") ---- */
+.cookie-consent__prefs { margin-top: .9rem; border-top: 1px solid #e9ecef; padding-top: .75rem; }
+.cookie-consent__prefs[hidden] { display: none; }
+.cookie-consent__row { display: flex; align-items: flex-start; gap: .55rem; margin-bottom: .7rem; }
+.cookie-consent__row input { margin-top: .2rem; flex: none; }
+.cookie-consent__row label { font-size: .8rem; margin: 0; }
+.cookie-consent__row .text-muted { display: block; font-size: .73rem; }
+
+/* ---- ปุ่ม login พร้อมโลโก้ ----
+   จัดเป็น flex 2 คอลัมน์: โลโก้ | ข้อความ เพื่อให้โลโก้อยู่กึ่งกลางเทียบข้อความ
+   "ทั้งก้อน" (ซึ่งมี 2 บรรทัด) ถ้าปล่อยให้โลโก้เป็น inline จะไปเกาะเฉพาะบรรทัด
+   แรกแล้วปุ่มดูเบี้ยว */
+.login-provider-btn {
+    display: flex; align-items: center; justify-content: center; gap: .75rem;
+    text-align: left;
+}
+/* คอลัมน์โลโก้ต้องกว้าง "เท่ากันทุกปุ่ม" ไม่งั้นจุดเริ่มต้นของข้อความจะไม่ตรงกัน
+   เพราะโลโก้ ThaID เป็นแนวนอน (2:1) ส่วน KMUTT เป็นแนวตั้ง (44:51) กว้างต่างกัน
+   เกือบเท่าตัว — ตรึงความกว้าง แล้วให้ความสูงต่างกันได้ตามสัดส่วนของแต่ละภาพ */
+.login-provider-logo { flex: none; width: 3em; object-fit: contain; }
+/* SVG พื้นโปร่ง เว้นที่ว่างซ้ายขวาในคอลัมน์ได้โดยไม่เห็นขอบ */
+.login-provider-logo--kmutt { height: 2.3em; color: #fff; }
+/* ThaID เป็น 2:1 พอดี ตั้งความสูง = ครึ่งหนึ่งของความกว้างคอลัมน์ กล่องจะพอดี
+   กับภาพ มุมโค้งจึงเห็นผลจริง (ถ้ากล่องใหญ่กว่าภาพ radius จะไปโค้งที่ว่างโปร่งแทน) */
+.login-provider-logo--thaid { height: 1.5em; border-radius: 6px; }
+
+/* flex:1 1 0 + min-width:0 ทำให้กล่องข้อความกว้าง "เท่าที่เหลือในปุ่ม" เสมอ
+   ไม่ขึ้นกับเนื้อหา — จำเป็นมากสำหรับ login-fit.js เพราะถ้าปล่อยให้ความกว้าง
+   ผันตามเนื้อหา ตอนย่อ font ความกว้างจะขยับตาม กลายเป็นวัดกับเป้าที่เลื่อนไปเรื่อย
+   แล้วย่อเกินจำเป็น (เคยได้ 170px ทั้งที่ปุ่มมีที่ว่างจริงมากกว่านั้น) */
+.login-provider-text { flex: 1 1 0; min-width: 0; }
+/* ล็อกแต่ละบรรทัดไม่ให้ตัดคำ — login-fit.js จะย่อ font-size ให้พอดีเอง
+   ผลคือปุ่มเป็น 2 บรรทัดเสมอไม่ว่าจอกว้างแค่ไหน */
+.login-provider-text > span { display: block; white-space: nowrap; }
+
+/* จอแคบ: โลโก้ + padding กินที่จนเหลือให้ข้อความน้อยมาก (เคยเหลือ 134px แล้ว
+   login-fit.js ต้องย่อจนชนพื้น 11px) — คืนพื้นที่ให้ข้อความก่อน ตัวอักษรจะได้
+   ไม่ต้องเล็กขนาดนั้น ย่อทั้งคอลัมน์พร้อมกันเพื่อรักษาการจัดแนวข้อความ */
+@media (max-width: 430px) {
+    .login-provider-btn { padding-left: .6rem; padding-right: .6rem; gap: .5rem; }
+    .login-provider-logo { width: 2.6em; }
+    .login-provider-logo--kmutt { height: 1.9em; }
+    .login-provider-logo--thaid { height: 1.3em; }
+}
+/* จอเล็กสุดที่ยังต้องรองรับ (iPhone SE รุ่นแรก ~320px) */
+@media (max-width: 360px) {
+    .login-provider-logo { width: 2.2em; }
+    .login-provider-logo--kmutt { height: 1.7em; }
+    .login-provider-logo--thaid { height: 1.1em; }
+}

@@ -21,10 +21,21 @@ let staffDepartmentLookup = null;
 let staffDepartmentLookupSourceSize = -1;
 
 const OTHER_OVERNIGHT_PARKING_URL = "https://docs.google.com/forms/d/e/1FAIpQLSc0_fqdfSl6Ix0tPu_m8Z7gs7OWd-LXUPO-FLmhTIfv2aWyw/viewform";
+// ชื่อสถานที่ในฟอร์มขอใช้พื้นที่ชั่วคราว — ใช้ทั้งเป็น label บน checkbox, ในหน้า
+// สรุปคำขอ และเป็นค่าที่ส่งเข้า JotForm (q59) จึงต้องเป็นค่าเดียวกันทั้ง 3 ที่
+// ไม่งั้นสิ่งที่ผู้ใช้เห็นกับสิ่งที่บันทึกจะไม่ตรงกัน
+const AREA_LOCATION_S2 = 'อาคารจอดรถ 1 (S2)';
+const AREA_LOCATION_S14 = 'อาคารพระจอมเกล้าราชานุสรณ์ 190 ปี (S14)';
+
 const JOTFORM_USER_TYPE_VALUES = {
     staff: "บุคลากร",
     student: "นักศึกษา",
-    external: "บุคคลภายนอก"
+    external: "บุคคลภายนอก",
+    // ผ่าน ADFS แต่ Master Data ไม่มีข้อมูล จึงยังแยกไม่ออกว่าบุคลากรหรือนักศึกษา
+    // ส่งเป็น "บุคลากร" ให้สอดคล้องกับชุดฟิลด์ที่ผู้ใช้กรอก (ดู
+    // enableManualRequesterEntry) — เพิ่มตัวเลือกที่ 4 เองไม่ได้ เพราะ q16 เป็น
+    // ช่องที่นิยามไว้ในฟอร์มฝั่ง JotForm ไม่ได้อยู่ใน repo นี้ ค่าที่ไม่ตรงจะตกหาย
+    kmutt: "บุคลากร"
 };
 function uniqueNonEmpty(values) {
     return [...new Set(values.map(value => (value || '').trim()).filter(Boolean))];
@@ -152,7 +163,7 @@ function getModlinkAdviceHTML() {
 }
 
 // เบอร์มือถือ: id ของฟิลด์ที่ต้องบังคับกรอกเฉพาะตัวเลข ขึ้นต้นด้วย 0 และไม่เกิน 10 หลัก
-const PHONE_FIELD_IDS = ['reqPhone', 'extPhone', 'monthlyOtherPhone'];
+const PHONE_FIELD_IDS = ['reqPhone', 'extPhone'];
 function sanitizePhoneInput(el) {
     let digits = el.value.replace(/\D/g, '');       // ตัวเลขเท่านั้น
     if (digits && digits[0] !== '0') digits = '0' + digits.replace(/^0+/, ''); // บังคับขึ้นต้นด้วย 0
@@ -221,7 +232,7 @@ function logout() {
 // ล้างข้อมูลผู้ขอ/ผู้อนุมัติค้างจาก session ก่อนหน้า — กันข้อมูลคนเก่าติดไปกับ submission ถัดไป
 function clearRequesterAndApproverState() {
     clearValidationMarks();
-    ['appName', 'appPosition', 'reqEmpId', 'reqName', 'reqEmail', 'reqPhone', 'reqDeptCode', 'reqPosition',
+    ['appName', 'appPosition', 'appEmailInput', 'reqEmpId', 'reqName', 'reqEmail', 'reqPhone', 'reqDeptCode', 'reqPosition',
      'reqInternalPhone', 'reqStatus', 'reqFaculty', 'reqMajor',
      'extFname', 'extLname', 'extCompany', 'extPhone', 'extEmail', 'extTypeOther'].forEach(id => {
         const el = document.getElementById(id);
@@ -342,19 +353,100 @@ function selectForm(formName) {
     }
 }
 
+// โหมดกรอกเอง — ใช้เมื่อผู้ใช้ผ่าน ADFS จริงแต่ Master Data ไม่มีข้อมูล
+//
+// คนกลุ่มนี้เป็น "คนใน" (ผ่าน ADFS มาแล้ว) ปัญหาเดียวคือไม่มีโปรไฟล์ให้เติม
+// ส่วนที่ 1 / ส่วนที่ 2 อัตโนมัติ เดิมโค้ด return ทิ้งตั้งแต่ต้น ทำให้ช่องทั้งหมด
+// ว่างและยังติด readonly อยู่ — กรอกเองก็ไม่ได้ ส่งคำขอก็ไม่ได้ ฟังก์ชันนี้จึง
+// ปลด readonly ให้กรอกเองแทน และเติมชื่อ/อีเมลจาก ADFS claims ให้ก่อน เพราะ
+// สองค่านั้นเรามีจริงและยืนยันตัวตนมาแล้ว แม้ Master Data จะไม่รู้จักก็ตาม
+//
+// เลือกแสดงชุดฟิลด์ของ "บุคลากร" เสมอ (ตำแหน่ง/หน่วยงาน/เบอร์ภายใน) เพราะ
+// เมื่อ Master Data ไม่มีข้อมูล เราแยกไม่ออกว่าเป็นบุคลากรหรือนักศึกษา และยัง
+// โชว์ช่องรหัสประจำตัวไว้ด้วย (ปกติซ่อนสำหรับบุคลากรเพราะดึงมาให้อยู่แล้ว) —
+// ในโหมดนี้ไม่มีใครกรอกให้ ผู้ใช้จึงต้องมีที่พิมพ์
+function enableManualRequesterEntry(formName) {
+    const show = (id, on) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = on ? 'block' : 'none';
+    };
+    const editable = (id, placeholder) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.removeAttribute('readonly');
+        el.classList.add('border-ci-bluegrey');
+        if (placeholder) el.placeholder = placeholder;
+    };
+
+    show('divReqId', true);
+    show('divReqPosition', true);
+    show('divReqDeptCode', true);
+    show('divReqInternalPhone', true);
+    show('divReqStatus', false);
+    show('divReqFaculty', false);
+    show('divReqMajor', false);
+
+    editable('reqEmpId', 'ระบุรหัสประจำตัว');
+    editable('reqName', 'ระบุชื่อ-สกุล');
+    editable('reqPosition', 'ระบุตำแหน่ง');
+    editable('reqDeptCode', 'ระบุหน่วยงาน/สังกัด');
+    editable('reqInternalPhone', 'ระบุเบอร์โทรภายใน (ถ้ามี)');
+    editable('appName', 'ระบุชื่อผู้อนุมัติ');
+    editable('appPosition', 'ระบุตำแหน่ง/สังกัดผู้อนุมัติ');
+
+    // ส่วนที่ 2 ปกติเป็นข้อความบอกปลายทางที่ระบบดึงมาให้ — สลับเป็นช่องกรอกจริง
+    document.getElementById('appEmailAuto')?.classList.add('d-none');
+    document.getElementById('appEmailManual')?.classList.remove('d-none');
+
+    // ใช้กฎเดียวกับบุคลากร: ฟอร์มแจ้งปัญหาไม่มีขั้นอนุมัติ จึงไม่ต้องมีส่วนที่ 2
+    // (กิ่งปกติตั้งค่านี้ท้าย fillInternalData ซึ่งเคสนี้ return ออกไปก่อน)
+    const showApprover = formName !== 'แจ้งปัญหาการใช้งานพื้นที่/ที่จอดรถ';
+    const t = document.getElementById('approverSectionTitle');
+    const c = document.getElementById('approverSectionContent');
+    if (t) t.style.display = showApprover ? 'block' : 'none';
+    if (c) c.style.display = showApprover ? 'flex' : 'none';
+
+    const t1 = document.querySelector('.form-section-title');
+    if (t1 && t1.innerHTML.includes('ส่วนที่ 1')) {
+        t1.innerHTML = '<i class="bi bi-1-circle-fill me-2"></i>ส่วนที่ 1: รายละเอียดผู้ยื่นคำขอ (กรุณากรอกเอง)';
+    }
+    const t2 = document.getElementById('approverSectionTitle');
+    if (t2) t2.innerHTML = '<i class="bi bi-2-circle-fill me-2"></i>ส่วนที่ 2: ข้อมูลผู้อนุมัติ (กรุณากรอกเอง)';
+
+    // เติมเท่าที่ ADFS ให้มาจริง ไม่เดาส่วนที่เหลือ
+    const claims = window.kmuttAdfsClaims || {};
+    const nameEl = document.getElementById('reqName');
+    if (nameEl && !nameEl.value) nameEl.value = claims.name || '';
+    const emailEl = document.getElementById('reqEmail');
+    if (emailEl && !emailEl.value) emailEl.value = claims.email || claims.upn || claims.unique_name || '';
+}
+
+// true เมื่ออยู่ในโหมดกรอกเอง และฟอร์มนี้มีขั้นอนุมัติจริง — ใช้ร่วมกันโดย
+// validateCurrentForm / หน้าสรุป / การประกอบข้อมูลส่งเข้า JotForm เพื่อไม่ให้
+// สามที่ตัดสินคนละแบบ (เช่น บังคับกรอกอีเมลผู้อนุมัติในฟอร์มที่ซ่อนส่วนที่ 2 อยู่)
+function isManualApproverEntry() {
+    const manual = document.getElementById('appEmailManual');
+    const section = document.getElementById('approverSectionContent');
+    if (!manual || manual.classList.contains('d-none')) return false;
+    return !section || section.style.display !== 'none';
+}
+
 function fillInternalData(formName) {
     const isStaff = currentLoginType === 'staff';
     // SSO (ADFS) staff/student users never populate globalUserData — that's
     // only ever set by the old CSV-ID-entry flow (processLogin()). For SSO
     // users, server.js's /redirect callback resolves a Master Data profile
     // and index.html's trailing inline script exposes it here as
-    // window.kmuttRequesterProfile. If neither is present (e.g. an
-    // unclassified 'kmutt' user, or Master Data had no match), fall through
-    // exactly like the original code did: nothing gets filled.
+    // window.kmuttRequesterProfile.
     const kmuttProfile = window.kmuttRequesterProfile && window.kmuttRequesterProfile.requester
         ? window.kmuttRequesterProfile
         : null;
-    if (!globalUserData && !kmuttProfile) return;
+    if (!globalUserData && !kmuttProfile) {
+        // ผ่าน ADFS แต่ Master Data ไม่มีข้อมูล — ให้กรอกเอง แทนที่จะปล่อยช่อง
+        // ว่างและ readonly เหมือนเดิม (ดู enableManualRequesterEntry ด้านบน)
+        if (currentLoginType === 'kmutt') enableManualRequesterEntry(formName);
+        return;
+    }
 
     document.getElementById('divReqId').style.display = isStaff ? 'none' : 'block';
     document.getElementById('divReqPosition').style.display = isStaff ? 'block' : 'none';
@@ -449,43 +541,8 @@ function renderDynamicForm(formName, targetContainerId) {
 
     switch (formName) {
         case 'แบบฟอร์มขอจอดรถรายเดือน':
-            let monthlyForOtherHTML = "";
             let monthlyContractFileHTML = "";
             if (currentLoginType === 'staff') {
-                monthlyForOtherHTML = `
-                    <div class="col-md-12 mb-2">
-                        <label class="form-label text-ci-bluegrey fw-bold small">ผู้ใช้บริการจริง <span class="req-star">*</span></label>
-                        <div class="d-flex flex-wrap gap-4 align-items-center">
-                            <div class="form-check">
-                                <input class="form-check-input border-ci-bluegrey" type="radio" name="monthlyForWho" id="monthlyForMe" value="ตนเอง" checked onchange="toggleMonthlyForOther()">
-                                <label class="form-check-label" for="monthlyForMe">ขอให้ตนเอง</label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input border-ci-bluegrey" type="radio" name="monthlyForWho" id="monthlyForOther" value="ผู้อื่น" onchange="toggleMonthlyForOther()">
-                                <label class="form-check-label" for="monthlyForOther">ขอให้ผู้อื่น</label>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-12" id="divMonthlyOtherDetails" style="display:none;">
-                        <div class="p-3 bg-light rounded border border-light shadow-sm mb-3" style="border-left: 4px solid var(--ci-orange) !important;">
-                            <label class="form-label fw-bold text-ci-orange small mb-3">ระบุข้อมูลผู้ใช้บริการจริง</label>
-                            <div class="row g-3">
-                                <div class="col-md-12">
-                                    <label class="form-label text-ci-bluegrey fw-bold small">ชื่อ-สกุล <span class="req-star">*</span></label>
-                                    <input type="text" class="form-control" id="monthlyOtherName" placeholder="ระบุชื่อ-สกุล ผู้ใช้บริการจริง">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label text-ci-bluegrey fw-bold small">เบอร์โทรศัพท์ <span class="req-star">*</span></label>
-                                    <input type="tel" inputmode="numeric" maxlength="10" pattern="0[0-9]{9}" class="form-control" id="monthlyOtherPhone" placeholder="08XXXXXXXX">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label text-ci-bluegrey fw-bold small">อีเมล <span class="req-star">*</span></label>
-                                    <input type="email" class="form-control" id="monthlyOtherEmail" placeholder="example@domain.com">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
                 monthlyContractFileHTML = `
                     <div class="col-md-12">
                         <label class="form-label text-ci-bluegrey fw-bold small">แนบสัญญาจ้าง <span class="req-star">*</span></label>
@@ -495,8 +552,13 @@ function renderDynamicForm(formName, targetContainerId) {
 
             formHTML = `
                 <div class="row g-3 text-start">
-                    ${monthlyForOtherHTML}
-                    <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ข้อมูลรถ <span class="req-star">*</span></label><input type="text" class="form-control" placeholder="เช่น 1กข2345 (ไม่ต้องเว้นวรรค และไม่ต้องระบุจังหวัด)" id="in_monthly_plate"></div>
+                    <div class="col-md-12">
+                        <div class="p-3 bg-light rounded border border-light shadow-sm" style="border-left: 4px solid var(--ci-yellow) !important;">
+                            <label class="form-label text-ci-bluegrey fw-bold small">ข้อมูลรถ <span class="req-star">*</span></label>
+                            <input type="hidden" id="monthlyCarCount" value="1">
+                            <div id="monthlyCarFields"></div>
+                        </div>
+                    </div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control" id="parkingStartDate" onchange="calculateEndDate()"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด (คำนวณอัตโนมัติ 1 เดือน)</label><input type="text" class="form-control bg-light text-dark fw-bold" id="parkingEndDate" readonly placeholder="DD/MM/YYYY"></div>
                     ${monthlyContractFileHTML}
@@ -544,32 +606,11 @@ function renderDynamicForm(formName, targetContainerId) {
             formHTML = `
                 <div class="row g-3 text-start">
                     ${overnightOtherPlaceHTML}
-                    <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ข้อมูลรถ <span class="req-star">*</span></label><input type="text" class="form-control" id="in_overnight_plate" placeholder="เช่น 1กข2345 (ไม่ต้องเว้นวรรค และไม่ต้องระบุจังหวัด)"></div>
                     <div class="col-md-12">
-                        <div class="form-check">
-                            <input class="form-check-input border-ci-bluegrey" type="checkbox" id="overnightMultipleCars" onchange="toggleOvernightMultipleCars()">
-                            <label class="form-check-label fw-bold text-dark" for="overnightMultipleCars">ขอจอดมากกว่า 1 คัน</label>
-                        </div>
-                    </div>
-                    <div class="col-md-12" id="divOvernightMultipleCars" style="display:none;">
                         <div class="p-3 bg-light rounded border border-light shadow-sm" style="border-left: 4px solid var(--ci-yellow) !important;">
-                            <div class="row g-3">
-                                <div class="col-md-4">
-                                    <label class="form-label text-ci-bluegrey fw-bold small">จำนวนรถทั้งหมด <span class="req-star">*</span></label>
-                                    <select class="form-select border-light shadow-sm" id="overnightCarCount" onchange="renderOvernightCarFields()">
-                                        <option value="2" selected>2 คัน</option>
-                                        <option value="3">3 คัน</option>
-                                        <option value="4">4 คัน</option>
-                                        <option value="5">5 คัน</option>
-                                        <option value="6">6 คัน</option>
-                                        <option value="7">7 คัน</option>
-                                        <option value="8">8 คัน</option>
-                                        <option value="9">9 คัน</option>
-                                        <option value="10">10 คัน</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-12" id="overnightCarFields"></div>
-                            </div>
+                            <label class="form-label text-ci-bluegrey fw-bold small">ข้อมูลรถ <span class="req-star">*</span></label>
+                            <input type="hidden" id="overnightCarCount" value="1">
+                            <div id="overnightCarFields"></div>
                         </div>
                     </div>
                     <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control" id="overnightStartDate" onchange="calculateDuration('overnightStartDate', 'overnightEndDate', 'overnightTotalDays', 'nights')"></div>
@@ -686,6 +727,10 @@ function renderDynamicForm(formName, targetContainerId) {
             break;
 
         case 'แบบฟอร์มขอใช้พื้นที่ชั่วคราว':
+            // แจกผลิตภัณฑ์: เฉพาะบุคคลภายนอก — บุคลากร/นักศึกษา มจธ. ไม่ต้องเห็นตัวเลือกนี้
+            const objGiveawayHTML = (currentLoginType === 'staff' || currentLoginType === 'student')
+                ? ''
+                : `<div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj2" value="แจกผลิตภัณฑ์"><label class="form-check-label" for="obj2">แจกผลิตภัณฑ์</label></div>`;
             formHTML = `
                 <div class="row g-3 text-start">
                     <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ชื่อกิจกรรม <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="in_area_event"></div>
@@ -694,9 +739,9 @@ function renderDynamicForm(formName, targetContainerId) {
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="areaEndDate"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">เวลาเริ่มต้น <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="areaStartTime" step="60"></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">เวลาสิ้นสุด <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="areaEndTime" step="60"></div>
-                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">จำนวนบูธ <span class="req-star">*</span></label><input type="number" min="1" step="1" class="form-control border-light shadow-sm" id="areaBoothCount" value="1"></div>
-                    <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">วัตถุประสงค์ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj1" value="ประชาสัมพันธ์"><label class="form-check-label" for="obj1">ประชาสัมพันธ์</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj2" value="แจกผลิตภัณฑ์"><label class="form-check-label" for="obj2">แจกผลิตภัณฑ์</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj3" value="อื่นๆ" onchange="toggleOtherInput('obj3', 'objOtherText')"><label class="form-check-label text-nowrap" for="obj3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="objOtherText" placeholder="โปรดระบุ" disabled></div></div>
-                    <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">สถานที่ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc1" value="อาคารจอดรถ 1 (S2)"><label class="form-check-label" for="loc1">อาคารจอดรถ 1 (S2)</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc2" value="โรงอาหาร (S14)"><label class="form-check-label" for="loc2">โรงอาหาร (S14)</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc3" value="อื่นๆ" onchange="toggleOtherInput('loc3', 'locOtherText')"><label class="form-check-label text-nowrap" for="loc3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="locOtherText" placeholder="โปรดระบุสถานที่" disabled></div></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">จำนวนบูธ <span class="text-muted fw-normal">(ขนาดพื้นที่ 3 x 3 เมตร)</span> <span class="req-star">*</span></label><input type="number" min="1" step="1" class="form-control border-light shadow-sm" id="areaBoothCount" value="1"></div>
+                    <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">วัตถุประสงค์ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj1" value="ประชาสัมพันธ์"><label class="form-check-label" for="obj1">ประชาสัมพันธ์</label></div>${objGiveawayHTML}<div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="obj3" value="อื่นๆ" onchange="toggleOtherInput('obj3', 'objOtherText')"><label class="form-check-label text-nowrap" for="obj3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="objOtherText" placeholder="โปรดระบุ" disabled></div></div>
+                    <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">สถานที่ <span class="req-star">*</span></label><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc1" value="${AREA_LOCATION_S2}"><label class="form-check-label" for="loc1">${AREA_LOCATION_S2}</label></div><div class="form-check mb-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc2" value="${AREA_LOCATION_S14}"><label class="form-check-label" for="loc2">${AREA_LOCATION_S14}</label></div><div class="form-check d-flex align-items-center gap-2"><input class="form-check-input border-ci-bluegrey" type="checkbox" id="loc3" value="อื่นๆ" onchange="toggleOtherInput('loc3', 'locOtherText')"><label class="form-check-label text-nowrap" for="loc3">อื่น ๆ</label><input type="text" class="form-control form-control-sm w-50 border-light shadow-sm" id="locOtherText" placeholder="โปรดระบุสถานที่" disabled></div></div>
                     
                     <div class="col-md-12 mt-4"><label class="form-label text-ci-bluegrey fw-bold small">แนบรายละเอียดกิจกรรม <span class="req-star">*</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
                     <div class="col-md-12 mt-2"><label class="form-label text-ci-bluegrey fw-bold small">แนบไฟล์เพิ่มเติม <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="file" class="form-control border-light shadow-sm" accept=".pdf, .jpg, .png"></div>
@@ -713,10 +758,11 @@ function renderDynamicForm(formName, targetContainerId) {
         case 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา':
             formHTML = `
                 <div class="row g-3 text-start">
-                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ทะเบียนรถยนต์ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="text" class="form-control border-light shadow-sm" id="in_contract_plate" placeholder="เช่น 1กข2345"></div>
-                    <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เข้าพื้นที่ <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="in_contract_date"></div>
-                    <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">ตั้งแต่เวลา <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="in_contract_time_start"></div>
-                    <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">ถึงเวลา <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="in_contract_time_end"></div>
+                    <div class="col-md-12"><label class="form-label text-ci-bluegrey fw-bold small">ทะเบียนรถยนต์ <span class="text-muted fw-normal">(ถ้ามี)</span></label><input type="text" class="form-control border-light shadow-sm" id="in_contract_plate" placeholder="เช่น 1กข2345"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่เริ่มต้น <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="in_contract_date"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">วันที่สิ้นสุด <span class="req-star">*</span></label><input type="date" class="form-control border-light shadow-sm" id="in_contract_date_end"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ตั้งแต่เวลา <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="in_contract_time_start" step="60"></div>
+                    <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">ถึงเวลา <span class="req-star">*</span></label><input type="time" class="form-control border-light shadow-sm" id="in_contract_time_end" step="60"></div>
                     
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">1. ชื่อบริษัท <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="contractCompany" onchange="onCompanyChange()"><option value="" selected disabled>กำลังโหลดข้อมูล...</option></select></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey fw-bold small">2. ประเภทธุรกิจ <span class="req-star">*</span></label><select class="form-select border-light shadow-sm" id="contractBusinessType" onchange="onBusinessTypeChange()" disabled><option value="" selected disabled>-- เลือกประเภทธุรกิจ --</option></select></div>
@@ -770,6 +816,13 @@ function renderDynamicForm(formName, targetContainerId) {
     });
     if (formName === 'แบบฟอร์มขอเพิ่ม/แก้ไข/ยกเลิกทะเบียนรถยนต์') {
         window.renderPlateActionFields();
+    }
+    // รายการรถเริ่มต้นที่ 1 คันเสมอ จึงต้อง render เองตั้งแต่เปิดฟอร์ม
+    if (formName === 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)') {
+        window.renderCarFields('overnightCar');
+    }
+    if (formName === 'แบบฟอร์มขอจอดรถรายเดือน') {
+        window.renderCarFields('monthlyCar');
     }
     // หมายเหตุ: การ gate ปุ่มส่งทำใน switchView (เรียกหลัง render เสมอ) เพื่อให้อ่าน active view ถูกตัว
 }
@@ -870,6 +923,15 @@ function validateCurrentForm() {
     } else if (currentLoginType) {
         needPhone('reqPhone', 'เบอร์โทรติดต่อ', true);
         needEmail('reqEmail', 'อีเมล', true);
+        // โหมดกรอกเอง (Master Data ไม่มีข้อมูล — ดู enableManualRequesterEntry):
+        // ช่องพวกนี้ปกติถูกเติมอัตโนมัติจึงไม่เคยต้องตรวจ พอผู้ใช้กรอกเองต้อง
+        // บังคับ ไม่งั้นคำขอจะถูกส่งโดยไม่มีชื่อผู้ขอ หรือแย่กว่านั้นคือไม่มี
+        // อีเมลผู้อนุมัติ ซึ่งจะทำให้ไม่มีใครได้รับเรื่องเลย
+        if (currentLoginType === 'kmutt') need('reqName', 'ชื่อ-สกุล');
+        if (isManualApproverEntry()) {
+            need('appName', 'ชื่อผู้อนุมัติ');
+            needEmail('appEmailInput', 'อีเมลผู้อนุมัติ', true);
+        }
     }
 
     // ---------- รายละเอียดคำขอรายฟอร์ม ----------
@@ -878,9 +940,10 @@ function validateCurrentForm() {
 
     switch (currentSelectedForm) {
         case 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)': {
-            needPlate('in_overnight_plate', 'ข้อมูลรถ', true);
-            if (byId('overnightMultipleCars')?.checked) {
-                const carCount = Number(val('overnightCarCount') || 0);
+            {
+                // ตอนนี้เลือกจำนวนรถก่อนเสมอ (อย่างน้อย 1 คัน) ข้อมูลรถทั้งหมด
+                // จึงอยู่ในรายการรายคัน ไม่มีช่องทะเบียนเดี่ยวด้านบนแล้ว
+                const carCount = Number(val('overnightCarCount') || 1);
                 for (let i = 1; i <= carCount; i++) {
                     need(`overnightCarFirstName${i}`, `ชื่อ (คันที่ ${i})`);
                     need(`overnightCarLastName${i}`, `สกุล (คันที่ ${i})`);
@@ -902,12 +965,15 @@ function validateCurrentForm() {
             break;
         }
         case 'แบบฟอร์มขอจอดรถรายเดือน': {
-            if (byId('monthlyForOther')?.checked) {
-                need('monthlyOtherName', 'ชื่อ-สกุล ผู้ใช้บริการจริง');
-                needPhone('monthlyOtherPhone', 'เบอร์โทรผู้ใช้บริการจริง', true);
-                needEmail('monthlyOtherEmail', 'อีเมลผู้ใช้บริการจริง', true);
+            {
+                // ใช้รายการรถชุดเดียวกับฟอร์มจอดค้างคืน (เพิ่มได้ไม่จำกัด)
+                const carCount = Number(val('monthlyCarCount') || 1);
+                for (let i = 1; i <= carCount; i++) {
+                    need(`monthlyCarFirstName${i}`, `ชื่อ (คันที่ ${i})`);
+                    need(`monthlyCarLastName${i}`, `สกุล (คันที่ ${i})`);
+                    needPlate(`monthlyCarPlate${i}`, `ทะเบียนรถ (คันที่ ${i})`, true);
+                }
             }
-            needPlate('in_monthly_plate', 'ข้อมูลรถ', true);
             need('parkingStartDate', 'วันที่เริ่มต้น');
             needFutureDate('parkingStartDate', 'วันที่เริ่มต้น');
             needFile(byId('monthlyContractFile'), 'สัญญาจ้าง');
@@ -968,11 +1034,13 @@ function validateCurrentForm() {
         }
         case 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา': {
             needPlate('in_contract_plate', 'ทะเบียนรถ', false); // ไม่บังคับ แต่ถ้ากรอกต้องถูกรูปแบบ
-            need('in_contract_date', 'วันที่เข้าพื้นที่');
-            needFutureDate('in_contract_date', 'วันที่เข้าพื้นที่');
+            need('in_contract_date', 'วันที่เริ่มต้น');
+            need('in_contract_date_end', 'วันที่สิ้นสุด');
+            needFutureDate('in_contract_date', 'วันที่เริ่มต้น');
+            needDateOrder('in_contract_date', 'in_contract_date_end');
             need('in_contract_time_start', 'เวลาเริ่มต้น');
             need('in_contract_time_end', 'เวลาสิ้นสุด');
-            // ไม่บังคับเวลาสิ้นสุด > เริ่มต้น: งานคู่สัญญาอาจคร่อมเที่ยงคืน (เช่น 22:00–04:00) แต่ฟอร์มมีวันที่เดียว
+            // ไม่บังคับเวลาสิ้นสุด > เริ่มต้น: งานคู่สัญญาอาจคร่อมเที่ยงคืน (เช่น 22:00–04:00) ในวันเดียวกัน
             needPick('contractCompany', 'ชื่อบริษัท');
             needPick('contractBusinessType', 'ประเภทธุรกิจ');
             needPick('contractCampus', 'พื้นที่การศึกษา');
@@ -1011,11 +1079,29 @@ function validateCurrentForm() {
 // =========================================================
 // Flow การ Submit ข้อมูล (Preview & Confirm)
 // =========================================================
+// แปลง 'YYYY-MM-DD' เป็น '01 August 2026' — ค่าที่ไม่ตรงรูปแบบคืนกลับตามเดิม
+// ประกอบสตริงเองแทน toLocaleDateString เพื่อไม่ให้ผลลัพธ์เปลี่ยนตาม locale ของเครื่อง
+const DISPLAY_MONTHS = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+];
+function formatDisplayDate(value) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? '').trim());
+    if (!m) return value;
+    const month = DISPLAY_MONTHS[Number(m[2]) - 1];
+    if (!month) return value;
+    return `${m[3]} ${month} ${m[1]}`;
+}
+
 function showSummaryModal() {
     if (!validateCurrentForm()) return;
 
     let html = `<ul class="list-group list-group-flush small mb-3">`;
     const addRow = (label, value, valueClass = 'text-dark fw-bold') => {
+        // ช่อง <input type="date"> คืนค่าเป็น YYYY-MM-DD เสมอ — แปลงเป็นรูปแบบที่
+        // อ่านง่ายตรงนี้ที่เดียว ทุกแถวที่เป็นวันที่จึงแสดงเหมือนกันหมดโดยไม่ต้อง
+        // ไล่แก้ทีละจุด (ค่าที่ไม่ใช่รูปแบบวันที่จะถูกส่งผ่านไปตามเดิม)
+        value = formatDisplayDate(value);
         if(value && value !== '-- กรุณาระบุเหตุผล --' && value !== '-- กรุณาระบุประเภท --') {
             // หัวข้อกับข้อมูลอยู่บรรทัดเดียวกัน (label : value) เพื่อให้ q32_summary ในอีเมลอ่านง่าย
             html += `<li class="list-group-item px-0 bg-transparent border-light"><span class="fw-bold text-ci-bluegrey" style="font-size:0.8rem;">${label} : </span><span class="${valueClass}" style="white-space: pre-line;">${value}</span></li>`;
@@ -1039,12 +1125,31 @@ function showSummaryModal() {
         addRow('คณะ/สังกัด', document.getElementById('reqFaculty').value);
         addRow('อีเมล', document.getElementById('reqEmail').value);
         addRow('เบอร์โทร', document.getElementById('reqPhone').value || '-');
+    } else if (currentLoginType === 'kmutt') {
+        // ผ่าน ADFS แต่ Master Data ไม่มีข้อมูล จึงกรอกเองทั้งหมด (ดู
+        // enableManualRequesterEntry) เดิมเคสนี้ตกไปเข้ากิ่ง else ของบุคคลภายนอก
+        // ด้านล่าง แล้วอ่าน extFname/extCompany ที่ไม่มีวันถูกกรอก — หน้าสรุปจึง
+        // ขึ้นแถวว่างเปล่าทั้งหมด ตรงนี้อ่านจากช่องที่ผู้ใช้กรอกจริง
+        addRow('ประเภท', 'บุคลากร/นักศึกษา (ไม่พบข้อมูลในระบบ — กรอกเอง)');
+        addRow('รหัสประจำตัว', document.getElementById('reqEmpId').value);
+        addRow('ชื่อ-สกุล', document.getElementById('reqName').value, 'text-dark');
+        addRow('ตำแหน่ง', document.getElementById('reqPosition').value);
+        addRow('หน่วยงาน', document.getElementById('reqDeptCode').value.replace(/\s*\n\s*/g, ' '), 'text-dark');
+        addRow('เบอร์โทรภายใน', document.getElementById('reqInternalPhone').value);
+        addRow('อีเมล', document.getElementById('reqEmail').value);
+        addRow('เบอร์โทรมือถือ', document.getElementById('reqPhone').value || '-');
+        // ผู้อนุมัติกรอกเองเช่นกัน — พิมพ์อีเมลผิดคือคำขอไปไม่ถึงใครเลย
+        // จึงโชว์ให้ตรวจก่อนยืนยัน (เคสอื่นระบบดึงมาให้ ไม่ต้องตรวจ)
+        if (isManualApproverEntry()) {
+            addRow('ผู้อนุมัติ', document.getElementById('appName').value, 'text-dark');
+            addRow('อีเมลผู้อนุมัติ', document.getElementById('appEmailInput')?.value, 'text-dark');
+        }
     } else {
         let extType = "";
         if(document.getElementById('extType1')?.checked) extType = "ผู้ปกครอง";
         if(document.getElementById('extType2')?.checked) extType = "คู่สัญญา";
         if(document.getElementById('extType3')?.checked) extType = document.getElementById('extTypeOther').value || "อื่นๆ";
-        
+
         if (!shouldHideExternalType(currentSelectedForm)) addRow('ประเภทผู้ขอ', extType);
         addRow('ชื่อ-สกุล', document.getElementById('extFname').value + ' ' + document.getElementById('extLname').value, 'text-dark');
         addRow('หน่วยงาน/บริษัท', document.getElementById('extCompany').value, 'text-dark');
@@ -1055,31 +1160,32 @@ function showSummaryModal() {
     html += `</ul><p class="m-0"></p><h6 class="fw-bold text-ci-orange border-bottom border-ci-orange pb-2 mt-4">• รายละเอียดคำขอ •</h6><ul class="list-group list-group-flush small">`;
     
     if (currentSelectedForm === 'แบบฟอร์มขอจอดรถรายเดือน') {
-        if (currentLoginType === 'staff') {
-            const isOther = document.getElementById('monthlyForOther')?.checked;
-            addRow('ผู้ใช้บริการจริง', isOther ? 'ขอให้ผู้อื่น' : 'ตนเอง');
-            if (isOther) {
-                addRow('ชื่อ-สกุล (ผู้ใช้จริง)', document.getElementById('monthlyOtherName')?.value);
-                addRow('เบอร์โทร (ผู้ใช้จริง)', document.getElementById('monthlyOtherPhone')?.value);
-                addRow('อีเมล (ผู้ใช้จริง)', document.getElementById('monthlyOtherEmail')?.value);
+        {
+            const carCount = Number(document.getElementById('monthlyCarCount')?.value || 1);
+            addRow('จำนวนรถ', `${carCount} คัน`);
+            for (let i = 1; i <= carCount; i++) {
+                const firstName = document.getElementById(`monthlyCarFirstName${i}`)?.value || '';
+                const lastName = document.getElementById(`monthlyCarLastName${i}`)?.value || '';
+                const plate = document.getElementById(`monthlyCarPlate${i}`)?.value || '';
+                const ownerLabel = getCarOwner('monthlyCar', i) === 'self' ? 'ตนเอง' : 'ผู้อื่น';
+                addRow(`รถคันที่ ${i}`, `${firstName} ${lastName} ${plate}`.trim() + ` (${ownerLabel})`);
             }
         }
-        addRow('ทะเบียนรถ', document.getElementById('in_monthly_plate')?.value);
         addRow('วันที่เริ่มต้น', document.getElementById('parkingStartDate')?.value);
         addRow('วันที่สิ้นสุด', document.getElementById('parkingEndDate')?.value);
         const contractFile = document.getElementById('monthlyContractFile')?.files?.[0]?.name;
         addRow('สัญญาจ้าง', contractFile);
     } 
     else if (currentSelectedForm === 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)') {
-        addRow('ทะเบียนรถ', document.getElementById('in_overnight_plate')?.value);
-        if (document.getElementById('overnightMultipleCars')?.checked) {
-            const carCount = Number(document.getElementById('overnightCarCount')?.value || 0);
-            addRow('จำนวนรถทั้งหมด', carCount ? `${carCount} คัน` : '');
+        {
+            const carCount = Number(document.getElementById('overnightCarCount')?.value || 1);
+            addRow('จำนวนรถ', `${carCount} คัน`);
             for (let i = 1; i <= carCount; i++) {
                 const firstName = document.getElementById(`overnightCarFirstName${i}`)?.value || '';
                 const lastName = document.getElementById(`overnightCarLastName${i}`)?.value || '';
                 const plate = document.getElementById(`overnightCarPlate${i}`)?.value || '';
-                addRow(`รถคันที่ ${i}`, `${firstName} ${lastName} ${plate}`.trim());
+                const ownerLabel = getOvernightCarOwner(i) === 'self' ? 'ตนเอง' : 'ผู้อื่น';
+                addRow(`รถคันที่ ${i}`, `${firstName} ${lastName} ${plate}`.trim() + ` (${ownerLabel})`);
             }
         }
         addRow('วันที่เริ่มต้น', document.getElementById('overnightStartDate')?.value);
@@ -1134,14 +1240,15 @@ function showSummaryModal() {
         addRow('เวลาสิ้นสุด', document.getElementById('areaEndTime')?.value);
         let objs = []; if(document.getElementById('obj1')?.checked) objs.push('ประชาสัมพันธ์'); if(document.getElementById('obj2')?.checked) objs.push('แจกผลิตภัณฑ์'); if(document.getElementById('obj3')?.checked) objs.push(document.getElementById('objOtherText')?.value || 'อื่นๆ');
         addRow('วัตถุประสงค์', objs.join(', '));
-        let locs = []; if(document.getElementById('loc1')?.checked) locs.push('อาคารจอดรถ 1 (S2)'); if(document.getElementById('loc2')?.checked) locs.push('โรงอาหาร (S14)'); if(document.getElementById('loc3')?.checked) locs.push(document.getElementById('locOtherText')?.value || 'อื่นๆ');
+        let locs = []; if(document.getElementById('loc1')?.checked) locs.push(AREA_LOCATION_S2); if(document.getElementById('loc2')?.checked) locs.push(AREA_LOCATION_S14); if(document.getElementById('loc3')?.checked) locs.push(document.getElementById('locOtherText')?.value || 'อื่นๆ');
         addRow('สถานที่', locs.join(', '));
         addRow('จำนวนบูธ', document.getElementById('areaBoothCount')?.value);
         addRow('ข้อความเสนอพิจารณา', document.getElementById('areaProposalNote')?.value);
     }
     else if (currentSelectedForm === 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา') {
         addRow('ทะเบียนรถ', document.getElementById('in_contract_plate')?.value);
-        addRow('วันที่เข้าพื้นที่', document.getElementById('in_contract_date')?.value);
+        addRow('วันที่เริ่มต้น', document.getElementById('in_contract_date')?.value);
+        addRow('วันที่สิ้นสุด', document.getElementById('in_contract_date_end')?.value);
         addRow('เวลา', (document.getElementById('in_contract_time_start')?.value || '') + " - " + (document.getElementById('in_contract_time_end')?.value || ''));
         addRow('บริษัท', document.getElementById('contractCompany')?.value);
         addRow('ประเภทธุรกิจ', document.getElementById('contractBusinessType')?.value);
@@ -1240,6 +1347,30 @@ function getRequesterDataForJotform() {
         };
     }
 
+    // ผ่าน ADFS แต่ Master Data ไม่มีข้อมูล — ผู้ใช้กรอกส่วนที่ 1 เองในรูปแบบ
+    // บุคลากร (ดู enableManualRequesterEntry) จึงอ่านจากช่องชุดเดียวกับบุคลากร
+    // ถ้าไม่มีกิ่งนี้ เคสนี้จะตกไปเข้ากิ่งบุคคลภายนอกด้านล่าง แล้วอ่าน extEmail/
+    // extFname/extCompany ที่ไม่มีวันถูกกรอก — คำขอจะถูกส่งโดยไม่มีชื่อ ไม่มีอีเมล
+    // ผู้ขอเลย
+    if (currentLoginType === 'kmutt') {
+        const displayEmail = getInputValue('reqEmail');
+        const submittedEmail = resolveRequesterEmail('staff', displayEmail);
+        return {
+            requesterId: getInputValue('reqEmpId'),
+            requesterName: getInputValue('reqName'),
+            displayEmail,
+            email: submittedEmail,
+            submittedEmail,
+            phone: getInputValue('reqPhone'),
+            department: getInputValue('reqDeptCode'),
+            position: getInputValue('reqPosition'),
+            internalPhone: getInputValue('reqInternalPhone'),
+            studentStatus: '',
+            faculty: '',
+            major: ''
+        };
+    }
+
     const displayEmail = getInputValue('extEmail');
     const submittedEmail = resolveRequesterEmail('external', displayEmail);
     return {
@@ -1282,22 +1413,30 @@ function buildRequestDetailFields() {
 
     switch (currentSelectedForm) {
         case 'แบบฟอร์มขอจอดรถรายเดือน': {
-            f.q41_vehiclePlate = getInputValue('in_monthly_plate');
             Object.assign(f, dateFieldParts('q36_startDate', getInputValue('parkingStartDate')));
             Object.assign(f, dateFieldPartsFromDMY('q37_endDate', getInputValue('parkingEndDate')));
-            if (currentLoginType === 'staff') {
-                const isOther = document.getElementById('monthlyForOther')?.checked;
-                f.q47_monthlyForWho = isOther ? 'ผู้อื่น' : 'ตนเอง';
-                if (isOther) {
-                    f.q48_actualUserName = getInputValue('monthlyOtherName');
-                    f.q49_actualUserPhone = getInputValue('monthlyOtherPhone');
-                    f.q50_actualUserEmail = getInputValue('monthlyOtherEmail');
+            {
+                // รายการรถชุดเดียวกับฟอร์มจอดค้างคืน — ส่งฟิลด์เดียวกัน (q41/q42/q43)
+                // เพื่อให้รายงานและ workflow ฝั่ง JotForm อ่านได้เหมือนกันทั้งสองฟอร์ม
+                const carCount = Number(getInputValue('monthlyCarCount')) || 1;
+                f.q43_vehicleCount = String(carCount);
+                f.q41_vehiclePlate = getInputValue('monthlyCarPlate1');
+                const carLines = [];
+                for (let i = 1; i <= carCount; i++) {
+                    const ownerLabel = getCarOwner('monthlyCar', i) === 'self' ? 'ตนเอง' : 'ผู้อื่น';
+                    const line = `${getInputValue('monthlyCarFirstName' + i)} ${getInputValue('monthlyCarLastName' + i)} ${getInputValue('monthlyCarPlate' + i)}`.trim();
+                    if (line) carLines.push(`คันที่ ${i} (${ownerLabel}): ${line}`);
                 }
+                f.q42_vehicleList = carLines.join('\n');
+                // ผู้ใช้บริการจริงยึดตามรถคันแรก (แทนบล็อก "ขอให้ตนเอง/ผู้อื่น" เดิม
+                // ที่ถูกยุบรวมเข้ามาอยู่ในรายการรถแล้ว)
+                const firstOwnerSelf = getCarOwner('monthlyCar', 1) === 'self';
+                f.q47_monthlyForWho = firstOwnerSelf ? 'ตนเอง' : 'ผู้อื่น';
+                f.q48_actualUserName = `${getInputValue('monthlyCarFirstName1')} ${getInputValue('monthlyCarLastName1')}`.trim();
             }
             break;
         }
         case 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)': {
-            f.q41_vehiclePlate = getInputValue('in_overnight_plate');
             Object.assign(f, dateFieldParts('q36_startDate', getInputValue('overnightStartDate')));
             Object.assign(f, dateFieldParts('q37_endDate', getInputValue('overnightEndDate')));
             f.q40_totalDays = getInputValue('overnightTotalDays');
@@ -1306,21 +1445,19 @@ function buildRequestDetailFields() {
             f.q45_requestDetail = getInputValue('in_overnight_detail');
             // ยอดประเมินกรณีไม่เข้าเงื่อนไขยกเว้น: 400 บาท/คัน/คืน (ตามประกาศฯ พ.ศ. 2562)
             const feeNights = Number(getInputValue('overnightTotalDays')) || 0;
-            const feeCars = document.getElementById('overnightMultipleCars')?.checked
-                ? (Number(getInputValue('overnightCarCount')) || 1) : 1;
-            if (feeNights > 0) f.q67_estimatedFee = String(400 * feeCars * feeNights);
-            if (document.getElementById('overnightMultipleCars')?.checked) {
-                const carCount = Number(document.getElementById('overnightCarCount')?.value || 0);
-                f.q43_vehicleCount = carCount ? String(carCount) : '';
-                const carLines = [];
-                for (let i = 1; i <= carCount; i++) {
-                    const line = `${getInputValue('overnightCarFirstName' + i)} ${getInputValue('overnightCarLastName' + i)} ${getInputValue('overnightCarPlate' + i)}`.trim();
-                    if (line) carLines.push(`คันที่ ${i}: ${line}`);
-                }
-                f.q42_vehicleList = carLines.join('\n');
-            } else {
-                f.q43_vehicleCount = '1';
+            const carCount = Number(getInputValue('overnightCarCount')) || 1;
+            if (feeNights > 0) f.q67_estimatedFee = String(400 * carCount * feeNights);
+            f.q43_vehicleCount = String(carCount);
+            // ทะเบียนคันแรกยังส่งแยกไว้ที่ q41 เพื่อให้ฟิลด์เดิมใน JotForm
+            // (และรายงานที่อ้างฟิลด์นี้อยู่) ยังมีค่าเหมือนก่อนเลิกใช้ช่องทะเบียนเดี่ยว
+            f.q41_vehiclePlate = getInputValue('overnightCarPlate1');
+            const carLines = [];
+            for (let i = 1; i <= carCount; i++) {
+                const ownerLabel = getOvernightCarOwner(i) === 'self' ? 'ตนเอง' : 'ผู้อื่น';
+                const line = `${getInputValue('overnightCarFirstName' + i)} ${getInputValue('overnightCarLastName' + i)} ${getInputValue('overnightCarPlate' + i)}`.trim();
+                if (line) carLines.push(`คันที่ ${i} (${ownerLabel}): ${line}`);
             }
+            f.q42_vehicleList = carLines.join('\n');
             break;
         }
         case 'แบบฟอร์มขอใช้ตราประทับ': {
@@ -1383,8 +1520,8 @@ function buildRequestDetailFields() {
             }
             if (objs.length) f['q57_eventObjectives[]'] = objs;
             const locs = [];
-            if (document.getElementById('loc1')?.checked) locs.push('อาคารจอดรถ 1 (S2)');
-            if (document.getElementById('loc2')?.checked) locs.push('โรงอาหาร (S14)');
+            if (document.getElementById('loc1')?.checked) locs.push(AREA_LOCATION_S2);
+            if (document.getElementById('loc2')?.checked) locs.push(AREA_LOCATION_S14);
             if (document.getElementById('loc3')?.checked) {
                 locs.push('อื่นๆ');
                 f.q60_eventLocationOther = getInputValue('locOtherText');
@@ -1396,6 +1533,7 @@ function buildRequestDetailFields() {
         case 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา': {
             f.q41_vehiclePlate = getInputValue('in_contract_plate');
             Object.assign(f, dateFieldParts('q36_startDate', getInputValue('in_contract_date')));
+            Object.assign(f, dateFieldParts('q37_endDate', getInputValue('in_contract_date_end')));
             f.q38_startTime = getInputValue('in_contract_time_start');
             f.q39_endTime = getInputValue('in_contract_time_end');
             f.q61_contractCompany = getInputValue('contractCompany');
@@ -1417,7 +1555,9 @@ function buildRequestDetailFields() {
 
 function buildJotformSubmissionFields() {
     const requester = getRequesterDataForJotform();
-    const approverEmail = getTextValue('appEmail');
+    // ปกติอีเมลผู้อนุมัติเป็นข้อความที่ระบบเติมให้ (#appEmail) แต่ในโหมดกรอกเอง
+    // มันมาจากช่องที่ผู้ใช้พิมพ์ (#appEmailInput) — ดู enableManualRequesterEntry
+    const approverEmail = isManualApproverEntry() ? getInputValue('appEmailInput') : getTextValue('appEmail');
     const summaryText = getTextValue('summaryContent');
     return {
         q15_input15: currentSelectedForm,
@@ -1441,6 +1581,67 @@ function buildJotformSubmissionFields() {
         q68_opStatus: 'รอพิจารณา',
         ...buildRequestDetailFields()
     };
+}
+
+// อัปโหลดไฟล์แนบเข้าเซิร์ฟเวอร์ มจธ. ก่อน submit แล้วส่งเฉพาะลิงก์เข้า JotForm
+// (แทนการส่งตัวไฟล์เข้า q33 ให้ไปเก็บบน cloud ของ JotForm) — ปิดชั่วคราวได้
+// โดยตั้งเป็น false ซึ่งจะกลับไปพฤติกรรมเดิมทุกประการ
+const KMUTT_ATTACHMENTS_ENABLED = true;
+
+// ห่อลิงก์ไฟล์แนบเป็น <a> ชื่อไฟล์คลิกได้ในอีเมล — ถ้า JotForm escape HTML
+// ใน {summary} (เห็นแท็กเป็นตัวหนังสือในเมล) ให้เปลี่ยนเป็น false
+const KMUTT_ATTACHMENT_LINK_HTML = true;
+
+function collectSelectedFiles() {
+    return [...document.querySelectorAll('.view-section.active input[type="file"]')]
+        .filter(input => input.files && input.files.length > 0 && input.offsetParent !== null)
+        .flatMap(input => [...input.files]);
+}
+
+const KMUTT_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024; // ต้องตรงกับ ATTACHMENT_MAX_BYTES ฝั่ง server
+
+async function uploadAttachmentsToKmutt(onProgress) {
+    const files = collectSelectedFiles();
+    const links = [];
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (typeof onProgress === 'function') onProgress(i + 1, files.length, file.name);
+        // เช็คขนาดก่อนยิง network — 0 ไบต์ หรือเกินเพดาน server ให้ error ที่
+        // บอกสาเหตุจริง ไม่ใช่ "ลองใหม่" ที่ลองกี่ครั้งก็ไม่มีวันผ่าน
+        if (file.size === 0) {
+            const error = new Error('empty file');
+            error.code = 'empty';
+            error.fileName = file.name;
+            throw error;
+        }
+        if (file.size > KMUTT_ATTACHMENT_MAX_BYTES) {
+            const error = new Error('file too large');
+            error.code = 'too-large';
+            error.fileName = file.name;
+            throw error;
+        }
+        const response = await fetch('/api/attachments', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                // octet-stream เสมอ — MIME จริงเดินทางใน X-Attachment-Type
+                // (ห้ามส่ง MIME จริงเป็น Content-Type: ไฟล์ .json จะโดน
+                // express.json ฝั่ง server ดักกินก่อนถึง route อัปโหลด)
+                'Content-Type': 'application/octet-stream',
+                'X-Attachment-Name': encodeURIComponent(file.name),
+                'X-Attachment-Type': file.type || ''
+            },
+            body: file
+        });
+        if (!response.ok) {
+            const error = new Error(`upload failed (${response.status})`);
+            error.status = response.status;
+            error.fileName = file.name;
+            throw error;
+        }
+        links.push(await response.json());
+    }
+    return links;
 }
 
 function appendSelectedFiles(form) {
@@ -1504,14 +1705,35 @@ function submitToJotform(fieldOverrides = {}, options = {}) {
     appendHiddenField(form, 'eventObserver', '1');
     appendHiddenField(form, 'website', '');
 
-    Object.entries({ ...buildJotformSubmissionFields(), ...fieldOverrides }).forEach(([name, value]) => {
+    const fields = { ...buildJotformSubmissionFields(), ...fieldOverrides };
+    // โหมดไฟล์แนบ มจธ.: ลิงก์ไฟล์ถูกต่อท้าย q32_summary (ช่องทางที่ workflow/อีเมล
+    // ทุกฉบับ render อยู่แล้ว — ไม่สร้าง q-field ใหม่ เลี่ยงปัญหาแบบ q69) และ
+    // "ไม่" เรียก appendSelectedFiles เพื่อไม่ให้ตัวไฟล์หลุดไปเก็บบน JotForm
+    if (options.attachmentLinks) {
+        if (options.attachmentLinks.length) {
+            const esc = (s) => String(s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const many = options.attachmentLinks.length > 1;
+            const lines = options.attachmentLinks.map((link, i) => {
+                const prefix = many ? `${i + 1}. ` : '';
+                // ห่อลิงก์เป็นชื่อไฟล์คลิกได้ — ใช้ได้ต่อเมื่ออีเมลของ JotForm render
+                // HTML ใน {summary} จริง ถ้า escape ทิ้ง (เห็นแท็กโผล่ในเมล) ให้สลับ
+                // เป็น false แล้วจะกลับไปเป็นข้อความ+URL เต็มแบบเดิม
+                return KMUTT_ATTACHMENT_LINK_HTML
+                    ? `${prefix}<a href="${link.url}">คลิกเพื่อเปิดเอกสารแนบ: ${esc(link.name)}</a>`
+                    : `${prefix}${link.name} ${link.url}`;
+            });
+            fields.q32_summary = `${fields.q32_summary || ''}\n\nเอกสารแนบ:\n${lines.join('\n')}`;
+        }
+    }
+    Object.entries(fields).forEach(([name, value]) => {
         if (Array.isArray(value)) {
             value.forEach(item => appendHiddenField(form, name, item));
         } else {
             appendHiddenField(form, name, value);
         }
     });
-    appendSelectedFiles(form);
+    if (!options.attachmentLinks) appendSelectedFiles(form);
 
     let successShown = false;
     const completeSubmit = () => {
@@ -1530,7 +1752,53 @@ let isSubmittingRequest = false;
 async function confirmSubmitForm() {
     if (isSubmittingRequest) return;
     isSubmittingRequest = true;
-    if (submitToJotform() === false) {
+
+    // ขั้นอัปโหลดไฟล์เข้าเซิร์ฟเวอร์ มจธ. มาก่อนการ submit ฟอร์มเสมอ — ถ้า
+    // อัปโหลดไม่ผ่าน ฟอร์มยังไม่ถูกส่งและข้อมูลที่กรอกยังอยู่ครบ ให้ลองใหม่ได้
+    const confirmButton = document.querySelector('#summaryModal [onclick*="confirmSubmitForm"]');
+    const confirmButtonLabel = confirmButton ? confirmButton.textContent : '';
+    const setBusy = (busy, text) => {
+        if (!confirmButton) return;
+        confirmButton.disabled = busy;
+        confirmButton.textContent = busy ? (text || 'กำลังอัปโหลดไฟล์…') : confirmButtonLabel;
+    };
+
+    let attachmentLinks = null;
+    if (KMUTT_ATTACHMENTS_ENABLED) {
+        try {
+            setBusy(true);
+            attachmentLinks = await uploadAttachmentsToKmutt((current, total) => {
+                setBusy(true, `กำลังอัปโหลดไฟล์ ${current}/${total}…`);
+            });
+        } catch (error) {
+            setBusy(false);
+            isSubmittingRequest = false;
+            const which = error && error.fileName ? ` (${error.fileName})` : '';
+            if (error && (error.code === 'too-large' || error.status === 413)) {
+                alert(`ไฟล์แนบ${which} มีขนาดเกิน 25 MB กรุณาลดขนาดไฟล์หรือเลือกไฟล์ใหม่ก่อนส่ง`);
+            } else if (error && error.code === 'empty') {
+                alert(`ไฟล์แนบ${which} ว่างเปล่า (0 ไบต์) กรุณาแนบไฟล์ใหม่อีกครั้ง`);
+            } else if (error && error.status === 401) {
+                alert('เซสชันหมดอายุระหว่างกรอกฟอร์ม กรุณาเปิดแท็บใหม่แล้วเข้าสู่ระบบอีกครั้ง จากนั้นกลับมากดยืนยันที่หน้านี้ได้เลย (ข้อมูลที่กรอกไว้ยังอยู่ครบ)');
+            } else if (error && error.status === 429) {
+                alert('อัปโหลดไฟล์ถี่เกินกำหนด กรุณารอสักครู่แล้วลองใหม่อีกครั้ง');
+            } else {
+                alert(`อัปโหลดไฟล์แนบไม่สำเร็จ${which} กรุณาลองใหม่อีกครั้ง`);
+            }
+            return;
+        }
+        setBusy(false);
+
+        // ผู้ใช้กดปิด modal ไประหว่างรออัปโหลด = ตั้งใจยกเลิก/กลับไปแก้ฟอร์ม
+        // — ห้ามส่งต่อโดยพลการ (ไฟล์ที่อัปไปแล้วจะถูก retention sweep เก็บกวาดเอง)
+        const summaryModalEl = document.getElementById('summaryModal');
+        if (summaryModalEl && !summaryModalEl.classList.contains('show')) {
+            isSubmittingRequest = false;
+            return;
+        }
+    }
+
+    if (submitToJotform({}, attachmentLinks ? { attachmentLinks } : {}) === false) {
         // ส่งไม่สำเร็จ (เช่น ออฟไลน์) — ปลดล็อกทันทีและคง modal ไว้ให้ลองใหม่
         isSubmittingRequest = false;
         return;
@@ -1682,33 +1950,169 @@ window.toggleReasonDetails = function() {
     }
 };
 
-window.toggleOvernightMultipleCars = function() {
-    const isChecked = document.getElementById('overnightMultipleCars')?.checked;
-    const details = document.getElementById('divOvernightMultipleCars');
-    if (!details) return;
-    details.style.display = isChecked ? 'block' : 'none';
-    if (isChecked) renderOvernightCarFields();
+// แยกชื่อ-สกุลของผู้ยื่นคำขอออกจากช่อง reqName ซึ่งเก็บรวมเป็นสตริงเดียว
+// รูปแบบที่ระบบสร้างไว้คือ `${คำนำหน้า}${ชื่อ} ${สกุล}` (คำนำหน้าติดกับชื่อ)
+// จึงตัดที่ "ช่องว่างสุดท้าย" — ส่วนท้ายเป็นสกุล ที่เหลือเป็นคำนำหน้า+ชื่อ
+function splitRequesterName() {
+    const full = (document.getElementById('reqName')?.value || '').trim();
+    if (!full) return { firstName: '', lastName: '' };
+    const cut = full.lastIndexOf(' ');
+    if (cut === -1) return { firstName: full, lastName: '' };
+    return { firstName: full.slice(0, cut).trim(), lastName: full.slice(cut + 1).trim() };
+}
+
+// ---------------------------------------------------------------------------
+// รายการรถแบบเพิ่มได้ไม่จำกัด — ใช้ร่วมกันทั้งฟอร์มจอดค้างคืนและจอดรายเดือน
+//
+// prefix กำหนด id ของทุก element ในชุด เช่น prefix 'overnightCar' จะได้
+// overnightCarCount / overnightCarFields / overnightCarFirstName1 / ...
+// ทำให้สองฟอร์มใช้โค้ดชุดเดียวกันโดยข้อมูลไม่ปนกัน
+//
+// เริ่มต้นที่ 1 คันเสมอ เพิ่มด้วยปุ่ม "เพิ่มรถ" ลบได้ทีละคัน (คันแรกลบไม่ได้)
+// จำนวนรถเก็บใน hidden input ${prefix}Count เพื่อให้โค้ดส่วนตรวจสอบ/สรุป/ส่ง
+// JotForm อ่านค่าได้เหมือนเดิมโดยไม่ต้องรู้ว่า UI เปลี่ยนจาก dropdown มาเป็นปุ่ม
+// ---------------------------------------------------------------------------
+
+function getCarCount(prefix) {
+    return Math.max(1, Number(document.getElementById(prefix + 'Count')?.value || 1));
+}
+
+// คันที่ 2 ขึ้นไปเป็นการขอให้ผู้อื่นเสมอ จึงไม่มี radio ให้เลือก
+// รวมการอ่านค่าไว้ที่เดียว กันจุดอื่นเผลออ่านจาก DOM ที่ไม่มีอยู่จริง
+function getCarOwner(prefix, i) {
+    if (Number(i) !== 1) return 'other';
+    return document.querySelector(`input[name="${prefix}Owner1"]:checked`)?.value || 'other';
+}
+
+// เลือกว่ารถคันนี้ขอให้ตนเองหรือผู้อื่น
+// - ตนเอง: เติมชื่อ-สกุลผู้ยื่นให้อัตโนมัติ แล้วล็อกไม่ให้แก้ (กันข้อมูลขัดกับบัญชีที่ล็อกอิน)
+// - ผู้อื่น: ล้างค่าที่เคยเติมอัตโนมัติไว้ แล้วเปิดให้กรอกเอง
+window.setCarOwner = function(prefix, i, owner) {
+    const first = document.getElementById(`${prefix}FirstName${i}`);
+    const last = document.getElementById(`${prefix}LastName${i}`);
+    if (!first || !last) return;
+    if (owner === 'self') {
+        const { firstName, lastName } = splitRequesterName();
+        first.value = firstName;
+        last.value = lastName;
+        [first, last].forEach(el => { el.readOnly = true; el.classList.add('bg-light'); });
+    } else {
+        [first, last].forEach(el => {
+            // ล้างเฉพาะตอนสลับมาจาก "ตนเอง" เพื่อไม่ให้ลบสิ่งที่ผู้ใช้พิมพ์เอง
+            if (el.readOnly) el.value = '';
+            el.readOnly = false;
+            el.classList.remove('bg-light');
+        });
+    }
 };
 
-window.renderOvernightCarFields = function() {
-    const container = document.getElementById('overnightCarFields');
-    const count = Number(document.getElementById('overnightCarCount')?.value || 2);
+window.addCarRow = function(prefix) {
+    const countEl = document.getElementById(prefix + 'Count');
+    if (!countEl) return;
+    countEl.value = String(getCarCount(prefix) + 1);
+    window.renderCarFields(prefix);
+    // โฟกัสช่องแรกของคันที่เพิ่งเพิ่ม เพื่อให้กรอกต่อได้เลยไม่ต้องเลื่อนหาเอง
+    document.getElementById(`${prefix}FirstName${getCarCount(prefix)}`)?.focus();
+};
+
+window.removeCarRow = function(prefix, index) {
+    const count = getCarCount(prefix);
+    if (count <= 1) return; // คันแรกลบไม่ได้ — ต้องมีรถอย่างน้อย 1 คันเสมอ
+    const read = (i) => ({
+        firstName: document.getElementById(`${prefix}FirstName${i}`)?.value || '',
+        lastName: document.getElementById(`${prefix}LastName${i}`)?.value || '',
+        plate: document.getElementById(`${prefix}Plate${i}`)?.value || '',
+        owner: getCarOwner(prefix, i),
+    });
+    // เลื่อนข้อมูลของคันที่อยู่ถัดจากคันที่ลบขึ้นมาแทน ไม่ให้ค่าที่กรอกไว้เพี้ยนตำแหน่ง
+    const kept = [];
+    for (let i = 1; i <= count; i++) if (i !== Number(index)) kept.push(read(i));
+    document.getElementById(prefix + 'Count').value = String(kept.length);
+    window.renderCarFields(prefix, kept);
+};
+
+// preset = ค่าที่จะใส่แทนค่าที่อ่านจาก DOM (ใช้ตอนลบแถวเพื่อเลื่อนข้อมูลขึ้น)
+window.renderCarFields = function(prefix, preset) {
+    const container = document.getElementById(prefix + 'Fields');
     if (!container) return;
-    let html = '<div class="row g-2">';
+    const count = preset ? preset.length : getCarCount(prefix);
+
+    // เก็บค่าที่กรอกไว้ก่อน re-render เพื่อไม่ให้ข้อมูลหายเวลาเพิ่ม/ลบรถ
+    const prev = [];
+    if (preset) {
+        preset.forEach((v, idx) => { prev[idx + 1] = v; });
+    } else {
+        for (let i = 1; ; i++) {
+            const first = document.getElementById(`${prefix}FirstName${i}`);
+            if (!first) break;
+            prev[i] = {
+                firstName: first.value,
+                lastName: document.getElementById(`${prefix}LastName${i}`)?.value || '',
+                plate: document.getElementById(`${prefix}Plate${i}`)?.value || '',
+                owner: getCarOwner(prefix, i),
+            };
+        }
+    }
+
+    let html = '<div class="row g-3">';
     for (let i = 1; i <= count; i++) {
+        // เฉพาะคันแรกที่เลือกได้ว่าขอให้ตนเองหรือผู้อื่น — คันที่ 2 ขึ้นไปเป็น
+        // การขอให้ผู้อื่นเสมอ จึงไม่ต้องมีตัวเลือกให้กด
+        const owner = i === 1 ? (prev[i]?.owner || 'self') : 'other';
+        const saved = prev[i] || { firstName: '', lastName: '', plate: '' };
+        const ownerControl = i === 1
+            ? `<div class="form-check form-check-inline m-0">
+                            <input class="form-check-input" type="radio" name="${prefix}Owner1" id="${prefix}OwnerSelf1"
+                                   value="self" ${owner === 'self' ? 'checked' : ''} onchange="setCarOwner('${prefix}', 1, 'self')">
+                            <label class="form-check-label small fw-bold text-dark" for="${prefix}OwnerSelf1">ขอให้ตนเอง</label>
+                        </div>
+                        <div class="form-check form-check-inline m-0">
+                            <input class="form-check-input" type="radio" name="${prefix}Owner1" id="${prefix}OwnerOther1"
+                                   value="other" ${owner === 'other' ? 'checked' : ''} onchange="setCarOwner('${prefix}', 1, 'other')">
+                            <label class="form-check-label small fw-bold text-dark" for="${prefix}OwnerOther1">ขอให้ผู้อื่น</label>
+                        </div>`
+            : '';
+        const removeBtn = i === 1
+            ? ''
+            : `<button type="button" class="btn btn-sm btn-outline-danger ms-auto"
+                        onclick="removeCarRow('${prefix}', ${i})" title="ลบรถคันนี้">
+                        <i class="bi bi-trash"></i></button>`;
         html += `
             <div class="col-md-12">
-                <div class="row g-2 align-items-end">
-                    <div class="col-md-2"><span class="badge bg-ci-bluegrey w-100 py-2">คันที่ ${i}</span></div>
-                    <div class="col-md-3"><label class="form-label text-ci-bluegrey fw-bold small">ชื่อ <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="overnightCarFirstName${i}"></div>
-                    <div class="col-md-3"><label class="form-label text-ci-bluegrey fw-bold small">สกุล <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="overnightCarLastName${i}"></div>
-                    <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">ทะเบียนรถ <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="overnightCarPlate${i}" placeholder="เช่น 1กข2345"></div>
+                <div class="p-2 bg-white rounded border border-light">
+                    <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+                        <span class="badge bg-ci-bluegrey py-2 px-3">คันที่ ${i}</span>
+                        ${ownerControl}
+                        ${removeBtn}
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">ชื่อ <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="${prefix}FirstName${i}" value="${escapeAttr(saved.firstName)}"></div>
+                        <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">สกุล <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="${prefix}LastName${i}" value="${escapeAttr(saved.lastName)}"></div>
+                        <div class="col-md-4"><label class="form-label text-ci-bluegrey fw-bold small">ทะเบียนรถ <span class="req-star">*</span></label><input type="text" class="form-control border-light shadow-sm" id="${prefix}Plate${i}" placeholder="เช่น 1กข2345" value="${escapeAttr(saved.plate)}"></div>
+                    </div>
                 </div>
             </div>`;
     }
     html += '</div>';
+    html += `
+        <button type="button" class="btn btn-sm btn-outline-secondary mt-3" onclick="addCarRow('${prefix}')">
+            <i class="bi bi-plus-lg"></i> เพิ่มรถ
+        </button>`;
     container.innerHTML = html;
+
+    // ต้องเรียกหลัง innerHTML เพื่อเติมชื่อ/ล็อกช่องตามตัวเลือกที่ติ๊กไว้จริง
+    // (เฉพาะคันแรก — คันอื่นเป็นของผู้อื่นเสมอ ไม่มีอะไรต้องเติมหรือล็อก)
+    window.setCarOwner(prefix, 1, getCarOwner(prefix, 1));
 };
+
+// ตัวช่วยชื่อเดิม เพื่อให้จุดที่เรียกอยู่แล้วไม่ต้องแก้
+window.renderOvernightCarFields = function() { window.renderCarFields('overnightCar'); };
+function getOvernightCarOwner(i) { return getCarOwner('overnightCar', i); }
+
+// กันค่าที่ผู้ใช้พิมพ์ (เช่น เครื่องหมาย ") ทำให้ attribute value ใน template แตก
+function escapeAttr(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
 
 window.toggleStampOther = function(sel) {
     const otherInput = document.getElementById('in_stamp_other');
@@ -1783,13 +2187,6 @@ window.toggleOtherInput = function(checkboxId, inputId) {
     }
 };
 
-window.toggleMonthlyForOther = function() {
-    const isOther = document.getElementById('monthlyForOther')?.checked;
-    const divDetails = document.getElementById('divMonthlyOtherDetails');
-    if (divDetails) {
-        divDetails.style.display = isOther ? 'block' : 'none';
-    }
-};
 
 document.getElementById('loginEmpId').addEventListener('keypress', function (e) {
     if (e.key === 'Enter') processLogin();
@@ -1880,7 +2277,9 @@ window.prefillCurrentForm = function(evt) {
     // ---------- ส่วนรายละเอียดคำขอ ----------
     switch (currentSelectedForm) {
         case 'แบบฟอร์มขอจอดรถค้างคืน (อาคารจอดรถ S2)':
-            pfText('in_overnight_plate', '1กข2345');
+            // คันที่ 1 ตั้งต้นเป็น "ขอให้ตนเอง" อยู่แล้ว ชื่อ-สกุลจึงถูกเติมอัตโนมัติ
+            // เหลือแค่ทะเบียนที่ต้องกรอกเอง
+            pfText('overnightCarPlate1', '1กข2345');
             pfDate('overnightStartDate', 1);
             pfDate('overnightEndDate', 2);
             pfPickSelect('overnightReason'); // staff/student = "ไปราชการ" (ไม่ต้องแนบไฟล์), external = "เหตุสุดวิสัย"
@@ -1888,7 +2287,8 @@ window.prefillCurrentForm = function(evt) {
             break;
 
         case 'แบบฟอร์มขอจอดรถรายเดือน':
-            pfText('in_monthly_plate', '1กข2345');
+            // คันที่ 1 ตั้งต้นเป็น "ขอให้ตนเอง" ชื่อ-สกุลจึงถูกเติมอัตโนมัติ
+            pfText('monthlyCarPlate1', '1กข2345');
             pfDate('parkingStartDate', 3); // dispatch change → คำนวณวันสิ้นสุดอัตโนมัติ
             break;
 
@@ -1928,6 +2328,7 @@ window.prefillCurrentForm = function(evt) {
 
         case 'แบบฟอร์มขอเข้าพื้นที่คู่สัญญา': {
             pfDate('in_contract_date', 3);
+            pfDate('in_contract_date_end', 3);
             pfTime('in_contract_time_start', '09:00');
             pfTime('in_contract_time_end', '16:00');
             // dropdown แบบลูกโซ่ (บริษัท→ประเภท→พื้นที่→อาคาร) — เลือกจาก "แถวที่มีครบทั้ง 4 ชั้น"

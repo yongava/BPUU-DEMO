@@ -7,43 +7,21 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <link rel="stylesheet" href="css/styles.css">
+    <!-- footer ลิขสิทธิ์ + เลขเวอร์ชัน + กล่องยินยอมคุกกี้ (ใช้ร่วมกับหน้า login) -->
+    <script src="/js/site-chrome.js" defer></script>
 </head>
 <body>
 
 <nav class="navbar navbar-dark bg-ci-orange mb-4 shadow-sm">
     <div class="container d-flex flex-wrap align-items-center justify-content-between gap-2 py-2">
         <span class="navbar-brand mb-0 h1 d-flex align-items-center text-wrap" style="cursor: pointer; line-height: 1.2;" onclick="goHome()">
-            <i class="bi bi-building me-2"></i>
+            <img src="/img/kmutt-main-logo-white.png" alt="KMUTT" class="me-2" style="height:2em;width:auto;flex:none;">
             <span class="d-none d-md-inline">ระบบกระบวนงาน (Workflow) การให้บริการของกลุ่มงานจัดการผลประโยชน์และทรัพย์สิน</span>
             <span class="d-inline d-md-none">ระบบกระบวนงาน BPUU</span>
         </span>
         <span id="userProfileBar" class="d-flex align-items-center gap-2 text-white small"></span>
     </div>
 </nav>
-
-<!-- KMUTT dev preview banner (developer/test convenience only — see js in
-     the trailing <script> block below and POST /api/kmutt-dev-preview in
-     server.js). Hidden by default; only ever shown when the server reports
-     devPreviewActive: true on /api/me, which itself only ever happens when
-     THIS real, ADFS-authenticated session's own Master Data classification
-     is null. Deliberately placed outside every .view-section (which the
-     existing CSS toggles to display:none on navigation) so it stays visible
-     across #homeView, #formContentView, and the summary modal for the
-     entire duration a preview is active — not just on the home screen.
-     Never mistakeable for the real session: it names the previewed email
-     explicitly and offers an immediate way out. -->
-<div class="container">
-    <div id="kmuttDevPreviewBanner" class="alert alert-warning d-none align-items-center justify-content-between flex-wrap gap-2 mb-0 mt-3" role="alert">
-        <span>
-            <i class="bi bi-cone-striped me-2"></i>
-            <strong>โหมดพรีวิว (โหมดทดสอบสำหรับนักพัฒนา):</strong>
-            กำลังแสดงข้อมูลของ <span id="kmuttDevPreviewEmailText" class="fw-bold"></span> (ไม่ใช่บัญชีจริงที่ login)
-        </span>
-        <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="clearKmuttDevPreview()">
-            <i class="bi bi-x-circle me-1"></i>ล้างพรีวิว
-        </button>
-    </div>
-</div>
 
 <div class="container pb-5">
 
@@ -199,7 +177,14 @@
                 <div class="row g-3 mb-4 rounded bg-white border border-light shadow-sm p-3" id="approverSectionContent" style="border-left: 4px solid var(--ci-yellow) !important;">
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey small fw-bold" id="lblAppName">ชื่อผู้อนุมัติ</label><input type="text" class="form-control bg-transparent border-0 fw-bold text-dark" id="appName" readonly></div>
                     <div class="col-md-6"><label class="form-label text-ci-bluegrey small fw-bold" id="lblAppPos">ตำแหน่ง/สังกัด</label><input type="text" class="form-control bg-transparent border-0 fw-bold text-dark" id="appPosition" readonly></div>
-                    <div class="col-md-12"><p class="text-ci-bluegrey small m-0 mt-2"><i class="bi bi-envelope-check-fill me-1 text-ci-yellow"></i> ระบบจะส่งคำขอนี้ไปยังอีเมล: <span id="appEmail" class="text-dark fw-bold border-bottom border-ci-yellow"></span></p></div>
+                    <div class="col-md-12" id="appEmailAuto"><p class="text-ci-bluegrey small m-0 mt-2"><i class="bi bi-envelope-check-fill me-1 text-ci-yellow"></i> ระบบจะส่งคำขอนี้ไปยังอีเมล: <span id="appEmail" class="text-dark fw-bold border-bottom border-ci-yellow"></span></p></div>
+                    <!-- ช่องกรอกอีเมลผู้อนุมัติเอง — ใช้เฉพาะโหมดกรอกเอง (บัญชี ADFS ที่ไม่มีข้อมูลใน
+                         Master Data จึงดึงสายอนุมัติมาให้ไม่ได้) สลับโดย enableManualRequesterEntry()
+                         ใน js/app.js ซึ่งจะซ่อน #appEmailAuto แล้วโชว์ช่องนี้แทน -->
+                    <div class="col-md-12 d-none" id="appEmailManual">
+                        <label class="form-label text-ci-bluegrey small fw-bold">อีเมลผู้อนุมัติ <span class="req-star">*</span></label>
+                        <input type="email" class="form-control border-ci-yellow" id="appEmailInput" placeholder="ระบบจะส่งคำขอนี้ไปยังอีเมลที่ระบุ">
+                    </div>
                 </div>
 
                 <h5 class="form-section-title" id="dynamicSectionTitle"><i class="bi bi-3-circle-fill me-2"></i>ส่วนที่ 3: รายละเอียดคำขอ</h5>
@@ -279,41 +264,6 @@
                 <button type="button" class="btn btn-ci-orange w-100 btn-lg fw-bold" id="loginBtn" onclick="processLogin()" disabled>
                     <span class="spinner-border spinner-border-sm me-2" id="loginSpinner" role="status"></span>
                     <span id="loginBtnText">กำลังโหลดฐานข้อมูล...</span>
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- KMUTT dev preview modal (developer/test convenience only). Only ever
-     shown when this real ADFS session's own Master Data classification came
-     back null (see the trailing <script> block below) and no preview has
-     been set yet. Submits to POST /api/kmutt-dev-preview, which is itself
-     gated server-side (401 with no real session, 403 if the real session is
-     already classified staff/student) — this dialog can never be used to
-     bypass that. -->
-<div class="modal fade" id="kmuttDevPreviewModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow-lg">
-            <div class="modal-header bg-warning text-dark">
-                <h5 class="modal-title fw-bold"><i class="bi bi-cone-striped me-2"></i>โหมดพรีวิวสำหรับนักพัฒนา</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-4">
-                <p class="text-ci-bluegrey small mb-3">
-                    <strong>(โหมดทดสอบสำหรับนักพัฒนา)</strong> — บัญชีของท่านยังไม่มีข้อมูลใน KMUTT Master Data
-                    จึงไม่สามารถระบุได้ว่าเป็นบุคลากรหรือนักศึกษา ท่านสามารถระบุอีเมลของสมาชิก มจธ. ท่านอื่น
-                    (ที่มีตัวตนจริงใน Master Data) เพื่อดูตัวอย่างการเติมข้อมูลส่วนที่ 1 / ส่วนที่ 2 โดยอัตโนมัติ
-                    ราวกับว่าเข้าสู่ระบบด้วยบัญชีนั้น — ใช้เพื่อการทดสอบเท่านั้น
-                </p>
-                <div class="input-group input-group-lg mb-2 shadow-sm">
-                    <span class="input-group-text bg-white border-ci-orange text-ci-orange"><i class="bi bi-envelope"></i></span>
-                    <input type="email" class="form-control border-ci-orange" id="kmuttDevPreviewEmailInput" placeholder="example@mail.kmutt.ac.th">
-                </div>
-                <div class="text-danger small mb-3 d-none" id="kmuttDevPreviewError"></div>
-                <button type="button" class="btn btn-ci-orange w-100 btn-lg fw-bold" id="kmuttDevPreviewSubmitBtn" onclick="submitKmuttDevPreview()">
-                    <span class="spinner-border spinner-border-sm me-2 d-none" id="kmuttDevPreviewSpinner" role="status"></span>
-                    <span id="kmuttDevPreviewBtnText">ดูตัวอย่างข้อมูล</span>
                 </button>
             </div>
         </div>
@@ -423,125 +373,6 @@
         bar.appendChild(logoutLink);
     }
 
-    // ---------------------------------------------------------------------
-    // KMUTT dev preview (developer/test convenience only).
-    //
-    // This whole block is inert unless the server has already told us (via
-    // /api/me) that THIS real, ADFS-authenticated session's own Master Data
-    // classification came back null — see the DOMContentLoaded handler
-    // below. It is not a general "log in as anyone" tool: every request it
-    // makes goes through POST /api/kmutt-dev-preview / GET
-    // /api/kmutt-dev-preview/clear in server.js, which independently
-    // enforce the same real-session-required, not-already-classified gating
-    // server-side regardless of what this client code does.
-    // ---------------------------------------------------------------------
-
-    var kmuttDevPreviewModalInstance = null;
-    function getKmuttDevPreviewModal() {
-        if (!kmuttDevPreviewModalInstance) {
-            kmuttDevPreviewModalInstance = new bootstrap.Modal(document.getElementById('kmuttDevPreviewModal'));
-        }
-        return kmuttDevPreviewModalInstance;
-    }
-
-    function showKmuttDevPreviewModal() {
-        var errorEl = document.getElementById('kmuttDevPreviewError');
-        if (errorEl) {
-            errorEl.classList.add('d-none');
-            errorEl.innerText = '';
-        }
-        var input = document.getElementById('kmuttDevPreviewEmailInput');
-        if (input) input.value = '';
-        getKmuttDevPreviewModal().show();
-    }
-
-    function showKmuttDevPreviewBanner(previewEmail) {
-        var banner = document.getElementById('kmuttDevPreviewBanner');
-        var emailText = document.getElementById('kmuttDevPreviewEmailText');
-        if (emailText) emailText.innerText = previewEmail || '';
-        if (banner) {
-            banner.classList.remove('d-none');
-            banner.classList.add('d-flex');
-        }
-    }
-
-    function submitKmuttDevPreview() {
-        var input = document.getElementById('kmuttDevPreviewEmailInput');
-        var errorEl = document.getElementById('kmuttDevPreviewError');
-        var btn = document.getElementById('kmuttDevPreviewSubmitBtn');
-        var spinner = document.getElementById('kmuttDevPreviewSpinner');
-        var btnText = document.getElementById('kmuttDevPreviewBtnText');
-        if (!input || !errorEl || !btn || !spinner || !btnText) return;
-
-        var email = (input.value || '').trim();
-
-        errorEl.classList.add('d-none');
-        errorEl.innerText = '';
-
-        if (!email) {
-            errorEl.innerText = 'กรุณาระบุอีเมล';
-            errorEl.classList.remove('d-none');
-            return;
-        }
-
-        btn.disabled = true;
-        spinner.classList.remove('d-none');
-        btnText.innerText = 'กำลังตรวจสอบ...';
-
-        fetch('/api/kmutt-dev-preview', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: email })
-        })
-            .then(function (res) {
-                return res.json()
-                    .catch(function () { return {}; })
-                    .then(function (body) { return { status: res.status, body: body }; });
-            })
-            .then(function (result) {
-                btn.disabled = false;
-                spinner.classList.add('d-none');
-                btnText.innerText = 'ดูตัวอย่างข้อมูล';
-
-                if (result.status === 200 && result.body && result.body.found === true) {
-                    // Reload so everything (including the preview banner)
-                    // re-renders from a fresh /api/me call.
-                    window.location.reload();
-                    return;
-                }
-
-                if (result.status === 200 && result.body && result.body.found === false) {
-                    errorEl.innerText = 'ไม่พบข้อมูลสมาชิกนี้ใน Master Data';
-                    errorEl.classList.remove('d-none');
-                    return;
-                }
-
-                // 401/403/400/500 — shouldn't normally happen given the
-                // server-side gating (see server.js), but handle
-                // defensively without retrying automatically.
-                errorEl.innerText = 'เกิดข้อผิดพลาด ไม่สามารถดำเนินการได้ในขณะนี้ กรุณาลองใหม่ภายหลัง';
-                errorEl.classList.remove('d-none');
-            })
-            .catch(function () {
-                btn.disabled = false;
-                spinner.classList.add('d-none');
-                btnText.innerText = 'ดูตัวอย่างข้อมูล';
-                errorEl.innerText = 'เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่';
-                errorEl.classList.remove('d-none');
-            });
-    }
-
-    function clearKmuttDevPreview() {
-        fetch('/api/kmutt-dev-preview/clear', { method: 'POST', credentials: 'same-origin' })
-            .then(function () {
-                window.location.reload();
-            })
-            .catch(function () {
-                window.location.reload();
-            });
-    }
-
     document.addEventListener('DOMContentLoaded', function () {
         var bar = document.getElementById('userProfileBar');
 
@@ -566,15 +397,29 @@
                     // currentLoginType/switchView/updateMenuVisibility come
                     // from js/app.js (loaded above as a classic script, so
                     // they share this page's global scope). The server
-                    // (server.js's /redirect handler) now looks up staff/
-                    // student status via KMUTT Master Data right after ADFS
-                    // login and returns it here as data.userType. When it
-                    // resolves to a known type, use it so the existing
-                    // 'staff'/'student' branches in updateMenuVisibility()
-                    // apply correctly; otherwise (Master Data unconfigured,
-                    // unreachable, or no match) fall back to the original
-                    // 'kmutt' behavior, which shows every menu item —
-                    // nothing regresses for that case.
+                    // (server.js's /redirect handler) looks up staff/student
+                    // status via KMUTT Master Data right after ADFS login and
+                    // returns it here as data.userType.
+                    //
+                    // No classification (Master Data unconfigured, unreachable,
+                    // or simply no record for this account) stays 'kmutt': an
+                    // INTERNAL user we just can't sub-type yet.
+                    //
+                    // A brief 2026-08-04 change classified these users as
+                    // 'external' and was reverted the same day — it was the
+                    // wrong diagnosis. Passing ADFS already proves the person
+                    // is internal; a missing Master Data record says nothing
+                    // about who they are, only that we have no profile to
+                    // auto-fill from. It also meant a Master Data OUTAGE would
+                    // silently demote every real staff member and student to
+                    // บุคคลภายนอก for their whole session, since
+                    // lookupKmuttUserType() returns the same {type:null} for
+                    // "no record" and "lookup failed".
+                    //
+                    // The real consequence of type===null is handled where it
+                    // actually bites — fillInternalData() in js/app.js, which
+                    // has no profile to fill ส่วนที่ 1 from and therefore lets
+                    // the user type it in themselves.
                     var userType = data.userType || {};
                     if (userType.type === 'staff') {
                         currentLoginType = 'staff';
@@ -590,37 +435,17 @@
                     // plain assignment is visible to it via shared global scope,
                     // same as currentLoginType above.
                     window.kmuttRequesterProfile = data.requesterProfile || null;
+                    // ADFS's own claims, kept for the manual-entry path in
+                    // js/app.js: when Master Data has no record there is still
+                    // a real, ADFS-verified name and email here, so those two
+                    // fields can be pre-filled instead of left blank.
+                    window.kmuttAdfsClaims = claims;
                     var displayIdentifier = userType.displayName || identifier;
                     var welcomeEl = document.getElementById('welcomeText');
                     if (welcomeEl) {
                         welcomeEl.innerText = displayIdentifier ? ('ยินดีต้อนรับ ' + displayIdentifier) : 'ยินดีต้อนรับ';
                     }
                     switchView('homeView');
-
-                    // KMUTT dev preview (developer/test convenience only —
-                    // see POST /api/kmutt-dev-preview in server.js for the
-                    // actual gating). data.devPreviewActive can only ever be
-                    // true here as a result of THIS real, ADFS-authenticated
-                    // session's own Master Data classification (userType
-                    // above, before any preview override) having come back
-                    // null — an already-classified staff/student session
-                    // never reaches either branch below, by construction of
-                    // that endpoint's 403 gate.
-                    if (data.devPreviewActive) {
-                        // A preview is already active: userType/requesterProfile
-                        // above are already the previewed identity (server-side
-                        // swap in /api/me), so currentLoginType/welcomeText are
-                        // already set correctly by the code above — just make
-                        // sure this can never be mistaken for the real session.
-                        showKmuttDevPreviewBanner(data.devPreviewEmail);
-                    } else if (data.userType && data.userType.type === null) {
-                        // No preview set yet, and Master Data could not
-                        // classify this real account — offer the dev-only
-                        // preview dialog. Default fallback behavior
-                        // (currentLoginType = 'kmutt', set above) is
-                        // unchanged either way.
-                        showKmuttDevPreviewModal();
-                    }
                 } else if (data.type === 'external') {
                     // Existing, untouched helper: sets
                     // currentLoginType = 'external', its own welcomeText,
