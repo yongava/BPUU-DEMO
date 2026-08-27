@@ -19,7 +19,15 @@ COPY js ./js
 # ถ้า volume ยังไม่มี locations.json ทำให้ทุก environment ขึ้นมาพร้อมข้อมูลชุด
 # เดียวกันโดยไม่ต้อง docker cp เข้าไปเอง
 COPY data-seed ./data-seed
+COPY img ./img
 COPY AW_MODlink_pro_vertical.jpg AW_MODlink_student_vertical.jpg ./
+
+# เลขเวอร์ชันที่โชว์ใน footer — ผูกกับ build ตั้งแต่ตอนสร้าง image เพื่อไม่ให้
+# เลขกับ build จริงหลุดจากกันตอน deploy:
+#   docker buildx build --build-arg APP_VERSION=v.20260804-1 ...
+# ยัง override ที่ runtime ผ่าน --env-file / -e APP_VERSION ได้ถ้าจำเป็น
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
 
 # /app itself is root-owned (created by WORKDIR/COPY above) and is NOT
 # writable by the non-root "node" user this container runs as. admin-

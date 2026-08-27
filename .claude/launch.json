@@ -2,10 +2,33 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "bpuu-server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server.js"
+      ],
+      "port": 9999,
+      "url": "https://localhost:9999"
+    },
+    {
       "name": "bpuu-static",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8923"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8923"
+      ],
       "port": 8923
+    },
+    {
+      "name": "bpuu-static-docs",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8924"
+      ],
+      "port": 8924
     }
   ]
 }
